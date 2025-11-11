@@ -25,6 +25,7 @@ class EXAID:
         print()
     
     def get_all_summaries(self) -> list[AgentSummary]:
+        """Returns all summaries as AgentSummary objects."""
         return self.summaries
 
     def get_summaries_by_agent(self, agent_id: str) -> list[AgentSummary]:
