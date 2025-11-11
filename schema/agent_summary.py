@@ -4,10 +4,10 @@ from typing import List, Optional
 class AgentSummary(BaseModel):
     """Structured summary for medical multi-agent reasoning, optimized for physician understanding."""
     agents: List[str] = Field(description="List of agent IDs involved in this reasoning step")
-    action: str = Field(max_length=100, description="Brief action statement describing what the agents did")
-    reasoning: str = Field(max_length=200, description="Concise reasoning explaining why this action was taken")
-    findings: Optional[str] = Field(max_length=150, default=None, description="Key clinical findings or recommendations if applicable")
-    next_steps: Optional[str] = Field(max_length=100, default=None, description="Suggested next actions if applicable")
+    action: str = Field(max_length=150, description="Brief action statement describing what the agents did")
+    reasoning: str = Field(max_length=400, description="Concise reasoning explaining why this action was taken")
+    findings: Optional[str] = Field(max_length=250, default=None, description="Key clinical findings or recommendations if applicable")
+    next_steps: Optional[str] = Field(max_length=150, default=None, description="Suggested next actions if applicable")
     
     @model_validator(mode='before')
     @classmethod
