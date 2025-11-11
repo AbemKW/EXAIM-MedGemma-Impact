@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 class VitalSigns(BaseModel):
     """Patient vital signs"""
     systolic_bp: Optional[int] = Field(None, description="Systolic blood pressure (mmHg)")
