@@ -53,11 +53,21 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
         "Recommend additional tests if needed."
     )
     
-    # Get laboratory agent's analysis
-    findings = await laboratory.act(lab_input)
+    # Get laboratory agent's analysis stream
+    token_stream = laboratory.act_stream(lab_input)
     
-    # Capture as trace
-    await exaid.received_trace(laboratory.agent_id, findings)
+    # Collect tokens while streaming to EXAID
+    collected = []
+    async def wrapper():
+        async for token in token_stream:
+            collected.append(token)
+            yield token
+    
+    # Process streamed tokens through EXAID
+    await exaid.received_streamed_tokens(laboratory.agent_id, wrapper())
+    
+    # Build full findings from collected tokens
+    findings = "".join(collected)
     
     return {
         "laboratory_findings": findings
@@ -81,11 +91,21 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
         "Provide cardiac assessment and recommendations."
     )
     
-    # Get cardiology agent's analysis
-    findings = await cardiology.act(cardio_input)
+    # Get cardiology agent's analysis stream
+    token_stream = cardiology.act_stream(cardio_input)
     
-    # Capture as trace
-    await exaid.received_trace(cardiology.agent_id, findings)
+    # Collect tokens while streaming to EXAID
+    collected = []
+    async def wrapper():
+        async for token in token_stream:
+            collected.append(token)
+            yield token
+    
+    # Process streamed tokens through EXAID
+    await exaid.received_streamed_tokens(cardiology.agent_id, wrapper())
+    
+    # Build full findings from collected tokens
+    findings = "".join(collected)
     
     return {
         "cardiology_findings": findings
@@ -136,11 +156,21 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
         "- Follow-up plan"
     )
     
-    # Get synthesis
-    synthesis = await orchestrator.act(synthesis_input)
+    # Get synthesis stream
+    token_stream = orchestrator.act_stream(synthesis_input)
     
-    # Capture as trace
-    await exaid.received_trace(orchestrator.agent_id, synthesis)
+    # Collect tokens while streaming to EXAID
+    collected = []
+    async def wrapper():
+        async for token in token_stream:
+            collected.append(token)
+            yield token
+    
+    # Process streamed tokens through EXAID
+    await exaid.received_streamed_tokens(orchestrator.agent_id, wrapper())
+    
+    # Build full synthesis from collected tokens
+    synthesis = "".join(collected)
     
     return {
         "final_synthesis": synthesis
