@@ -3,7 +3,6 @@ from llm import llm
 from pydantic import BaseModel
 
 class TraceData(BaseModel):
-    trace_text: list[str]
     count: int
 
 class BufferAgent:
@@ -28,7 +27,7 @@ class BufferAgent:
     async def addchunk(self, agent_id: str, chunk: str) -> bool:
         tagged_chunk = f"| {agent_id} | {chunk}"
         if agent_id not in self.traces:
-            self.traces[agent_id] = TraceData(trace_text=[], count=0)
+            self.traces[agent_id] = TraceData(count=0)
         self.traces[agent_id].count += 1
         
         # Check if buffer was empty before adding this chunk
@@ -54,4 +53,4 @@ class BufferAgent:
         return flushed
         
     def get_trace_count(self, agent_id: str) -> int:
-        return self.traces.get(agent_id, TraceData(trace_text=[], count=0)).count
+        return self.traces.get(agent_id, TraceData(count=0)).count
