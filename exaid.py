@@ -36,6 +36,7 @@ class EXAID:
         return self.buffer_agent.get_trace_count(agent_id)
 
     def _format_summary_for_history(self, summary: AgentSummary) -> str:
+        """Converts an AgentSummary to a string representation for use in history."""
         agents_str = ", ".join(summary.agents)
         parts = [f"Agents: {agents_str}", f"Action: {summary.action}", f"Reasoning: {summary.reasoning}"]
         if summary.findings:
