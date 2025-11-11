@@ -23,8 +23,8 @@ class TokenGate:
             min_tokens: Minimum token threshold before flushing (default: 35)
             max_tokens: Maximum token cap to force flush (default: 90)
             boundary_cues: Punctuation/newline characters that trigger early flush (default: ".?!\n")
-            silence_timer: Seconds of inactivity before flush (default: 1.75)
-            max_wait_timeout: Maximum seconds before forced flush (default: 4.5)
+            silence_timer: Seconds of inactivity before flush (default: 15)
+            max_wait_timeout: Maximum seconds before forced flush (default: 40)
         """
         self.min_tokens = min_tokens
         self.max_tokens = max_tokens
