@@ -46,6 +46,7 @@ class EXAID:
         return " | ".join(parts)
     
     def _format_summaries_history(self, summaries: list[AgentSummary]) -> list[str]:
+        """Converts a list of AgentSummary objects to string representations for prompt history."""
         return [self._format_summary_for_history(s) for s in summaries]
 
     async def received_trace(self, id: str, text: str) -> Optional[AgentSummary]:
