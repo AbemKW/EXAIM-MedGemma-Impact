@@ -146,10 +146,6 @@ async def received_trace(self, id: str, text: str) -> Optional[AgentSummary]:
     return None
 ```
 
-#### `latest_summary() -> Union[AgentSummary, str]`
-
-Returns the most recent summary as an `AgentSummary` object, or a string message if no summaries exist yet.
-
 #### `get_all_summaries() -> list[AgentSummary]`
 
 Returns all summaries as a list of `AgentSummary` objects.
@@ -158,9 +154,23 @@ Returns all summaries as a list of `AgentSummary` objects.
 
 Filters summaries to return only those involving a specific agent ID.
 
-#### `get_summary_json(summary: Optional[AgentSummary] = None) -> Optional[str]`
+#### `get_agent_trace_count(agent_id: str) -> int`
 
-Converts a summary to JSON format. If no summary is provided, returns the latest summary as JSON.
+Returns the total number of traces received from a specific agent.
+
+#### `async received_streamed_tokens(agent_id: str, token_generator: AsyncIterator[str]) -> Optional[AgentSummary]`
+
+Processes streaming tokens from an agent using TokenGate for intelligent chunking. This method:
+1. Receives tokens from an async iterator
+2. Uses TokenGate to accumulate tokens into meaningful chunks
+3. Processes chunks through BufferAgent when ready
+4. Returns the last summary generated, if any
+
+**Parameters**:
+- `agent_id` (str): Agent identifier
+- `token_generator` (AsyncIterator[str]): Async iterator yielding token strings
+
+**Returns**: Last `AgentSummary` generated, or `None` if no summary was triggered
 
 **Helper Methods**:
 
@@ -177,7 +187,6 @@ Converts a summary to JSON format. If no summary is provided, returns the latest
 
 ```python
 class TraceData(BaseModel):
-    trace_text: List[str]
     count: int
 
 class BufferAgent:
@@ -195,9 +204,9 @@ Adds a trace chunk to the buffer and determines if summarization should be trigg
 
 **Process**:
 1. Tags the chunk with agent ID: `| {agent_id} | {chunk}`
-2. Records the trace with timestamp and metadata in `traces` dictionary
-3. If this is the first trace, always triggers summarization
-4. Otherwise, uses an LLM prompt to evaluate if summarization should trigger
+2. Records the trace count in `traces` dictionary
+3. Adds the tagged chunk to the buffer
+4. Uses an LLM prompt to evaluate if summarization should trigger (even for first trace)
 5. Returns `True` if summarization should be triggered, `False` otherwise
 
 **LLM Trigger Logic**:
@@ -211,34 +220,25 @@ The buffer uses a prompt that asks the LLM to reply with "YES" or "NO" based on:
 ```python
 async def addchunk(self, agent_id: str, chunk: str) -> bool:
     tagged_chunk = f"| {agent_id} | {chunk}"
-
-    # Add the new chunk to the traces
     if agent_id not in self.traces:
-        self.traces[agent_id] = TraceData(trace_text=[], count=0)
+        self.traces[agent_id] = TraceData(count=0)
     self.traces[agent_id].count += 1
-    trace_text = f"| Timestamp: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} | Trace Length: {len(chunk)} | {chunk}"
-    self.traces[agent_id].trace_text.append(trace_text)
     
-    # If this is the first trace, always trigger
-    if not self.buffer:
-        self.buffer.append(tagged_chunk)
-        return True
+    # Check if buffer was empty before adding this chunk
+    was_empty = not self.buffer
     
-    # Get previous traces (before adding the new one)
-    previous_traces = "\n".join(self.buffer)
-    
-    # Add the new chunk to buffer
+    # Always add the chunk to buffer
     self.buffer.append(tagged_chunk)
-
-    flag_chain = self.flag_prompt | llm
+    
+    # Always call the LLM to decide if summarization should be triggered
+    previous_traces = "\n".join(self.buffer[:-1]) if not was_empty else ""
+    
+    flag_chain = self.flag_prompt | self.llm
     flag_response = await flag_chain.ainvoke({
-        "previous_trace": previous_traces,
+        "previous_trace": previous_traces if previous_traces else "(No previous traces - this is the first trace)",
         "new_trace": tagged_chunk
     })
-    # Extract text content from AIMessage object
-    response_text = flag_response.content.strip().upper()
-
-    return "YES" in response_text
+    return "YES" in flag_response.content.strip().upper()
 ```
 
 #### `peek() -> list[str]`
@@ -252,10 +252,6 @@ Returns a copy of the buffer and clears it. Called after summarization is trigge
 #### `get_trace_count(agent_id: str) -> int`
 
 Returns the total number of traces received from a specific agent.
-
-#### `get_traces(agent_id: str) -> List[str]`
-
-Returns all trace texts for a specific agent.
 
 **Prompt Template**:
 ```python
@@ -414,73 +410,180 @@ class AgentSummary(BaseModel):
 
 ---
 
+### `agents/token_gate.py` - Token Streaming Pre-Buffer
+
+**Purpose**: A lightweight, syntax-aware pre-buffer that regulates token flow into BufferAgent for streaming scenarios. It does not interpret meaning - it only decides when enough structure has accumulated to pass tokens upstream for semantic evaluation.
+
+**Key Components**:
+
+```python
+class TokenGate:
+    def __init__(
+        self,
+        min_tokens: int = 35,
+        max_tokens: int = 90,
+        boundary_cues: str = ".?!\n",
+        silence_timer: float = 15,
+        max_wait_timeout: float = 40
+    ):
+```
+
+**Core Methods**:
+
+#### `async add_token(agent_id: str, token: str) -> Optional[str]`
+
+Adds a token to the buffer for the given agent. If flush conditions are met, returns the buffered text and clears the buffer.
+
+**Flush Conditions**:
+- Maximum token cap reached (`max_tokens`)
+- Minimum token threshold reached (`min_tokens`) AND boundary cue detected
+- Silence timer expired (no tokens received for `silence_timer` seconds)
+- Max wait timeout expired (buffer has existed for `max_wait_timeout` seconds)
+
+**Returns**: Flushed chunk text if flush triggered, `None` otherwise
+
+#### `async flush(agent_id: str) -> Optional[str]`
+
+Force flush the buffer for the given agent.
+
+**Returns**: Flushed buffer text, or `None` if buffer is empty
+
+#### `async check_timers(agent_id: str) -> Optional[str]`
+
+Check if timers have expired and flush if needed. Should be called periodically or after async operations.
+
+**Returns**: Flushed chunk if timer expired, `None` otherwise
+
+**Features**:
+- Per-agent token buffering
+- Configurable token thresholds
+- Boundary cue detection (punctuation, newlines)
+- Timeout mechanisms (silence timer, max wait timeout)
+- Approximate token counting using whitespace-based splitting
+
+---
+
 ### `llm.py` - LLM Client Configuration
 
 **Purpose**: Centralized configuration for the LLM client used throughout EXAID.
 
 **Code**:
 ```python
+import os
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
+load_dotenv()
+
 llm = ChatOpenAI(
-    model="qwen/qwen3-4b-2507",
-    base_url="https://ed7a5a297b8b.ngrok-free.app/v1",
-    api_key="dummykey"
+    model=os.getenv("LLM_MODEL", "gemini-2.5-flash"),
+    base_url=os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
+    api_key=os.getenv("LLM_API_KEY")
 )
 ```
 
 **Configuration**:
 - Uses LangChain's `ChatOpenAI` for OpenAI-compatible API endpoints
-- Currently configured for a custom endpoint (ngrok tunnel)
+- Supports environment variables for configuration (`.env` file)
+- Default configuration uses Google Gemini API endpoint
 - Can be easily modified to use OpenAI, Anthropic, or other providers
+
+**Environment Variables**:
+- `LLM_MODEL`: Model name (default: "gemini-2.5-flash")
+- `LLM_BASE_URL`: API endpoint URL
+- `LLM_API_KEY`: API key for authentication
 
 **Usage**: Imported by:
 - `BufferAgent` for trigger decisions
 - `SummarizerAgent` for summary generation
 
-**Note**: Update this file with your actual API credentials and endpoint. For production use, consider using environment variables for sensitive information.
+**Note**: For production use, use environment variables for sensitive information. Create a `.env` file in the project root.
 
 ---
 
-### `demo.py` - Example Usage
+### `cdss_demo/` - Clinical Decision Support System Demo
 
-**Purpose**: Demonstrates EXAID usage with a complete medical case workflow.
+**Purpose**: Complete demonstration of EXAID integrated with a multi-agent clinical decision support system using LangGraph for workflow orchestration.
+
+#### `cdss_demo/cdss.py` - CDSS Orchestrator
+
+**Purpose**: Orchestrates the clinical decision support system workflow using LangGraph.
+
+**Key Components**:
+
+```python
+class CDSS:
+    def __init__(self):
+        self.exaid = EXAID()
+        self.orchestrator = OrchestratorAgent()
+        self.cardiology = CardiologyAgent()
+        self.laboratory = LaboratoryAgent()
+        self.graph = build_cdss_graph()
+```
+
+**Core Methods**:
+
+#### `async process_case(case: Union[ClinicalCase, str], use_streaming: bool = True) -> dict`
+
+Processes a clinical case through the multi-agent system using LangGraph.
+
+**Parameters**:
+- `case`: ClinicalCase object or free-text case description
+- `use_streaming`: Whether to use streaming token processing (currently ignored as LangGraph doesn't support streaming)
+
+**Returns**: Dictionary containing:
+- `case_summary`: Case text summary
+- `agent_summaries`: List of all summaries generated
+- `final_recommendation`: Final summary with recommendations
+- `trace_count`: Trace counts per agent
+- `agents_called`: Which agents were invoked
+
+#### `get_all_summaries() -> list[AgentSummary]`
+
+Get all summaries from EXAID.
+
+#### `get_summaries_by_agent(agent_id: str) -> list[AgentSummary]`
+
+Get summaries for a specific agent.
+
+#### `reset()`
+
+Reset the CDSS system (creates new EXAID instance).
+
+#### `cdss_demo/demo_cdss.py` - Example Clinical Cases
+
+**Purpose**: Demonstrates CDSS usage with complete clinical case workflows.
 
 **Features**:
-- Simulates traces from multiple specialized agents
-- Shows complete diagnostic workflow from initial case to treatment planning
+- Multiple clinical case scenarios (chest pain, fever, etc.)
+- Complete diagnostic workflow from initial case to treatment planning
 - Formats summaries for clean console display
-
-**Code Snippet**:
-```python
-async def main():
-    exaid = EXAID()
-    # Simulate traces from two agents
-    traces = [
-        ("Orchestrator", "Patient case received: 62F, 6-week history of fatigue..."),
-        ("InfectiousDiseaseAgent", "Considering subacute infections..."),
-        ("HematologyAgent", "Constitutional B symptoms raise concern..."),
-        # ... more traces
-    ]
-
-    for agent_id, text in traces:
-        summary = await exaid.received_trace(agent_id, text)
-        if summary:
-            print(f"\n{'='*60}")
-            print(f"Summary Update")
-            print(f"{'='*60}")
-            print(format_summary_display(summary))
-            print()
-```
+- Shows integration with LangGraph workflow
 
 **Example Output Format**:
 ```
-┌─ Agents: Orchestrator, InfectiousDiseaseAgent, HematologyAgent
+┌─ Agents: Orchestrator, CardiologyAgent, LaboratoryAgent
 ├─ Action: Initial diagnostic hypothesis generation
-├─ Reasoning: Multiple agents evaluating constitutional symptoms
-├─ Findings: B symptoms suggest lymphoproliferative disorders
-└─ Next Steps: Order CBC, LDH, peripheral smear, CT imaging
+├─ Reasoning: Multiple agents evaluating clinical presentation
+├─ Findings: Elevated troponin suggests acute coronary syndrome
+└─ Next Steps: Order ECG, cardiac enzymes, chest X-ray
 ```
+
+#### `cdss_demo/agents/` - Specialized Medical Agents
+
+**Purpose**: Specialized agents for clinical decision support.
+
+- **OrchestratorAgent**: Coordinates case analysis and agent invocation
+- **CardiologyAgent**: Provides cardiology-specific analysis
+- **LaboratoryAgent**: Analyzes laboratory results and findings
+
+#### `cdss_demo/graph/` - LangGraph Workflow
+
+**Purpose**: Defines the LangGraph workflow for multi-agent clinical reasoning.
+
+- **cdss_graph.py**: Main graph builder
+- **nodes.py**: Graph node implementations
+- **edges.py**: Edge conditions and routing logic
 
 ---
 
@@ -494,7 +597,9 @@ langchain>=0.3.0
 langchain-community>=0.3.0
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
+langgraph>=0.2.0
 pydantic>=2.0.0
+python-dotenv>=1.0.0
 ```
 
 **Dependencies**:
@@ -502,7 +607,9 @@ pydantic>=2.0.0
 - **langchain-community**: Community integrations
 - **langchain-core**: Core LangChain abstractions
 - **langchain-openai**: OpenAI integration for ChatOpenAI
+- **langgraph**: LangGraph for workflow orchestration (used in CDSS demo)
 - **pydantic**: Data validation and structured output
+- **python-dotenv**: Environment variable management
 
 ---
 
@@ -526,7 +633,6 @@ Trace metadata stored by BufferAgent:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `trace_text` | `List[str]` | List of trace text strings with timestamps |
 | `count` | `int` | Total number of traces from this agent |
 
 ---
@@ -644,14 +750,15 @@ Get the total number of traces received from an agent.
 
 **Returns**: Trace count (int)
 
-#### `get_summary_json(summary: Optional[AgentSummary] = None) -> Optional[str]`
+#### `async received_streamed_tokens(agent_id: str, token_generator: AsyncIterator[str]) -> Optional[AgentSummary]`
 
-Get summary as JSON string.
+Process streaming tokens from an agent using TokenGate for intelligent chunking.
 
 **Parameters**:
-- `summary` (Optional[AgentSummary]): Summary to convert (defaults to latest)
+- `agent_id` (str): Agent identifier
+- `token_generator` (AsyncIterator[str]): Async iterator yielding token strings
 
-**Returns**: JSON string or `None`
+**Returns**: Last `AgentSummary` generated, or `None` if no summary was triggered
 
 ### BufferAgent Class
 
@@ -686,14 +793,35 @@ Get trace count for an agent.
 
 **Returns**: Trace count (int)
 
-#### `get_traces(agent_id: str) -> List[str]`
+### TokenGate Class
 
-Get all traces for an agent.
+#### `async add_token(agent_id: str, token: str) -> Optional[str]`
+
+Add a token to the buffer for the given agent.
+
+**Parameters**:
+- `agent_id` (str): Agent identifier
+- `token` (str): Token string to add
+
+**Returns**: Flushed chunk text if flush triggered, `None` otherwise
+
+#### `async flush(agent_id: str) -> Optional[str]`
+
+Force flush the buffer for the given agent.
 
 **Parameters**:
 - `agent_id` (str): Agent identifier
 
-**Returns**: List of trace strings
+**Returns**: Flushed buffer text, or `None` if buffer is empty
+
+#### `async check_timers(agent_id: str) -> Optional[str]`
+
+Check if timers have expired and flush if needed.
+
+**Parameters**:
+- `agent_id` (str): Agent identifier
+
+**Returns**: Flushed chunk if timer expired, `None` otherwise
 
 ### SummarizerAgent Class
 
@@ -714,38 +842,38 @@ Generate a structured summary from buffered traces.
 
 ### LLM Configuration
 
-Configure the LLM client in `llm.py`:
+Configure the LLM client using environment variables (recommended):
+
+Create a `.env` file in the project root:
+
+```bash
+LLM_MODEL=your-model-name
+LLM_BASE_URL=https://your-api-endpoint.com/v1
+LLM_API_KEY=your-api-key
+```
+
+Alternatively, configure directly in `llm.py`:
 
 ```python
+import os
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
+load_dotenv()
+
 llm = ChatOpenAI(
-    model="your-model-name",
-    base_url="https://your-api-endpoint.com/v1",
-    api_key="your-api-key"
+    model=os.getenv("LLM_MODEL", "your-model-name"),
+    base_url=os.getenv("LLM_BASE_URL", "https://your-api-endpoint.com/v1"),
+    api_key=os.getenv("LLM_API_KEY")
 )
 ```
 
 **Supported Providers**:
 - OpenAI (via `base_url="https://api.openai.com/v1"`)
-- Anthropic (via `ChatAnthropic`)
+- Google Gemini (via `base_url="https://generativelanguage.googleapis.com/v1beta/openai/"`)
+- Anthropic (via `ChatAnthropic` from `langchain_anthropic`)
 - Custom OpenAI-compatible endpoints
 - Local models via compatible APIs
-
-### Environment Variables (Recommended)
-
-For production use, consider using environment variables:
-
-```python
-import os
-from langchain_openai import ChatOpenAI
-
-llm = ChatOpenAI(
-    model=os.getenv("LLM_MODEL", "default-model"),
-    base_url=os.getenv("LLM_BASE_URL"),
-    api_key=os.getenv("LLM_API_KEY")
-)
-```
 
 
 ---
@@ -797,33 +925,63 @@ async def main():
 asyncio.run(main())
 ```
 
-### Example 3: Exporting Data
+### Example 3: Streaming Tokens
 
 ```python
 import asyncio
-import json
 from exaid import EXAID
+
+async def token_stream():
+    """Simulate a token stream"""
+    tokens = ["Patient", " presents", " with", " chest", " pain", ".", " ", "History", " of", " hypertension", "."]
+    for token in tokens:
+        yield token
+        await asyncio.sleep(0.1)  # Simulate streaming delay
 
 async def main():
     exaid = EXAID()
     
-    # Process traces
-    await exaid.received_trace("Agent1", "Trace 1")
-    summary = await exaid.received_trace("Agent2", "Trace 2")
+    # Process streaming tokens
+    summary = await exaid.received_streamed_tokens("DoctorAgent", token_stream())
     
     if summary:
-        # Export summary as JSON
-        summary_json = exaid.get_summary_json(summary)
-        print("Summary JSON:", summary_json)
-        
-        # Save to file
-        with open("summary.json", "w") as f:
-            f.write(summary_json)
+        print(f"Action: {summary.action}")
+        print(f"Reasoning: {summary.reasoning}")
 
 asyncio.run(main())
 ```
 
-### Example 4: Querying History
+### Example 4: CDSS Integration
+
+```python
+import asyncio
+from cdss_demo.cdss import CDSS
+from cdss_demo.schema.clinical_case import ClinicalCase
+
+async def main():
+    cdss = CDSS()
+    
+    # Create a clinical case
+    case = ClinicalCase(
+        patient_id="PAT-001",
+        age=58,
+        sex="M",
+        chief_complaint="Chest pain and shortness of breath",
+        history_of_present_illness="6-hour history of substernal chest pain..."
+    )
+    
+    # Process the case
+    result = await cdss.process_case(case)
+    
+    # Access results
+    print(f"Final recommendation: {result['final_recommendation']['action']}")
+    print(f"Agents called: {result['agents_called']}")
+    print(f"Total summaries: {len(result['agent_summaries'])}")
+
+asyncio.run(main())
+```
+
+### Example 5: Querying History
 
 ```python
 import asyncio
@@ -890,6 +1048,10 @@ Potential improvements and extensions:
 6. **Performance Optimization**: Caching, batching, and parallel processing
 7. **Monitoring and Metrics**: Summary quality metrics and dashboards
 8. **Integration Hooks**: Webhooks and API endpoints for external integration
+9. **Enhanced TokenGate**: More sophisticated tokenization and boundary detection
+10. **LangGraph Streaming**: Full streaming support for LangGraph workflows
+11. **Summary Export Formats**: Additional export formats (CSV, XML, etc.)
+12. **Agent Registry**: Centralized agent registration and management system
 
 ---
 
