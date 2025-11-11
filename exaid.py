@@ -50,6 +50,13 @@ class EXAID:
         return [self._format_summary_for_history(s) for s in summaries]
 
     async def received_trace(self, id: str, text: str) -> Optional[AgentSummary]:
+        """
+        Processes a trace for the given agent ID and text, triggering summarization if appropriate.
+
+        Returns:
+            AgentSummary: if summarization was triggered.
+            None: otherwise.
+        """
         trigger = await self.buffer_agent.addchunk(id, text)
         if trigger:
             agent_buffer = self.buffer_agent.flush()
