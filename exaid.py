@@ -29,6 +29,7 @@ class EXAID:
         return self.summaries
 
     def get_summaries_by_agent(self, agent_id: str) -> list[AgentSummary]:
+        """Get all summaries involving a specific agent."""
         return [s for s in self.summaries if agent_id in s.agents]
 
     def get_agent_trace_count(self, agent_id: str) -> int:
