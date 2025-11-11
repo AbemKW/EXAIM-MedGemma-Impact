@@ -1,8 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate
 from schema.agent_summary import AgentSummary
-from typing import List, Optional
+from typing import List
 from llm import llm
-
 
 class SummarizerAgent:
     def __init__(self):
@@ -16,37 +15,14 @@ class SummarizerAgent:
             "Identify all agents mentioned in the buffer. "
             "CRITICAL: Strictly enforce character limits - action: MAX 100 chars, reasoning: MAX 200 chars, findings: MAX 150 chars, next_steps: MAX 100 chars. "
             "If content exceeds limits, prioritize the most essential information and truncate."),
-            ("user", "Summary history:\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n{fidelity_feedback}\n\nExtract structured summary of new agent actions and reasoning."),
+            ("user", "Summary history:\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning."),
         ])
 
-    async def summarize(
-        self, 
-        summary_history: List[str], 
-        latest_summary: str, 
-        new_buffer: str,
-        fidelity_feedback: Optional[str] = None
-    ) -> AgentSummary:
-        """Updates the summary given the summary history (as a list), latest summary, and new reasoning buffer.
-        
-        Args:
-            summary_history: List of previous summary strings
-            latest_summary: Latest summary string
-            new_buffer: New reasoning buffer content
-            fidelity_feedback: Optional feedback from fidelity agent about issues to address
-            
-        Returns:
-            A structured AgentSummary object
-        """
+    async def summarize(self, summary_history: List[str], latest_summary: str, new_buffer: str) -> AgentSummary:
         summarize_chain = self.summarize_prompt | self.llm
-        
-        feedback_text = ""
-        if fidelity_feedback:
-            feedback_text = f"\n\nIMPORTANT: Previous summary had fidelity issues that must be addressed:\n{fidelity_feedback}\n\nPlease generate an improved summary that addresses these concerns while maintaining character limits."
-        
         summary = await summarize_chain.ainvoke({
             "summary_history": ",\n".join(summary_history),
             "latest_summary": latest_summary,
-            "new_buffer": new_buffer,
-            "fidelity_feedback": feedback_text
+            "new_buffer": new_buffer
         })
         return summary

@@ -1,7 +1,11 @@
+import os
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
+load_dotenv()
+
 llm = ChatOpenAI(
-    model="qwen/qwen3-4b-2507",
-    base_url="https://ed7a5a297b8b.ngrok-free.app/v1",
-    api_key="dummykey"
+    model=os.getenv("LLM_MODEL", "gemini-2.5-flash"),
+    base_url=os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
+    api_key=os.getenv("LLM_API_KEY")
 )

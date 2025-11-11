@@ -1,22 +1,11 @@
-from datetime import datetime, UTC
-from typing import List
 from langchain_core.prompts import ChatPromptTemplate
 from llm import llm
-import queue
 from pydantic import BaseModel
 
 class TraceData(BaseModel):
-    trace_text: List[str]
     count: int
 
 class BufferAgent:
-    """A tiny buffer that stores chunks per-agent.
-
-    When a given agent's accumulated chunks reach `chunk_threshold`, the
-    `on_full_callback` is invoked with two arguments: (agent_id, combined_text),
-    and that agent's buffer is reset.
-    """
-
     def __init__(self):
         self.buffer: list[str] = []
         self.llm = llm
@@ -35,40 +24,28 @@ class BufferAgent:
         ])
         self.traces: dict[str, TraceData] = {}
 
-    async def addchunk(self, agent_id: str, chunk: str) :
-
+    async def addchunk(self, agent_id: str, chunk: str) -> bool:
         tagged_chunk = f"| {agent_id} | {chunk}"
-
-        # Add the new chunk to the traces
         if agent_id not in self.traces:
-            self.traces[agent_id] = TraceData(trace_text=[], count=0)
+            self.traces[agent_id] = TraceData(count=0)
         self.traces[agent_id].count += 1
-        trace_text = f"| Timestamp: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} | Trace Length: {len(chunk)} | {chunk}"
-        self.traces[agent_id].trace_text.append(trace_text)
         
-        # If this is the first trace, always trigger
-        if not self.buffer:
-            self.buffer.append(tagged_chunk)
-            return True
-        # Get previous traces (before adding the new one)
-        previous_traces = "\n".join(self.buffer)
+        # Check if buffer was empty before adding this chunk
+        was_empty = not self.buffer
         
-        # Add the new chunk to buffer
+        # Always add the chunk to buffer
         self.buffer.append(tagged_chunk)
-
-        flag_chain = self.flag_prompt | llm
+        
+        # Always call the LLM to decide if summarization should be triggered
+        # Use empty string for previous_trace if buffer was empty before adding this chunk
+        previous_traces = "\n".join(self.buffer[:-1]) if not was_empty else ""
+        
+        flag_chain = self.flag_prompt | self.llm
         flag_response = await flag_chain.ainvoke({
-            "previous_trace": previous_traces,
+            "previous_trace": previous_traces if previous_traces else "(No previous traces - this is the first trace)",
             "new_trace": tagged_chunk
         })
-        # Extract text content from AIMessage object
-        response_text = flag_response.content.strip().upper()
-
-        return "YES" in response_text
-    
-    def peek(self) -> list[str]:
-        """Get a copy of the current buffer without flushing it."""
-        return self.buffer.copy()
+        return "YES" in flag_response.content.strip().upper()
     
     def flush(self) -> list[str]:
         flushed = self.buffer.copy()
@@ -76,7 +53,4 @@ class BufferAgent:
         return flushed
         
     def get_trace_count(self, agent_id: str) -> int:
-        return self.traces.get(agent_id, TraceData(trace_text=[], count=0)).count
-    
-    def get_traces(self, agent_id: str) -> List[str]:
-        return self.traces.get(agent_id, TraceData(trace_text=[], count=0)).trace_text
+        return self.traces.get(agent_id, TraceData(count=0)).count
