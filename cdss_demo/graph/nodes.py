@@ -11,6 +11,7 @@ from cdss_demo.schema.graph_state import CDSSGraphState
 from cdss_demo.agents.orchestrator_agent import OrchestratorAgent, AgentDecision
 from cdss_demo.agents.laboratory_agent import LaboratoryAgent
 from cdss_demo.agents.cardiology_agent import CardiologyAgent
+from cdss_demo.constants import LABORATORY_AGENT, CARDIOLOGY_AGENT, SYNTHESIS_ACTION
 
 
 async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
@@ -38,7 +39,7 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
             await exaid.received_trace(orchestrator.agent_id, decision_text)
             return {
                 "consultation_request": None,  # Clear the request
-                "agents_to_call": {"synthesis": True}
+                "agents_to_call": {SYNTHESIS_ACTION: True}
             }
         else:
             # Honor the consultation request
@@ -63,14 +64,14 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     if laboratory_done or cardiology_done:
         # Determine which agents still need to be called
         agents_to_call = {}
-        if not laboratory_done and ("laboratory" not in consulted_agents):
-            agents_to_call["laboratory"] = True
-        if not cardiology_done and ("cardiology" not in consulted_agents):
-            agents_to_call["cardiology"] = True
+        if not laboratory_done and (LABORATORY_AGENT not in consulted_agents):
+            agents_to_call[LABORATORY_AGENT] = True
+        if not cardiology_done and (CARDIOLOGY_AGENT not in consulted_agents):
+            agents_to_call[CARDIOLOGY_AGENT] = True
         # If no agents left to call, route to synthesis
         if not agents_to_call:
             return {
-                "agents_to_call": {"synthesis": True},
+                "agents_to_call": {SYNTHESIS_ACTION: True},
                 "consulted_agents": consulted_agents
             }
         else:
@@ -94,8 +95,8 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     return {
         "orchestrator_analysis": decision_text,
         "agents_to_call": {
-            "laboratory": decision.call_laboratory,
-            "cardiology": decision.call_cardiology
+            LABORATORY_AGENT: decision.call_laboratory,
+            CARDIOLOGY_AGENT: decision.call_cardiology
         },
         "consulted_agents": consulted_agents
     }
@@ -135,7 +136,7 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
     consultation_request = await laboratory.decide_consultation(findings, consulted_agents)
     
     # Update consulted_agents to include laboratory
-    updated_consulted_agents = consulted_agents + ["laboratory"]
+    updated_consulted_agents = consulted_agents + [LABORATORY_AGENT]
     
     return {
         "laboratory_findings": findings,
@@ -182,7 +183,7 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     consultation_request = await cardiology.decide_consultation(findings, consulted_agents)
     
     # Update consulted_agents to include cardiology
-    updated_consulted_agents = consulted_agents + ["cardiology"]
+    updated_consulted_agents = consulted_agents + [CARDIOLOGY_AGENT]
     
     return {
         "cardiology_findings": findings,

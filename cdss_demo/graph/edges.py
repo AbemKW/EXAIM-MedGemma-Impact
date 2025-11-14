@@ -1,5 +1,6 @@
 from typing import Literal
 from cdss_demo.schema.graph_state import CDSSGraphState
+from cdss_demo.constants import LABORATORY_AGENT, CARDIOLOGY_AGENT, SYNTHESIS_ACTION
 
 
 def route_to_orchestrator(state: CDSSGraphState) -> Literal["orchestrator"]:
@@ -12,17 +13,17 @@ def evaluate_orchestrator_routing(state: CDSSGraphState) -> Literal["laboratory"
     agents_to_call = state.get("agents_to_call")
     
     # Check if synthesis was explicitly requested
-    if agents_to_call and agents_to_call.get("synthesis", False):
+    if agents_to_call and agents_to_call.get(SYNTHESIS_ACTION, False):
         return "synthesis"
     
     # The orchestrator_node sets agents_to_call based on consultation_request evaluation
     
     # Route to laboratory if requested
-    if agents_to_call and agents_to_call.get("laboratory", False):
+    if agents_to_call and agents_to_call.get(LABORATORY_AGENT, False):
         return "laboratory"
     
     # Route to cardiology if requested
-    if agents_to_call and agents_to_call.get("cardiology", False):
+    if agents_to_call and agents_to_call.get(CARDIOLOGY_AGENT, False):
         return "cardiology"
     
     # Default to synthesis if no agents to call
@@ -39,7 +40,7 @@ def should_call_cardiology(state: CDSSGraphState) -> Literal["cardiology", "synt
     """Route to cardiology node if needed, otherwise go to synthesis"""
     agents_to_call = state.get("agents_to_call")
     
-    if agents_to_call and agents_to_call.get("cardiology", False):
+    if agents_to_call and agents_to_call.get(CARDIOLOGY_AGENT, False):
         return "cardiology"
     
     # Cardiology not needed, go to synthesis
