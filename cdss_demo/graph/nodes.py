@@ -14,12 +14,41 @@ from cdss_demo.agents.cardiology_agent import CardiologyAgent
 
 
 async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Orchestrator node: analyzes case and decides which agents to call"""
+    """Orchestrator node: analyzes case and decides which agents to call, or evaluates consultation requests"""
     orchestrator = OrchestratorAgent()
     exaid = state["exaid"]
     case_text = state["case_text"]
+    consultation_request = state.get("consultation_request")
+    consulted_agents = state.get("consulted_agents") or set()
     
-    # Get decision on which agents to call
+    # Consultation evaluation mode: Check if a reasoning agent requested consultation
+    if consultation_request:
+        # Check if requested agent has already been consulted (loop prevention)
+        if consultation_request in consulted_agents:
+            # Already consulted, route to synthesis
+            decision_text = (
+                f"Consultation request for {consultation_request} received, but this agent "
+                f"has already been consulted. Routing to synthesis to prevent loop."
+            )
+            await exaid.received_trace(orchestrator.agent_id, decision_text)
+            return {
+                "consultation_request": None,  # Clear the request
+                "agents_to_call": {"synthesis": True}
+            }
+        else:
+            # Honor the consultation request
+            decision_text = (
+                f"Honoring consultation request for {consultation_request} agent. "
+                f"This agent will be consulted to provide additional expertise."
+            )
+            await exaid.received_trace(orchestrator.agent_id, decision_text)
+            return {
+                "consultation_request": None,  # Clear the request after honoring
+                "agents_to_call": {consultation_request: True},
+                "consulted_agents": consulted_agents | {consultation_request}
+            }
+    
+    # Initial analysis mode: Perform initial case analysis
     decision: AgentDecision = await orchestrator.analyze_and_decide(case_text)
     
     # Capture orchestrator's analysis/decision as trace
@@ -31,17 +60,22 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     )
     await exaid.received_trace(orchestrator.agent_id, decision_text)
     
+    # Initialize consulted_agents if not present (agents will add themselves when they complete)
+    if consulted_agents is None:
+        consulted_agents = set()
+    
     return {
         "orchestrator_analysis": decision_text,
         "agents_to_call": {
             "laboratory": decision.call_laboratory,
             "cardiology": decision.call_cardiology
-        }
+        },
+        "consulted_agents": consulted_agents
     }
 
 
 async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Laboratory node: analyzes laboratory results"""
+    """Laboratory node: analyzes laboratory results and decides if consultation is needed"""
     laboratory = LaboratoryAgent()
     exaid = state["exaid"]
     case_text = state["case_text"]
@@ -69,13 +103,22 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Build full findings from collected tokens
     findings = "".join(collected)
     
+    # Decide if consultation is needed
+    consulted_agents = state.get("consulted_agents") or set()
+    consultation_request = await laboratory.decide_consultation(findings, consulted_agents)
+    
+    # Update consulted_agents to include laboratory
+    updated_consulted_agents = consulted_agents | {"laboratory"}
+    
     return {
-        "laboratory_findings": findings
+        "laboratory_findings": findings,
+        "consultation_request": consultation_request,
+        "consulted_agents": updated_consulted_agents
     }
 
 
 async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Cardiology node: assesses cardiac aspects"""
+    """Cardiology node: assesses cardiac aspects and decides if consultation is needed"""
     cardiology = CardiologyAgent()
     exaid = state["exaid"]
     case_text = state["case_text"]
@@ -107,8 +150,17 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Build full findings from collected tokens
     findings = "".join(collected)
     
+    # Decide if consultation is needed
+    consulted_agents = state.get("consulted_agents") or set()
+    consultation_request = await cardiology.decide_consultation(findings, consulted_agents)
+    
+    # Update consulted_agents to include cardiology
+    updated_consulted_agents = consulted_agents | {"cardiology"}
+    
     return {
-        "cardiology_findings": findings
+        "cardiology_findings": findings,
+        "consultation_request": consultation_request,
+        "consulted_agents": updated_consulted_agents
     }
 
 
