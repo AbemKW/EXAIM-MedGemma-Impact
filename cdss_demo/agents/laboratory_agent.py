@@ -1,7 +1,8 @@
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 from langchain_core.prompts import ChatPromptTemplate
 from agents.base_agent import BaseAgent
 from llm import llm
+from cdss_demo.constants import CARDIOLOGY_AGENT
 
 
 class LaboratoryAgent(BaseAgent):
@@ -89,4 +90,46 @@ class LaboratoryAgent(BaseAgent):
                     yield char
             else:
                 raise
+    
+    async def decide_consultation(self, findings: str, consulted_agents: list[str]) -> Optional[str]:
+        """Decide if cardiology consultation is needed based on findings
+        
+        Args:
+            findings: The laboratory agent's findings and analysis
+            consulted_agents: List of agents that have already been consulted
+            
+        Returns:
+            CARDIOLOGY_AGENT if cardiology consultation is needed, None otherwise
+        """
+        # Don't request consultation if cardiology has already been consulted
+        if CARDIOLOGY_AGENT in consulted_agents:
+            return None
+        
+        consultation_prompt = ChatPromptTemplate.from_messages([
+            ("system",
+             "You are a laboratory medicine specialist analyzing your findings to determine "
+             "if a cardiology consultation is needed.\n\n"
+             "Request cardiology consultation if:\n"
+             "- You identified abnormal cardiac biomarkers (troponin, BNP, CK-MB, etc.)\n"
+             "- Lab results suggest cardiac involvement or cardiac disease\n"
+             "- You need cardiology expertise to interpret cardiac-related lab values\n"
+             "- The clinical context requires cardiac assessment\n\n"
+             "Do NOT request consultation if:\n"
+             "- Your findings are complete and don't require cardiac expertise\n"
+             "- The case has no cardiac-related concerns\n"
+             "- You can provide complete interpretation without cardiology input\n\n"
+             "Respond with ONLY 'cardiology' if consultation is needed, or 'none' if not needed."),
+            ("user", 
+             "Laboratory Findings:\n{findings}\n\n"
+             "Based on these findings, do you need cardiology consultation? "
+             "Respond with 'cardiology' or 'none'.")
+        ])
+        
+        chain = consultation_prompt | self.llm
+        response = await chain.ainvoke({"findings": findings})
+        response_text = response.content.strip().lower()
+        
+        if CARDIOLOGY_AGENT in response_text:
+            return CARDIOLOGY_AGENT
+        return None
 

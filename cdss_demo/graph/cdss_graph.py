@@ -16,7 +16,7 @@ from cdss_demo.graph.nodes import (
 )
 from cdss_demo.graph.edges import (
     should_call_laboratory,
-    should_call_cardiology
+    route_to_orchestrator
 )
 
 
@@ -46,18 +46,23 @@ def build_cdss_graph():
         }
     )
     
-    # Add conditional edges from laboratory
+    # Add conditional edges from laboratory - route back to orchestrator
     workflow.add_conditional_edges(
         "laboratory",
-        should_call_cardiology,
+        route_to_orchestrator,
         {
-            "cardiology": "cardiology",
-            "synthesis": "synthesis"
+            "orchestrator": "orchestrator"
         }
     )
     
-    # Add edge from cardiology to synthesis
-    workflow.add_edge("cardiology", "synthesis")
+    # Add conditional edges from cardiology - route back to orchestrator
+    workflow.add_conditional_edges(
+        "cardiology",
+        route_to_orchestrator,
+        {
+            "orchestrator": "orchestrator"
+        }
+    )
     
     # Add edge from synthesis to END
     workflow.add_edge("synthesis", END)
