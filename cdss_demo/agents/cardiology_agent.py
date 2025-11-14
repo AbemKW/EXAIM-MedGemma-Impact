@@ -126,7 +126,7 @@ class CardiologyAgent(BaseAgent):
         response = await chain.ainvoke({"findings": findings})
         response_text = response.content.strip().lower()
         
-        if response_text == LABORATORY_AGENT:
+        if LABORATORY_AGENT in response_text:
             return LABORATORY_AGENT
         return None
 
