@@ -90,12 +90,12 @@ class LaboratoryAgent(BaseAgent):
             else:
                 raise
     
-    async def decide_consultation(self, findings: str, consulted_agents: set[str]) -> Optional[str]:
+    async def decide_consultation(self, findings: str, consulted_agents: list[str]) -> Optional[str]:
         """Decide if cardiology consultation is needed based on findings
         
         Args:
             findings: The laboratory agent's findings and analysis
-            consulted_agents: Set of agents that have already been consulted
+            consulted_agents: List of agents that have already been consulted
             
         Returns:
             "cardiology" if cardiology consultation is needed, None otherwise
@@ -128,7 +128,7 @@ class LaboratoryAgent(BaseAgent):
         response = await chain.ainvoke({"findings": findings})
         response_text = response.content.strip().lower()
         
-        if "cardiology" in response_text:
+        if response_text == "cardiology":
             return "cardiology"
         return None
 

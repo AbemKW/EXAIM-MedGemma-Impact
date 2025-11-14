@@ -8,14 +8,13 @@ def route_to_orchestrator(state: CDSSGraphState) -> Literal["orchestrator"]:
 
 
 def evaluate_orchestrator_routing(state: CDSSGraphState) -> Literal["laboratory", "cardiology", "synthesis"]:
-    """Evaluate orchestrator routing: check consultation requests first, then initial agents_to_call"""
+    """Evaluate orchestrator routing: route based on agents_to_call (which may have been set by orchestrator in response to consultation requests)"""
     agents_to_call = state.get("agents_to_call")
     
     # Check if synthesis was explicitly requested
     if agents_to_call and agents_to_call.get("synthesis", False):
         return "synthesis"
     
-    # Check consultation request first (handled by orchestrator_node, but check agents_to_call result)
     # The orchestrator_node sets agents_to_call based on consultation_request evaluation
     
     # Route to laboratory if requested
