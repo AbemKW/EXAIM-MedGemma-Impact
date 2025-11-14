@@ -72,12 +72,20 @@ class CDSS:
         # Get the final synthesis summary (last one from orchestrator)
         final_summary = None
         if all_summaries:
-            # Find the most recent orchestrator summary (likely the synthesis)
+            # Try to find orchestrator summary with synthesis/final recommendation action
             orchestrator_summaries = [
                 s for s in all_summaries 
                 if self.orchestrator.agent_id in s.agents
             ]
-            if orchestrator_summaries:
+            synthesis_actions = {"synthesis", "final recommendation", "final_synthesis"}
+            synthesis_summaries = [
+                s for s in orchestrator_summaries
+                if s.action and s.action.strip().lower().replace(" ", "_") in synthesis_actions
+            ]
+            if synthesis_summaries:
+                final_summary = synthesis_summaries[-1]
+            elif orchestrator_summaries:
+                # Fallback to last orchestrator summary if no synthesis-specific summary found
                 final_summary = orchestrator_summaries[-1]
             else:
                 # Fallback to last summary if no orchestrator summary found

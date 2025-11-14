@@ -2,6 +2,7 @@ from typing import AsyncIterator, Optional
 from langchain_core.prompts import ChatPromptTemplate
 from agents.base_agent import BaseAgent
 from llm import llm
+from cdss_demo.constants import CARDIOLOGY_AGENT
 
 
 class LaboratoryAgent(BaseAgent):
@@ -90,18 +91,18 @@ class LaboratoryAgent(BaseAgent):
             else:
                 raise
     
-    async def decide_consultation(self, findings: str, consulted_agents: set[str]) -> Optional[str]:
+    async def decide_consultation(self, findings: str, consulted_agents: list[str]) -> Optional[str]:
         """Decide if cardiology consultation is needed based on findings
         
         Args:
             findings: The laboratory agent's findings and analysis
-            consulted_agents: Set of agents that have already been consulted
+            consulted_agents: List of agents that have already been consulted
             
         Returns:
-            "cardiology" if cardiology consultation is needed, None otherwise
+            CARDIOLOGY_AGENT if cardiology consultation is needed, None otherwise
         """
         # Don't request consultation if cardiology has already been consulted
-        if "cardiology" in consulted_agents:
+        if CARDIOLOGY_AGENT in consulted_agents:
             return None
         
         consultation_prompt = ChatPromptTemplate.from_messages([
@@ -128,7 +129,7 @@ class LaboratoryAgent(BaseAgent):
         response = await chain.ainvoke({"findings": findings})
         response_text = response.content.strip().lower()
         
-        if "cardiology" in response_text:
-            return "cardiology"
+        if response_text == CARDIOLOGY_AGENT:
+            return CARDIOLOGY_AGENT
         return None
 

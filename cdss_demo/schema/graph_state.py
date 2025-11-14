@@ -21,8 +21,8 @@ class CDSSGraphState(TypedDict):
     Only reasoning agents can set this field.
     """
     
-    consulted_agents: Optional[set[str]]
-    """Set of agents that have been consulted. Used for loop prevention."""
+    consulted_agents: Optional[list[str]]
+    """List of agents that have been consulted. Used for loop prevention."""
     
     laboratory_findings: Optional[str]
     """Laboratory agent's findings and recommendations"""
