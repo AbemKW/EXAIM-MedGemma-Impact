@@ -78,6 +78,29 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
                 "consulted_agents": consulted_agents
             }
     
+    # Check if agent findings are already present; if so, avoid re-analysis and preserve agents_to_call
+    laboratory_done = state.get("laboratory_findings") is not None
+    cardiology_done = state.get("cardiology_findings") is not None
+
+    # If either agent has already completed, only call agents that have not yet been consulted
+    if laboratory_done or cardiology_done:
+        # Determine which agents still need to be called
+        agents_to_call = {}
+        if not laboratory_done and ("laboratory" not in consulted_agents):
+            agents_to_call["laboratory"] = True
+        if not cardiology_done and ("cardiology" not in consulted_agents):
+            agents_to_call["cardiology"] = True
+        # If no agents left to call, route to synthesis
+        if not agents_to_call:
+            return {
+                "agents_to_call": {"synthesis": True},
+                "consulted_agents": consulted_agents
+            }
+        else:
+            return {
+                "agents_to_call": agents_to_call,
+                "consulted_agents": consulted_agents
+            }
     # Initial analysis mode: Perform initial case analysis
     decision: AgentDecision = await orchestrator.analyze_and_decide(case_text)
     
