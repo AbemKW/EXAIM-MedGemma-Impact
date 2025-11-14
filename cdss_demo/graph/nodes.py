@@ -48,12 +48,10 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
                 f"This agent will be consulted to provide additional expertise."
             )
             await exaid.received_trace(orchestrator.agent_id, decision_text)
-            # Add the requested agent to consulted_agents
-            updated_consulted_agents = consulted_agents + [consultation_request]
+            # Do NOT add the requested agent to consulted_agents here; agent node will do so after analysis
             return {
                 "consultation_request": None,  # Clear the request after honoring
-                "agents_to_call": {consultation_request: True},
-                "consulted_agents": updated_consulted_agents
+                "agents_to_call": {consultation_request: True}
             }
     
     # Check if agent findings are already present; if so, avoid re-analysis and preserve agents_to_call
