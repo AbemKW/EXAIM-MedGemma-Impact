@@ -20,27 +20,28 @@ from cdss_demo.schema.graph_state import CDSSGraphState
 
 
 class CDSS:
-    """Clinical Decision Support System orchestrator"""
+    """Clinical Decision Support System orchestrator using LangGraph workflow"""
     
     def __init__(self):
-        """Initialize CDSS with EXAID and LangGraph workflow"""
+        """Initialize CDSS with EXAID and graph-based workflow"""
         self.exaid = EXAID()
+        self.graph = build_cdss_graph()
+        # Keep agent references for trace count queries
         self.orchestrator = OrchestratorAgent()
         self.cardiology = CardiologyAgent()
         self.laboratory = LaboratoryAgent()
-        self.graph = build_cdss_graph()
     
     async def process_case(
         self, 
         case: Union[ClinicalCase, str],
         use_streaming: bool = True
     ) -> dict:
-        """Process a clinical case through the multi-agent system using LangGraph
+        """Process a clinical case through the graph-based multi-agent system
         
         Args:
             case: ClinicalCase object or free-text case description
             use_streaming: Whether to use streaming token processing (default: True)
-                Note: Currently LangGraph doesn't support streaming, so this is ignored
+                          Note: Graph implementation always uses streaming internally
             
         Returns:
             Dictionary containing agent findings and final recommendation
@@ -63,15 +64,24 @@ class CDSS:
         }
         
         # Run the graph workflow
-        # Note: LangGraph doesn't currently support streaming in the same way,
-        # so we use the standard invoke method
         final_state = await self.graph.ainvoke(initial_state)
         
-        # Get all summaries
+        # Get all summaries after graph execution
         all_summaries = self.exaid.get_all_summaries()
         
-        # Get the final summary (last one from synthesis)
-        final_summary = all_summaries[-1] if all_summaries else None
+        # Get the final synthesis summary (last one from orchestrator)
+        final_summary = None
+        if all_summaries:
+            # Find the most recent orchestrator summary (likely the synthesis)
+            orchestrator_summaries = [
+                s for s in all_summaries 
+                if self.orchestrator.agent_id in s.agents
+            ]
+            if orchestrator_summaries:
+                final_summary = orchestrator_summaries[-1]
+            else:
+                # Fallback to last summary if no orchestrator summary found
+                final_summary = all_summaries[-1]
         
         # Compile results
         result = {
@@ -98,9 +108,12 @@ class CDSS:
                 "cardiology": self.exaid.get_agent_trace_count(self.cardiology.agent_id),
                 "laboratory": self.exaid.get_agent_trace_count(self.laboratory.agent_id)
             },
-            "agents_called": {
-                "laboratory": (final_state.get("agents_to_call") or {}).get("laboratory", False),
-                "cardiology": (final_state.get("agents_to_call") or {}).get("cardiology", False)
+            "graph_state": {
+                "orchestrator_analysis": final_state.get("orchestrator_analysis"),
+                "agents_called": final_state.get("agents_to_call"),
+                "laboratory_findings": final_state.get("laboratory_findings"),
+                "cardiology_findings": final_state.get("cardiology_findings"),
+                "final_synthesis": final_state.get("final_synthesis")
             }
         }
         
