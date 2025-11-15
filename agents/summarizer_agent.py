@@ -19,7 +19,8 @@ CRITICAL INSTRUCTIONS FOR EACH FIELD:
    - Orient the clinician to the current point in the workflow (similar to SBAR "Situation")
    - Capture high-level multi-agent activity (e.g., "retrieval completed, differential updated, uncertainty agent invoked")
    - Use action-oriented, present-tense language
-   - MAX 300 characters
+   - MAX 150 characters (~15-25 words)
+   - Evidence: Alert style guides emphasize title brevity and minimal introductory text to reduce cognitive burden
 
 2. KEY FINDINGS (key_findings):
    - Extract the minimal set of clinical facts driving the current reasoning step
@@ -27,7 +28,8 @@ CRITICAL INSTRUCTIONS FOR EACH FIELD:
    - Corresponds to SBAR "Background" and SOAP "Subjective/Objective"
    - Link recommendations to concrete evidence so clinicians can verify or contest them
    - Prioritize salient problems and findings
-   - MAX 300 characters
+   - MAX 180 characters (~20-30 words)
+   - Evidence: Clinical summarization tasks explicitly require short outputs (15 words or less for patient questions, "few words" for problem lists)
 
 3. DIFFERENTIAL & RATIONALE (differential_rationale):
    - State the leading diagnostic hypotheses and why certain diagnoses are favored or deprioritized
@@ -35,7 +37,8 @@ CRITICAL INSTRUCTIONS FOR EACH FIELD:
    - Aligns with SBAR/SOAP "Assessment" section
    - Enable clinicians to compare the system's thinking against their own mental model
    - Present rationale explicitly, not just feature importance or raw scores
-   - MAX 300 characters
+   - MAX 210 characters (~25-35 words)
+   - Evidence: XAI research shows longer explanations overload cognitive abilities; humans prefer explanations with 1-2 central causes
 
 4. UNCERTAINTY / CONFIDENCE (uncertainty_confidence):
    - Represent model or system uncertainty clearly
@@ -43,7 +46,8 @@ CRITICAL INSTRUCTIONS FOR EACH FIELD:
    - Essential for calibrated trust and safer human-AI collaboration
    - Especially important in ambiguous cases
    - Help prevent over-trust or under-trust in AI systems
-   - MAX 300 characters
+   - MAX 120 characters (~10-20 words)
+   - Evidence: Trust calibration work shows complex uncertainty presentation can confuse users; too much detail leads to cognitive overload
 
 5. RECOMMENDATION / NEXT STEP (recommendation_next_step):
    - Specify the diagnostic, therapeutic, or follow-up step EXAID suggests
@@ -51,20 +55,29 @@ CRITICAL INSTRUCTIONS FOR EACH FIELD:
    - Corresponds to SBAR "Recommendation" and SOAP "Plan"
    - Provide immediately actionable information for clinical workflow
    - Focus on actionability - what clinicians can use right away
-   - MAX 300 characters
+   - MAX 180 characters (~15-30 words)
+   - Evidence: Alert-fatigue literature emphasizes concise, actionable alerts with clear response options; simpler explanations are preferred
 
 6. AGENT CONTRIBUTIONS (agent_contributions):
-   - List which agents contributed to this step and how their outputs were used
+   - ONLY list agents whose traces appear in the new_buffer parameter
+   - Identify agents by looking for the "| agent_id |" tags in the new_buffer content
+   - Do NOT include agents from previous summaries or summary history
+   - For each agent that appears in new_buffer, describe their specific contribution
    - Format: "Agent name: specific contribution" (e.g., "Retrieval agent: latest PE guidelines; Differential agent: ranked CAP vs PE")
+   - If an agent's trace is in new_buffer but their contribution is unclear, still list them but note the uncertainty
    - Address transparency needs in multi-agent systems
    - Enable fine-grained debugging and feedback
    - Help clinicians identify which parts of the pipeline they trust or distrust
-   - MAX 300 characters
+   - MAX 150 characters (~15-25 words)
+   - Evidence: Human-centered XAI design patterns recommend high-level, filtered explanation of pipelines; omit intermediate steps to keep explanations short
 
 GENERAL GUIDELINES:
 - Extract ONLY new information from the buffer - do not repeat previous summaries
+- For agent_contributions: ONLY list agents whose traces appear in the new_buffer parameter
+- Identify agents by looking for the "| agent_id |" tags in the new_buffer content
 - Be concise and practical - physicians need to quickly understand agent decisions
 - Use clinical terminology appropriately
+- STRICTLY enforce field-specific character limits (status_action: 150, key_findings: 180, differential_rationale: 210, uncertainty_confidence: 120, recommendation_next_step: 180, agent_contributions: 150)
 - Prioritize the most essential information if content approaches character limits
 - Ensure all fields are populated - none should be empty
 - Maintain consistency with clinical documentation standards
