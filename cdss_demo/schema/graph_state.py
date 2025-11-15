@@ -16,6 +16,14 @@ class CDSSGraphState(TypedDict):
     Format: {"laboratory": bool, "cardiology": bool}
     """
     
+    consultation_request: Optional[str]
+    """Agent name requested for consultation (e.g., "cardiology", "laboratory").
+    Only reasoning agents can set this field.
+    """
+    
+    consulted_agents: Optional[list[str]]
+    """List of agents that have been consulted. Used for loop prevention."""
+    
     laboratory_findings: Optional[str]
     """Laboratory agent's findings and recommendations"""
     
