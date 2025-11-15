@@ -71,27 +71,40 @@ class CDSS:
         all_summaries = self.exaid.get_all_summaries()
         
         # Get the final summary (last one from synthesis)
-        final_summary = all_summaries[-1] if all_summaries else None
+        # Try to find orchestrator summary first, fallback to last summary
+        final_summary = None
+        if all_summaries:
+            orchestrator_summaries = [
+                s for s in all_summaries 
+                if self.orchestrator.agent_id.lower() in s.agent_contributions.lower()
+            ]
+            if orchestrator_summaries:
+                final_summary = orchestrator_summaries[-1]
+            else:
+                # Fallback to last summary if no orchestrator summary found
+                final_summary = all_summaries[-1]
         
         # Compile results
         result = {
             "case_summary": case_text,
             "agent_summaries": [
                 {
-                    "agents": s.agents,
-                    "action": s.action,
-                    "reasoning": s.reasoning,
-                    "findings": s.findings,
-                    "next_steps": s.next_steps
+                    "status_action": s.status_action,
+                    "key_findings": s.key_findings,
+                    "differential_rationale": s.differential_rationale,
+                    "uncertainty_confidence": s.uncertainty_confidence,
+                    "recommendation_next_step": s.recommendation_next_step,
+                    "agent_contributions": s.agent_contributions
                 }
                 for s in all_summaries
             ],
             "final_recommendation": {
-                "agents": final_summary.agents if final_summary else [],
-                "action": final_summary.action if final_summary else "",
-                "reasoning": final_summary.reasoning if final_summary else "",
-                "findings": final_summary.findings if final_summary else None,
-                "next_steps": final_summary.next_steps if final_summary else None
+                "status_action": final_summary.status_action if final_summary else "",
+                "key_findings": final_summary.key_findings if final_summary else "",
+                "differential_rationale": final_summary.differential_rationale if final_summary else "",
+                "uncertainty_confidence": final_summary.uncertainty_confidence if final_summary else "",
+                "recommendation_next_step": final_summary.recommendation_next_step if final_summary else "",
+                "agent_contributions": final_summary.agent_contributions if final_summary else ""
             },
             "trace_count": {
                 "orchestrator": self.exaid.get_agent_trace_count(self.orchestrator.agent_id),

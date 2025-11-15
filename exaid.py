@@ -12,16 +12,15 @@ class EXAID:
         self.summaries: list[AgentSummary] = []
     
     def _print_summary(self, summary: AgentSummary):
-        agents_str = ", ".join(summary.agents)
         print(f"\n{'='*60}")
-        print(f"Summary Update - Agents: {agents_str}")
+        print(f"Summary Update")
         print(f"{'='*60}")
-        print(f"Action: {summary.action}")
-        print(f"Reasoning: {summary.reasoning}")
-        if summary.findings:
-            print(f"Findings: {summary.findings}")
-        if summary.next_steps:
-            print(f"Next Steps: {summary.next_steps}")
+        print(f"Status / Action: {summary.status_action}")
+        print(f"Key Findings: {summary.key_findings}")
+        print(f"Differential & Rationale: {summary.differential_rationale}")
+        print(f"Uncertainty / Confidence: {summary.uncertainty_confidence}")
+        print(f"Recommendation / Next Step: {summary.recommendation_next_step}")
+        print(f"Agent Contributions: {summary.agent_contributions}")
         print()
     
     def get_all_summaries(self) -> list[AgentSummary]:
@@ -30,19 +29,21 @@ class EXAID:
 
     def get_summaries_by_agent(self, agent_id: str) -> list[AgentSummary]:
         """Get all summaries involving a specific agent."""
-        return [s for s in self.summaries if agent_id in s.agents]
+        return [s for s in self.summaries if agent_id.lower() in s.agent_contributions.lower()]
 
     def get_agent_trace_count(self, agent_id: str) -> int:
         return self.buffer_agent.get_trace_count(agent_id)
 
     def _format_summary_for_history(self, summary: AgentSummary) -> str:
         """Converts an AgentSummary to a string representation for use in history."""
-        agents_str = ", ".join(summary.agents)
-        parts = [f"Agents: {agents_str}", f"Action: {summary.action}", f"Reasoning: {summary.reasoning}"]
-        if summary.findings:
-            parts.append(f"Findings: {summary.findings}")
-        if summary.next_steps:
-            parts.append(f"Next: {summary.next_steps}")
+        parts = [
+            f"Status/Action: {summary.status_action}",
+            f"Key Findings: {summary.key_findings}",
+            f"Differential/Rationale: {summary.differential_rationale}",
+            f"Uncertainty/Confidence: {summary.uncertainty_confidence}",
+            f"Recommendation/Next: {summary.recommendation_next_step}",
+            f"Agent Contributions: {summary.agent_contributions}"
+        ]
         return " | ".join(parts)
     
     def _format_summaries_history(self, summaries: list[AgentSummary]) -> list[str]:

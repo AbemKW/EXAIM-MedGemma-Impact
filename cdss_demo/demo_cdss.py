@@ -18,19 +18,14 @@ from cdss_demo.schema.clinical_case import ClinicalCase, VitalSigns, LabResult
 
 def format_summary_display(summary) -> str:
     """Format an AgentSummary for clean console display"""
-    agents_str = ", ".join(summary.agents)
     lines = [
-        f"┌─ Agents: {agents_str}",
-        f"├─ Action: {summary.action}",
-        f"├─ Reasoning: {summary.reasoning}",
+        f"┌─ Status / Action: {summary.status_action}",
+        f"├─ Key Findings: {summary.key_findings}",
+        f"├─ Differential & Rationale: {summary.differential_rationale}",
+        f"├─ Uncertainty / Confidence: {summary.uncertainty_confidence}",
+        f"├─ Recommendation / Next Step: {summary.recommendation_next_step}",
+        f"└─ Agent Contributions: {summary.agent_contributions}",
     ]
-    if summary.findings:
-        lines.append(f"├─ Findings: {summary.findings}")
-    if summary.next_steps:
-        lines.append(f"└─ Next Steps: {summary.next_steps}")
-    else:
-        # Replace last ├ with └ if no next_steps
-        lines[-1] = lines[-1].replace("├─", "└─")
     return "\n".join(lines)
 
 

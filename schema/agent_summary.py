@@ -1,25 +1,54 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import List, Optional
 
 class AgentSummary(BaseModel):
-    """Structured summary for medical multi-agent reasoning, optimized for physician understanding."""
-    agents: List[str] = Field(description="List of agent IDs involved in this reasoning step")
-    action: str = Field(max_length=150, description="Brief action statement describing what the agents did")
-    reasoning: str = Field(max_length=400, description="Concise reasoning explaining why this action was taken")
-    findings: Optional[str] = Field(max_length=250, default=None, description="Key clinical findings or recommendations if applicable")
-    next_steps: Optional[str] = Field(max_length=150, default=None, description="Suggested next actions if applicable")
+    """Structured summary for medical multi-agent reasoning, optimized for physician understanding.
+    
+    Aligned with SBAR/SOAP documentation standards and XAI-CDSS principles for clinical decision support.
+    """
+    status_action: str = Field(
+        max_length=300,
+        description="Concise description of what the system or agents have just done or are currently doing in the reasoning process. "
+        "Plays a role similar to SBAR 'Situation', orienting the clinician to the current point in the workflow. "
+        "Captures high-level multi-agent activity (e.g., 'retrieval completed, differential updated, uncertainty agent invoked')."
+    )
+    key_findings: str = Field(
+        max_length=300,
+        description="The minimal set of clinical facts that are driving the current reasoning step, such as key symptoms, "
+        "vital signs, lab results, imaging findings, or relevant history. Corresponds to SBAR 'Background' and SOAP 'Subjective/Objective'. "
+        "Must link recommendations to concrete evidence so clinicians can verify or contest them."
+    )
+    differential_rationale: str = Field(
+        max_length=300,
+        description="A brief statement of the leading diagnostic hypotheses and why certain diagnoses are favored or deprioritized, "
+        "expressed in clinical language. Aligns with the 'Assessment' section in SBAR and SOAP, which captures clinical interpretation. "
+        "Gives clinicians a way to compare the system's thinking against their own mental model of the case."
+    )
+    uncertainty_confidence: str = Field(
+        max_length=300,
+        description="A concise representation of model or system uncertainty, which may be probabilistic (e.g., class probabilities) "
+        "or qualitative (e.g., 'high uncertainty', 'moderate confidence'). Essential for calibrated trust and safer human-AI collaboration, "
+        "especially in ambiguous cases."
+    )
+    recommendation_next_step: str = Field(
+        max_length=300,
+        description="The specific diagnostic, therapeutic, or follow-up step that EXAID suggests at this point, usually a short phrase or sentence. "
+        "Corresponds to SBAR 'Recommendation' and SOAP 'Plan'. Provides clinicians with immediately actionable information in their workflow."
+    )
+    agent_contributions: str = Field(
+        max_length=300,
+        description="A short list of which agents contributed to this step and how their outputs were used "
+        "(e.g., 'Retrieval agent: latest PE guidelines; Differential agent: ranked CAP vs PE; Uncertainty agent: confidence estimates'). "
+        "Addresses transparency in multi-agent systems, enabling fine-grained debugging and feedback."
+    )
     
     @model_validator(mode='before')
     @classmethod
     def truncate_fields(cls, data):
         """Truncate fields to meet length constraints if they exceed limits."""
         if isinstance(data, dict):
-            if 'action' in data and len(data.get('action', '')) > 100:
-                data['action'] = data['action'][:97] + '...'
-            if 'reasoning' in data and len(data.get('reasoning', '')) > 200:
-                data['reasoning'] = data['reasoning'][:197] + '...'
-            if 'findings' in data and data.get('findings') and len(data['findings']) > 150:
-                data['findings'] = data['findings'][:147] + '...'
-            if 'next_steps' in data and data.get('next_steps') and len(data['next_steps']) > 100:
-                data['next_steps'] = data['next_steps'][:97] + '...'
+            max_len = 297  # Leave room for '...'
+            for field in ['status_action', 'key_findings', 'differential_rationale', 
+                         'uncertainty_confidence', 'recommendation_next_step', 'agent_contributions']:
+                if field in data and len(data.get(field, '')) > 300:
+                    data[field] = data[field][:max_len] + '...'
         return data

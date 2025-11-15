@@ -130,11 +130,12 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Get all summaries for context
     all_summaries = exaid.get_all_summaries()
     summary_context = "\n\n".join([
-        f"Agent: {', '.join(s.agents)}\n"
-        f"Action: {s.action}\n"
-        f"Reasoning: {s.reasoning}\n"
-        f"Findings: {s.findings or 'N/A'}\n"
-        f"Next Steps: {s.next_steps or 'N/A'}"
+        f"Status/Action: {s.status_action}\n"
+        f"Key Findings: {s.key_findings}\n"
+        f"Differential/Rationale: {s.differential_rationale}\n"
+        f"Uncertainty/Confidence: {s.uncertainty_confidence}\n"
+        f"Recommendation/Next Step: {s.recommendation_next_step}\n"
+        f"Agent Contributions: {s.agent_contributions}"
         for s in all_summaries
     ])
     
