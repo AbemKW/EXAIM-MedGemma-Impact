@@ -1,14 +1,14 @@
 import os
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
 load_dotenv()
 
-llm = ChatOpenAI(
-    model=os.getenv("LLM_MODEL", "gemini-2.5-flash"),
-    base_url=os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
-    api_key=os.getenv("LLM_API_KEY")
+llm = ChatGoogleGenerativeAI(
+    model=os.getenv("LLM_MODEL", "gemini-2.5-flash-lite"),
+    google_api_key=os.getenv("GOOGLE_API_KEY") or os.getenv("LLM_API_KEY"),
+    streaming=True
 )
 
 groq_llm = ChatGroq(

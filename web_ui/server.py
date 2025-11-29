@@ -50,45 +50,45 @@ class CaseRequest(BaseModel):
     case: str
 
 
-def trace_callback(agent_id: str, token: str):
-    """Callback function to queue trace events for broadcasting.
+async def send_token_direct(agent_id: str, token: str):
+    """Send token directly to WebSocket clients without queuing.
     
-    This is called synchronously from the async token stream, so we use
-    put_nowait() to avoid blocking. The message broadcaster will process
-    messages asynchronously.
-    
-    Every token from every agent that uses received_streamed_tokens() will
-    trigger this callback, ensuring all tokens are captured and displayed.
+    This bypasses the message queue for immediate token-by-token delivery.
     """
+    if not active_connections:
+        return
+    
     message = {
         "type": "token",
         "agent_id": agent_id,
         "token": token,
         "timestamp": datetime.now().isoformat()
     }
-    # Put message in queue (non-blocking)
-    # With maxsize=10000, this should rarely fail, but if it does,
-    # we log it - the broadcaster should process messages quickly enough
-    try:
-        message_queue.put_nowait(message)
-    except asyncio.QueueFull:
-        # Queue is full - broadcaster is falling behind
-        # This shouldn't happen in normal operation, but log it if it does
-        print(f"Warning: Message queue full for agent {agent_id}, token dropped. "
-              f"Queue size: {message_queue.qsize()}")
-    except Exception as e:
-        print(f"Error queueing message for agent {agent_id}: {e}")
-
-
-def summary_callback(summary):
-    """Callback function to queue summary events for broadcasting.
     
-    This is called when EXAID generates a new summary. The summary is
-    converted to a dict and queued for WebSocket broadcast.
+    disconnected = []
+    for connection in active_connections:
+        try:
+            await connection.send_json(message)
+        except Exception as e:
+            print(f"Error sending token to client: {e}")
+            disconnected.append(connection)
+    
+    # Remove disconnected clients
+    for conn in disconnected:
+        if conn in active_connections:
+            active_connections.remove(conn)
+
+
+async def send_summary_direct(summary):
+    """Send summary directly to WebSocket clients.
+    
+    Args:
+        summary: AgentSummary Pydantic object to broadcast
     """
-    from schema.agent_summary import AgentSummary
+    if not active_connections:
+        return
     
-    # Convert AgentSummary to dict for JSON serialization
+    # Convert Pydantic model to dict
     summary_dict = {
         "status_action": summary.status_action,
         "key_findings": summary.key_findings,
@@ -100,18 +100,90 @@ def summary_callback(summary):
     
     message = {
         "type": "summary",
-        "summary": summary_dict,
+        "summary_data": summary_dict,
         "timestamp": datetime.now().isoformat()
     }
     
-    # Put message in queue (non-blocking)
+    disconnected = []
+    for connection in active_connections:
+        try:
+            await connection.send_json(message)
+        except Exception as e:
+            print(f"Error sending summary to client: {e}")
+            disconnected.append(connection)
+    
+    # Remove disconnected clients
+    for conn in disconnected:
+        if conn in active_connections:
+            active_connections.remove(conn)
+
+
+def trace_callback(agent_id: str, token: str):
+    """Callback function to send tokens directly to WebSocket clients.
+    
+    This is called from async code (token stream), so we can safely schedule
+    async operations. We send tokens directly without queuing to ensure
+    token-by-token delivery.
+    
+    Every token from every agent that uses received_streamed_tokens() will
+    trigger this callback, ensuring all tokens are captured and displayed.
+    """
+    # Schedule immediate async send without blocking
+    # Since we're called from async context, we can safely create a task
     try:
-        message_queue.put_nowait(message)
-    except asyncio.QueueFull:
-        print(f"Warning: Message queue full, summary dropped. "
-              f"Queue size: {message_queue.qsize()}")
+        # Try to get the running event loop
+        loop = asyncio.get_running_loop()
+        # Schedule the send immediately as a task
+        asyncio.create_task(send_token_direct(agent_id, token))
+    except RuntimeError:
+        # No running event loop - this shouldn't happen but fallback to queue
+        message = {
+            "type": "token",
+            "agent_id": agent_id,
+            "token": token,
+            "timestamp": datetime.now().isoformat()
+        }
+        try:
+            message_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            print(f"Warning: Message queue full for agent {agent_id}, token dropped.")
+        except Exception as queue_error:
+            print(f"Error queueing message for agent {agent_id}: {queue_error}")
     except Exception as e:
-        print(f"Error queueing summary message: {e}")
+        # Fallback to queue if direct send fails
+        print(f"Error sending token directly, falling back to queue: {e}")
+        message = {
+            "type": "token",
+            "agent_id": agent_id,
+            "token": token,
+            "timestamp": datetime.now().isoformat()
+        }
+        try:
+            message_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            print(f"Warning: Message queue full for agent {agent_id}, token dropped.")
+        except Exception as queue_error:
+            print(f"Error queueing message for agent {agent_id}: {queue_error}")
+
+
+def summary_callback(summary):
+    """Callback function to send summaries directly to WebSocket clients.
+    
+    This is called when EXAID generates a new summary from buffered traces.
+    
+    Args:
+        summary: AgentSummary Pydantic object
+    """
+    try:
+        # Try to get the running event loop
+        loop = asyncio.get_running_loop()
+        # Schedule the send immediately as a task
+        asyncio.create_task(send_summary_direct(summary))
+    except RuntimeError:
+        # No running event loop - fallback to queue
+        print(f"Warning: No running event loop for summary callback")
+    except Exception as e:
+        print(f"Error sending summary directly: {e}")
 
 
 async def broadcast_message(message: dict):
@@ -221,8 +293,7 @@ async def process_case(request: CaseRequest):
         
         return {
             "status": "success",
-            "message": "Case processed successfully",
-            "summaries_count": len(result.get("agent_summaries", []))
+            "message": "Case processed successfully"
         }
     except Exception as e:
         error_msg = str(e)
