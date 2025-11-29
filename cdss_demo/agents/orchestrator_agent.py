@@ -1,7 +1,15 @@
+import sys
+from pathlib import Path
+
+# CRITICAL: Add parent directory to path BEFORE any other imports
+project_root = Path(__file__).parent.parent.parent.resolve()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from typing import AsyncIterator
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
-from agents.base_agent import BaseAgent
+from cdss_demo.agents.demo_base_agent import DemoBaseAgent
 from llm import llm
 
 
@@ -12,7 +20,7 @@ class AgentDecision(BaseModel):
     reasoning: str = Field(description="Brief reasoning for the decision")
 
 
-class OrchestratorAgent(BaseAgent):
+class OrchestratorAgent(DemoBaseAgent):
     """Orchestrator agent that coordinates clinical decision support workflow"""
     
     def __init__(self, agent_id: str = "OrchestratorAgent"):

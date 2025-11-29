@@ -1,4 +1,7 @@
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, List, Dict, Any
+from cdss_demo.agents.cardiology_agent import CardiologyAgent
+from cdss_demo.agents.laboratory_agent import LaboratoryAgent
+from cdss_demo.agents.orchestrator_agent import OrchestratorAgent
 from exaid import EXAID
 
 
@@ -7,6 +10,16 @@ class CDSSGraphState(TypedDict):
     
     case_text: str
     """The clinical case input text"""
+    
+    # Agent instances
+    orchestrator_agent: Optional[OrchestratorAgent]
+    """Orchestrator agent instance"""
+    
+    laboratory_agent: Optional[LaboratoryAgent]
+    """Laboratory agent instance"""
+    
+    cardiology_agent: Optional[CardiologyAgent]
+    """Cardiology agent instance"""
     
     orchestrator_analysis: Optional[str]
     """Orchestrator's initial analysis of the case"""

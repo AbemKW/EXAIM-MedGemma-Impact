@@ -1,11 +1,18 @@
+import sys
+from pathlib import Path
+
+# CRITICAL: Add parent directory to path BEFORE any other imports
+project_root = Path(__file__).parent.parent.parent.resolve()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from typing import AsyncIterator, Optional
 from langchain_core.prompts import ChatPromptTemplate
-from agents.base_agent import BaseAgent
+from cdss_demo.agents.demo_base_agent import DemoBaseAgent
 from llm import llm
-from cdss_demo.constants import LABORATORY_AGENT
 
 
-class CardiologyAgent(BaseAgent):
+class CardiologyAgent(DemoBaseAgent):
     """Cardiology specialist agent for cardiac assessment and recommendations"""
     
     def __init__(self, agent_id: str = "CardiologyAgent"):

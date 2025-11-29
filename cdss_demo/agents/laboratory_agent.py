@@ -1,11 +1,10 @@
 from typing import AsyncIterator, Optional
 from langchain_core.prompts import ChatPromptTemplate
-from agents.base_agent import BaseAgent
+from cdss_demo.agents.demo_base_agent import DemoBaseAgent
 from llm import llm
-from cdss_demo.constants import CARDIOLOGY_AGENT
 
 
-class LaboratoryAgent(BaseAgent):
+class LaboratoryAgent(DemoBaseAgent):
     """Laboratory specialist agent for lab result interpretation and recommendations"""
     
     def __init__(self, agent_id: str = "LaboratoryAgent"):

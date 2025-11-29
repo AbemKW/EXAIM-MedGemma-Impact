@@ -15,8 +15,8 @@ from cdss_demo.constants import LABORATORY_AGENT, CARDIOLOGY_AGENT, SYNTHESIS_AC
 
 
 async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Orchestrator node: analyzes case and decides which agents to call, or evaluates consultation requests"""
-    orchestrator = OrchestratorAgent()
+    """Orchestrator node: manages collaborative workflow, tracks agent awareness, handles debates, checks consensus"""
+    orchestrator = _get_or_create_orchestrator(state)
     exaid = state["exaid"]
     case_text = state["case_text"]
     
@@ -37,6 +37,7 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
                 f"has already been consulted. Routing to synthesis to prevent loop."
             )
             await exaid.received_trace(orchestrator.agent_id, decision_text)
+            orchestrator.add_to_history("assistant", decision_text)
             return {
                 "consultation_request": None,  # Clear the request
                 "agents_to_call": {SYNTHESIS_ACTION: True}
@@ -48,7 +49,7 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
                 f"This agent will be consulted to provide additional expertise."
             )
             await exaid.received_trace(orchestrator.agent_id, decision_text)
-            # Do NOT add the requested agent to consulted_agents here; agent node will do so after analysis
+            orchestrator.add_to_history("assistant", decision_text)
             return {
                 "consultation_request": None,  # Clear the request after honoring
                 "agents_to_call": {consultation_request: True}
@@ -124,8 +125,8 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
 
 
 async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Laboratory node: analyzes laboratory results and decides if consultation is needed"""
-    laboratory = LaboratoryAgent()
+    """Laboratory node: analyzes laboratory results incrementally, building on previous work"""
+    laboratory = _get_or_create_laboratory(state)
     exaid = state["exaid"]
     case_text = state["case_text"]
     
@@ -167,8 +168,8 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
 
 
 async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Cardiology node: assesses cardiac aspects and decides if consultation is needed"""
-    cardiology = CardiologyAgent()
+    """Cardiology node: assesses cardiac aspects incrementally, building on previous work"""
+    cardiology = _get_or_create_cardiology(state)
     exaid = state["exaid"]
     case_text = state["case_text"]
     
@@ -258,6 +259,9 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
         "- Follow-up plan"
     )
     
+    # Add to conversation history
+    orchestrator.add_to_history("user", synthesis_input)
+    
     # Get synthesis stream
     token_stream = orchestrator.act_stream(synthesis_input)
     
@@ -273,6 +277,9 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
     
     # Build full synthesis from collected tokens
     synthesis = "".join(collected)
+    
+    # Add response to conversation history
+    orchestrator.add_to_history("assistant", synthesis)
     
     return {
         "final_synthesis": synthesis
