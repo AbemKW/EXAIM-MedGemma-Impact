@@ -41,6 +41,27 @@ app = FastAPI(lifespan=lifespan)
 
 # Store active WebSocket connections
 active_connections: List[WebSocket] = []
+# Lock for synchronizing access to active_connections
+connections_lock = asyncio.Lock()
+
+
+async def get_active_connections() -> List[WebSocket]:
+    """Get a copy of the active connections list safely."""
+    async with connections_lock:
+        return active_connections.copy()
+
+
+async def add_connection(websocket: WebSocket):
+    """Add a connection to the active connections list safely."""
+    async with connections_lock:
+        active_connections.append(websocket)
+
+
+async def remove_connection(websocket: WebSocket):
+    """Remove a connection from the active connections list safely."""
+    async with connections_lock:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
 
 # Global CDSS instance (will be created per request)
 cdss_instance: CDSS = None
@@ -55,7 +76,8 @@ async def send_token_direct(agent_id: str, token: str):
     
     This bypasses the message queue for immediate token-by-token delivery.
     """
-    if not active_connections:
+    connections = await get_active_connections()
+    if not connections:
         return
     
     message = {
@@ -66,7 +88,7 @@ async def send_token_direct(agent_id: str, token: str):
     }
     
     disconnected = []
-    for connection in active_connections:
+    for connection in connections:
         try:
             await connection.send_json(message)
         except Exception as e:
@@ -75,8 +97,7 @@ async def send_token_direct(agent_id: str, token: str):
     
     # Remove disconnected clients
     for conn in disconnected:
-        if conn in active_connections:
-            active_connections.remove(conn)
+        await remove_connection(conn)
 
 
 async def send_summary_direct(summary):
@@ -85,7 +106,8 @@ async def send_summary_direct(summary):
     Args:
         summary: AgentSummary Pydantic object to broadcast
     """
-    if not active_connections:
+    connections = await get_active_connections()
+    if not connections:
         return
     
     # Convert Pydantic model to dict
@@ -105,7 +127,7 @@ async def send_summary_direct(summary):
     }
     
     disconnected = []
-    for connection in active_connections:
+    for connection in connections:
         try:
             await connection.send_json(message)
         except Exception as e:
@@ -114,8 +136,7 @@ async def send_summary_direct(summary):
     
     # Remove disconnected clients
     for conn in disconnected:
-        if conn in active_connections:
-            active_connections.remove(conn)
+        await remove_connection(conn)
 
 
 def trace_callback(agent_id: str, token: str):
@@ -181,18 +202,59 @@ def summary_callback(summary):
         asyncio.create_task(send_summary_direct(summary))
     except RuntimeError:
         # No running event loop - fallback to queue
-        print(f"Warning: No running event loop for summary callback")
+        # Convert Pydantic model to dict for queuing
+        summary_dict = {
+            "status_action": summary.status_action,
+            "key_findings": summary.key_findings,
+            "differential_rationale": summary.differential_rationale,
+            "uncertainty_confidence": summary.uncertainty_confidence,
+            "recommendation_next_step": summary.recommendation_next_step,
+            "agent_contributions": summary.agent_contributions
+        }
+        message = {
+            "type": "summary",
+            "summary_data": summary_dict,
+            "timestamp": datetime.now().isoformat()
+        }
+        try:
+            message_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            print(f"Warning: Message queue full, summary dropped.")
+        except Exception as queue_error:
+            print(f"Error queueing summary message: {queue_error}")
     except Exception as e:
-        print(f"Error sending summary directly: {e}")
+        # Fallback to queue if direct send fails
+        print(f"Error sending summary directly, falling back to queue: {e}")
+        # Convert Pydantic model to dict for queuing
+        summary_dict = {
+            "status_action": summary.status_action,
+            "key_findings": summary.key_findings,
+            "differential_rationale": summary.differential_rationale,
+            "uncertainty_confidence": summary.uncertainty_confidence,
+            "recommendation_next_step": summary.recommendation_next_step,
+            "agent_contributions": summary.agent_contributions
+        }
+        message = {
+            "type": "summary",
+            "summary_data": summary_dict,
+            "timestamp": datetime.now().isoformat()
+        }
+        try:
+            message_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            print(f"Warning: Message queue full, summary dropped.")
+        except Exception as queue_error:
+            print(f"Error queueing summary message: {queue_error}")
 
 
 async def broadcast_message(message: dict):
     """Broadcast a message to all connected WebSocket clients."""
-    if not active_connections:
+    connections = await get_active_connections()
+    if not connections:
         return
     
     disconnected = []
-    for connection in active_connections:
+    for connection in connections:
         try:
             await connection.send_json(message)
         except Exception as e:
@@ -201,8 +263,7 @@ async def broadcast_message(message: dict):
     
     # Remove disconnected clients
     for conn in disconnected:
-        if conn in active_connections:
-            active_connections.remove(conn)
+        await remove_connection(conn)
 
 
 async def message_broadcaster():
@@ -240,8 +301,9 @@ async def message_broadcaster():
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time trace updates."""
     await websocket.accept()
-    active_connections.append(websocket)
-    print(f"Client connected. Total connections: {len(active_connections)}")
+    await add_connection(websocket)
+    connections = await get_active_connections()
+    print(f"Client connected. Total connections: {len(connections)}")
     
     try:
         # Keep connection alive - just wait for disconnect
@@ -251,12 +313,12 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
             # Optional: handle client messages here if needed
     except WebSocketDisconnect:
-        active_connections.remove(websocket)
-        print(f"Client disconnected. Total connections: {len(active_connections)}")
+        await remove_connection(websocket)
+        connections = await get_active_connections()
+        print(f"Client disconnected. Total connections: {len(connections)}")
     except Exception as e:
         print(f"WebSocket error: {e}")
-        if websocket in active_connections:
-            active_connections.remove(websocket)
+        await remove_connection(websocket)
 
 
 @app.post("/api/process-case")
