@@ -97,9 +97,25 @@ GENERAL GUIDELINES:
             })
             return summary
         except Exception as e:
-            # If validation fails due to length constraints, try to get raw output and truncate
-            error_str = str(e)
-            if "length must be <=" in error_str or "tool call validation failed" in error_str:
+            # If validation fails, try to get raw output and truncate
+            # Check for validation errors more broadly:
+            # 1. Pydantic ValidationError
+            # 2. Common validation error message patterns
+            # 3. Any error that might be related to structured output validation
+            from pydantic import ValidationError
+            
+            is_validation_error = (
+                isinstance(e, ValidationError) or
+                "length must be <=" in str(e).lower() or
+                "tool call validation failed" in str(e).lower() or
+                "validation" in str(e).lower() or
+                "constraint" in str(e).lower() or
+                "max_length" in str(e).lower() or
+                "field required" in str(e).lower() or
+                "value error" in str(e).lower()
+            )
+            
+            if is_validation_error:
                 # Fallback: get raw response and manually truncate
                 try:
                     # Use regular LLM without structured output
@@ -207,5 +223,6 @@ GENERAL GUIDELINES:
                         agent_contributions="Multiple agents"
                     )
             else:
-                # Re-raise if it's a different error
+                # For non-validation errors (network, API, etc.), re-raise
+                # This allows upstream error handling for critical failures
                 raise
