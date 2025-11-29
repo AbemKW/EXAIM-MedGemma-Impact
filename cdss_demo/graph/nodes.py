@@ -136,8 +136,16 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
         "Recommend additional tests if needed."
     )
     
-    # Get laboratory agent's analysis stream
-    token_stream = laboratory.act_stream(lab_input)
+    # Create token callback wrapper that includes agent_id (for direct token streaming to UI)
+    token_callback = None
+    if exaid.trace_callbacks:
+        trace_cb = exaid.trace_callbacks[0]
+        def callback_wrapper(token: str):
+            trace_cb(laboratory.agent_id, token)
+        token_callback = callback_wrapper
+    
+    # Get laboratory agent's analysis stream with token callback
+    token_stream = laboratory.act_stream(lab_input, token_callback=token_callback)
     
     # Collect tokens while streaming to EXAID
     collected = []
@@ -183,8 +191,16 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
         "Provide cardiac assessment and recommendations."
     )
     
-    # Get cardiology agent's analysis stream
-    token_stream = cardiology.act_stream(cardio_input)
+    # Create token callback wrapper that includes agent_id (for direct token streaming to UI)
+    token_callback = None
+    if exaid.trace_callbacks:
+        trace_cb = exaid.trace_callbacks[0]
+        def callback_wrapper(token: str):
+            trace_cb(cardiology.agent_id, token)
+        token_callback = callback_wrapper
+    
+    # Get cardiology agent's analysis stream with token callback
+    token_stream = cardiology.act_stream(cardio_input, token_callback=token_callback)
     
     # Collect tokens while streaming to EXAID
     collected = []
@@ -258,8 +274,16 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
         "- Follow-up plan"
     )
     
-    # Get synthesis stream
-    token_stream = orchestrator.act_stream(synthesis_input)
+    # Create token callback wrapper that includes agent_id (for direct token streaming to UI)
+    token_callback = None
+    if exaid.trace_callbacks:
+        trace_cb = exaid.trace_callbacks[0]
+        def callback_wrapper(token: str):
+            trace_cb(orchestrator.agent_id, token)
+        token_callback = callback_wrapper
+    
+    # Get synthesis stream with token callback
+    token_stream = orchestrator.act_stream(synthesis_input, token_callback=token_callback)
     
     # Collect tokens while streaming to EXAID
     collected = []
