@@ -1,6 +1,5 @@
 from typing import Literal
 from cdss_demo.schema.graph_state import CDSSGraphState
-from cdss_demo.constants import LABORATORY_AGENT, CARDIOLOGY_AGENT, SYNTHESIS_ACTION
 
 
 def route_to_orchestrator(state: CDSSGraphState) -> Literal["orchestrator"]:
