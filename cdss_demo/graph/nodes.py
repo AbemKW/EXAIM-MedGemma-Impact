@@ -301,4 +301,3 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
     return {
         "final_synthesis": synthesis
     }
-
