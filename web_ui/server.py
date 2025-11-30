@@ -13,7 +13,7 @@ if str(project_root) not in sys.path:
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from cdss_demo.cdss import CDSS
 from cdss_demo.message_bus import message_queue
@@ -88,14 +88,15 @@ MAX_CASE_LENGTH = 100000
 class CaseRequest(BaseModel):
     case: str
     
-    @property
-    def validated_case(self) -> str:
-        """Return validated case text."""
-        if not self.case or not self.case.strip():
+    @field_validator('case')
+    @classmethod
+    def validate_case(cls, v: str) -> str:
+        """Validate case text is not empty and within size limits."""
+        if not v or not v.strip():
             raise ValueError("Case text cannot be empty")
-        if len(self.case) > MAX_CASE_LENGTH:
+        if len(v) > MAX_CASE_LENGTH:
             raise ValueError(f"Case text exceeds maximum length of {MAX_CASE_LENGTH} characters")
-        return self.case.strip()
+        return v.strip()
 
 
 async def send_token_direct(agent_id: str, token: str):
@@ -353,14 +354,11 @@ async def process_case(request: CaseRequest):
     variable is used for callback registration but FastAPI's async request handling
     ensures sequential processing. For true concurrent request handling, consider
     using request-scoped dependency injection with proper instance isolation.
+    
+    Input validation (empty check, length limit) is handled by Pydantic validator
+    and will return 422 Unprocessable Entity for invalid input.
     """
     global cdss_instance
-    
-    # Validate input
-    try:
-        validated_case = request.validated_case
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
     
     try:
         # Create a new CDSS instance for this request
@@ -381,7 +379,8 @@ async def process_case(request: CaseRequest):
         })
         
         # Process the case (this will stream traces via callbacks)
-        await cdss_instance.process_case(validated_case)
+        # request.case is already validated and trimmed by Pydantic validator
+        await cdss_instance.process_case(request.case)
         
         # Send completion message
         await broadcast_message({
