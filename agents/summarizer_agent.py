@@ -181,6 +181,7 @@ GENERAL GUIDELINES:
                                 try:
                                     data = json.loads(json_match.group())
                                 except json.JSONDecodeError:
+                                    # If fallback JSON parsing fails, proceed to create a minimal summary below.
                                     pass
                     
                     if not data:
