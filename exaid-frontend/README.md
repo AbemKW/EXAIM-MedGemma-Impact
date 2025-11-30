@@ -42,12 +42,16 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Environment Variables
 
-`.env.local` has been configured with:
+Create a `.env.local` file in the `exaid-frontend` directory with the following variables:
 
 ```env
 NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
+
+**Note:** The `.env.local` file is excluded from version control (via `.gitignore`) to protect sensitive configuration. Each developer must create their own local copy.
+
+**WebSocket URL Validation:** The application validates that `NEXT_PUBLIC_WS_URL` starts with `ws://` or `wss://` on startup. An invalid URL will cause a clear error message.
 
 ## Project Structure
 
@@ -67,11 +71,10 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 │   └── AgentModal.tsx          # Portal-based modal
 ├── lib/
 │   ├── types.ts                # TypeScript interfaces
-│   └── websocket.ts            # Singleton WebSocket service
+│   └── websocket.ts            # Singleton WebSocket service with URL validation
 ├── store/
 │   └── cdssStore.ts            # Zustand global state
-├── .env.local                  # Environment variables
-├── next.config.ts              # Next.js config
+├── next.config.mjs             # Next.js config
 └── tailwind.config.ts          # Tailwind theme
 ```
 

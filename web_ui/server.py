@@ -77,9 +77,10 @@ async def remove_connection(websocket: WebSocket):
 
 # Global CDSS instance for the current request.
 # Note: This is intentionally request-scoped - each POST to /api/process-case creates
-# a new instance. Access is protected by async/await semantics of FastAPI's request
-# handling. For high-concurrency scenarios, consider using request-scoped dependency injection.
+# a new instance. Access is synchronized using cdss_lock to prevent race conditions
+# when multiple requests arrive simultaneously.
 cdss_instance: CDSS = None
+cdss_lock = asyncio.Lock()
 
 # Maximum allowed length for case text to prevent resource abuse
 MAX_CASE_LENGTH = 100000
@@ -350,60 +351,61 @@ async def websocket_endpoint(websocket: WebSocket):
 async def process_case(request: CaseRequest):
     """Process a clinical case through the CDSS system.
     
-    Note: A new CDSS instance is created for each request. The global cdss_instance
-    variable is used for callback registration but FastAPI's async request handling
-    ensures sequential processing. For true concurrent request handling, consider
-    using request-scoped dependency injection with proper instance isolation.
+    A new CDSS instance is created for each request. The cdss_lock ensures that only
+    one request can process at a time, preventing race conditions with the global
+    cdss_instance and its callbacks. Requests will be queued and processed sequentially.
     
     Input validation (empty check, length limit) is handled by Pydantic validator
     and will return 422 Unprocessable Entity for invalid input.
     """
     global cdss_instance
     
-    try:
-        # Create a new CDSS instance for this request
-        cdss_instance = CDSS()
-        
-        # Register trace callback with EXAID
-        cdss_instance.exaid.register_trace_callback(trace_callback)
-        logger.debug(f"Trace callback registered. Callbacks: {len(cdss_instance.exaid.trace_callbacks)}")
-        
-        # Register summary callback with EXAID
-        cdss_instance.exaid.register_summary_callback(summary_callback)
-        logger.debug(f"Summary callback registered. Callbacks: {len(cdss_instance.exaid.summary_callbacks)}")
-        
-        # Send start message
-        await broadcast_message({
-            "type": "processing_started",
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        # Process the case (this will stream traces via callbacks)
-        # request.case is already validated and trimmed by Pydantic validator
-        await cdss_instance.process_case(request.case)
-        
-        # Send completion message
-        await broadcast_message({
-            "type": "processing_complete",
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        return {
-            "status": "success",
-            "message": "Case processed successfully"
-        }
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Error processing case: {error_msg}")
-        
-        # Send error message to clients
-        await broadcast_message({
-            "type": "error",
-            "message": error_msg,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        raise HTTPException(status_code=500, detail=error_msg)
+    # Acquire lock to ensure only one request processes at a time
+    async with cdss_lock:
+        try:
+            # Create a new CDSS instance for this request
+            cdss_instance = CDSS()
+            
+            # Register trace callback with EXAID
+            cdss_instance.exaid.register_trace_callback(trace_callback)
+            logger.debug(f"Trace callback registered. Callbacks: {len(cdss_instance.exaid.trace_callbacks)}")
+            
+            # Register summary callback with EXAID
+            cdss_instance.exaid.register_summary_callback(summary_callback)
+            logger.debug(f"Summary callback registered. Callbacks: {len(cdss_instance.exaid.summary_callbacks)}")
+            
+            # Send start message
+            await broadcast_message({
+                "type": "processing_started",
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            # Process the case (this will stream traces via callbacks)
+            # request.case is already validated and trimmed by Pydantic validator
+            await cdss_instance.process_case(request.case)
+            
+            # Send completion message
+            await broadcast_message({
+                "type": "processing_complete",
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            return {
+                "status": "success",
+                "message": "Case processed successfully"
+            }
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error processing case: {error_msg}")
+            
+            # Send error message to clients
+            await broadcast_message({
+                "type": "error",
+                "message": error_msg,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            raise HTTPException(status_code=500, detail=error_msg)
 
 
 if __name__ == "__main__":
