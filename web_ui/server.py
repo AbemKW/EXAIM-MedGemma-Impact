@@ -17,10 +17,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from cdss_demo.cdss import CDSS
-
-# Message queue for trace events (thread-safe)
-# Use a large maxsize to prevent dropping tokens
-message_queue = asyncio.Queue(maxsize=10000)
+from cdss_demo.message_bus import message_queue
 
 
 @asynccontextmanager

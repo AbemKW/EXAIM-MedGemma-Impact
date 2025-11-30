@@ -9,7 +9,8 @@ if str(project_root) not in sys.path:
 from typing import AsyncIterator, Optional
 from langchain_core.prompts import ChatPromptTemplate
 from cdss_demo.agents.demo_base_agent import DemoBaseAgent
-from llm import llm
+from llm import mas_llm
+from callbacks.agent_streaming_callback import AgentStreamingCallback
 
 
 class CardiologyAgent(DemoBaseAgent):
@@ -17,7 +18,7 @@ class CardiologyAgent(DemoBaseAgent):
     
     def __init__(self, agent_id: str = "CardiologyAgent"):
         super().__init__(agent_id)
-        self.llm = llm
+        self.llm = mas_llm
         self.prompt = ChatPromptTemplate.from_messages([
             ("system",
              "You are an expert cardiologist in a clinical decision support system. "
@@ -101,8 +102,9 @@ class CardiologyAgent(DemoBaseAgent):
         """
         prompt = self._build_prompt_with_history(input)
         chain = prompt | self.llm
+        callback = AgentStreamingCallback(agent_id=self.agent_id)
         try:
-            async for chunk in chain.astream({"input": input}):
+            async for chunk in chain.astream({"input": input}, callbacks=[callback]):
                 # Handle different chunk formats from LangChain
                 if hasattr(chunk, 'content'):
                     content = chunk.content
