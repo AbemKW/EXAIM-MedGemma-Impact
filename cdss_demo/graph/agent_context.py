@@ -47,7 +47,6 @@ def build_agent_context(agent_id: str, state: CDSSGraphState) -> str:
             context_parts.append("")
     
     # 3. New findings from other agents since last turn
-    new_findings = state.get("new_findings_since_last_turn") or {}
     seen_findings = agent_awareness.get(agent_id, [])
     
     # Determine which agent is the "other" agent
