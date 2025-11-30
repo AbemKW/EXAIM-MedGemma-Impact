@@ -10,7 +10,8 @@ from typing import AsyncIterator
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from cdss_demo.agents.demo_base_agent import DemoBaseAgent
-from llm import llm
+from llm import mas_llm
+from callbacks.agent_streaming_callback import AgentStreamingCallback
 
 
 class AgentDecision(BaseModel):
@@ -25,7 +26,7 @@ class OrchestratorAgent(DemoBaseAgent):
     
     def __init__(self, agent_id: str = "OrchestratorAgent"):
         super().__init__(agent_id)
-        self.llm = llm
+        self.llm = mas_llm
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", 
              "You are an expert clinical decision support orchestrator in a multi-agent healthcare system. "
@@ -138,8 +139,9 @@ class OrchestratorAgent(DemoBaseAgent):
         """
         prompt = self._build_prompt_with_history(input)
         chain = prompt | self.llm
+        callback = AgentStreamingCallback(agent_id=self.agent_id)
         try:
-            async for chunk in chain.astream({"input": input}):
+            async for chunk in chain.astream({"input": input}, callbacks=[callback]):
                 # Handle different chunk formats from LangChain
                 if hasattr(chunk, 'content'):
                     content = chunk.content
