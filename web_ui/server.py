@@ -12,8 +12,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from cdss_demo.cdss import CDSS
@@ -35,6 +34,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# Add CORS middleware for Next.js frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # Next.js dev server default
+        "http://localhost:3001",  # Next.js dev server alternate
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Store active WebSocket connections
 active_connections: List[WebSocket] = []
@@ -368,20 +379,10 @@ async def process_case(request: CaseRequest):
         raise HTTPException(status_code=500, detail=error_msg)
 
 
-@app.get("/")
-async def read_root():
-    """Serve the main HTML page."""
-    return FileResponse(Path(__file__).parent / "index.html")
-
-
-# Mount static files (CSS and JS)
-app.mount("/css", StaticFiles(directory=Path(__file__).parent / "css"), name="css")
-app.mount("/js", StaticFiles(directory=Path(__file__).parent / "js"), name="js")
-
-
 if __name__ == "__main__":
     import uvicorn
-    print("Starting Reasoning Traces UI server...")
-    print("Open http://localhost:8000 in your browser")
+    print("Starting EXAID API server...")
+    print("WebSocket endpoint: ws://localhost:8000/ws")
+    print("API endpoint: http://localhost:8000/api/process-case")
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
