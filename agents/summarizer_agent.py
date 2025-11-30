@@ -1,12 +1,12 @@
 from langchain_core.prompts import ChatPromptTemplate
 from schema.agent_summary import AgentSummary
 from typing import List
-from llm import groq_llm
+from llm import exaid_llm
 
 class SummarizerAgent:
     def __init__(self):
-        self.base_llm = groq_llm
-        self.llm = groq_llm.with_structured_output(schema=AgentSummary)
+        self.base_llm = exaid_llm
+        self.llm = exaid_llm.with_structured_output(schema=AgentSummary)
         self.summarize_prompt = ChatPromptTemplate.from_messages([    
             ("system", """You are an expert clinical summarizer for EXAID, a medical multi-agent reasoning system. 
 Your role is to produce structured summaries that align with SBAR (Situation-Background-Assessment-Recommendation) 
