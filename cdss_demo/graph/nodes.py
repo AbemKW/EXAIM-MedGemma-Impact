@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 from datetime import datetime
-import uuid
 
 # CRITICAL: Add parent directory to path BEFORE any other imports
 project_root = Path(__file__).parent.parent.parent.resolve()
@@ -133,8 +132,11 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Check if cardiology has new findings that lab hasn't seen
     # Uses the agent_awareness tracking to determine if findings have been reviewed
     if state.get("cardiology_findings") and cardio_turns:
-        # Generate unique finding_id using agent_id and UUID suffix for uniqueness
-        finding_id = f"cardiology_{uuid.uuid4().hex[:8]}"
+        # Generate stable finding_id using turn_number for proper tracking
+        # Using the latest cardiology turn's turn_number ensures consistent identification
+        latest_cardio_turn = cardio_turns[-1]
+        cardio_turn_number = latest_cardio_turn.get("turn_number", len(cardio_turns))
+        finding_id = f"cardiology_{cardio_turn_number}"
         if finding_id not in agent_awareness.get("laboratory", []):
             # Lab should see cardiology's findings
             if "laboratory" in consulted_agents:
@@ -149,8 +151,11 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Check if laboratory has new findings that cardiology hasn't seen
     # Uses the agent_awareness tracking to determine if findings have been reviewed
     if state.get("laboratory_findings") and lab_turns:
-        # Generate unique finding_id using agent_id and UUID suffix for uniqueness
-        finding_id = f"laboratory_{uuid.uuid4().hex[:8]}"
+        # Generate stable finding_id using turn_number for proper tracking
+        # Using the latest laboratory turn's turn_number ensures consistent identification
+        latest_lab_turn = lab_turns[-1]
+        lab_turn_number = latest_lab_turn.get("turn_number", len(lab_turns))
+        finding_id = f"laboratory_{lab_turn_number}"
         if finding_id not in agent_awareness.get("cardiology", []):
             # Cardiology should see lab's findings
             if "cardiology" in consulted_agents:
