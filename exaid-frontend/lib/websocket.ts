@@ -40,18 +40,35 @@ class WebSocketService {
   private reconnectAttempts = 0;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private intentionalClose = false;
-  private wsUrl: string;
+  private wsUrl: string | null = null;
+  private validationError: string | null = null;
 
   constructor() {
-    // Validate URL on construction - fail fast with clear error message
-    this.wsUrl = validateWebSocketUrl(process.env.NEXT_PUBLIC_WS_URL);
+    // Attempt to validate URL on construction for early feedback
+    // But don't throw - store the error for connect() to handle
+    try {
+      this.wsUrl = validateWebSocketUrl(process.env.NEXT_PUBLIC_WS_URL);
+    } catch (error) {
+      this.validationError = error instanceof Error ? error.message : String(error);
+      console.error('WebSocket URL validation failed:', this.validationError);
+    }
   }
 
   /**
    * Connect to the WebSocket server.
-   * Handles automatic reconnection on disconnect.
+   * Validates the URL and handles automatic reconnection on disconnect.
    */
   connect(): void {
+    const store = useCDSSStore.getState();
+    
+    // Check for validation errors from constructor
+    if (this.validationError || !this.wsUrl) {
+      console.error('Cannot connect: WebSocket URL is invalid or not configured');
+      console.error(this.validationError || 'NEXT_PUBLIC_WS_URL environment variable is not set');
+      store.setWsStatus('error');
+      return;
+    }
+    
     // Prevent duplicate connections
     if (this.ws?.readyState === WebSocket.CONNECTING || 
         this.ws?.readyState === WebSocket.OPEN) {
@@ -59,7 +76,6 @@ class WebSocketService {
     }
 
     this.intentionalClose = false;
-    const store = useCDSSStore.getState();
     store.setWsStatus('connecting');
 
     try {

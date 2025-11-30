@@ -15,6 +15,25 @@ from cdss_demo.agents.cardiology_agent import CardiologyAgent
 from cdss_demo.graph.agent_context import build_agent_context, get_new_findings_for_agent
 from cdss_demo.graph.consensus import check_consensus
 
+
+def _generate_finding_id(agent_id: str, turns: list) -> str:
+    """Generate a stable finding_id based on the latest turn number.
+    
+    Args:
+        agent_id: The agent identifier (e.g., 'cardiology', 'laboratory')
+        turns: List of turn entries for this agent
+        
+    Returns:
+        A stable finding_id string like 'cardiology_3' or 'laboratory_2'
+    """
+    latest_turn = turns[-1] if turns else None
+    if latest_turn:
+        turn_number = latest_turn.get("turn_number", len(turns))
+    else:
+        turn_number = len(turns)
+    return f"{agent_id}_{turn_number}"
+
+
 def _get_or_create_orchestrator(state: CDSSGraphState) -> OrchestratorAgent:
     """Get orchestrator agent from state or create if not exists"""
     if state.get("orchestrator_agent") is None:
@@ -132,11 +151,7 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Check if cardiology has new findings that lab hasn't seen
     # Uses the agent_awareness tracking to determine if findings have been reviewed
     if state.get("cardiology_findings") and cardio_turns:
-        # Generate stable finding_id using turn_number for proper tracking
-        # Using the latest cardiology turn's turn_number ensures consistent identification
-        latest_cardio_turn = cardio_turns[-1]
-        cardio_turn_number = latest_cardio_turn.get("turn_number", len(cardio_turns))
-        finding_id = f"cardiology_{cardio_turn_number}"
+        finding_id = _generate_finding_id("cardiology", cardio_turns)
         if finding_id not in agent_awareness.get("laboratory", []):
             # Lab should see cardiology's findings
             if "laboratory" in consulted_agents:
@@ -151,11 +166,7 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Check if laboratory has new findings that cardiology hasn't seen
     # Uses the agent_awareness tracking to determine if findings have been reviewed
     if state.get("laboratory_findings") and lab_turns:
-        # Generate stable finding_id using turn_number for proper tracking
-        # Using the latest laboratory turn's turn_number ensures consistent identification
-        latest_lab_turn = lab_turns[-1]
-        lab_turn_number = latest_lab_turn.get("turn_number", len(lab_turns))
-        finding_id = f"laboratory_{lab_turn_number}"
+        finding_id = _generate_finding_id("laboratory", lab_turns)
         if finding_id not in agent_awareness.get("cardiology", []):
             # Cardiology should see lab's findings
             if "cardiology" in consulted_agents:
