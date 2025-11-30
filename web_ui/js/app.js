@@ -204,20 +204,26 @@ function updateAgentWindow(agentId) {
     const traceTextElement = document.getElementById(`agent-trace-${agentId}`);
     if (!traceTextElement) return;
     
+    const contentContainer = traceTextElement.parentElement; // agent-window-content
+    
+    // Store scroll position before updating content
+    const wasAtBottom = contentContainer.scrollHeight - contentContainer.scrollTop - contentContainer.clientHeight < 50;
+    const hadScrollableContent = contentContainer.scrollHeight > contentContainer.clientHeight;
+    
     // Update text content
     traceTextElement.textContent = agentData.fullText;
     
-    // Implement sliding window: if content exceeds container height, move it up
-    const contentContainer = traceTextElement.parentElement;
-    const containerHeight = contentContainer.clientHeight;
-    const textHeight = traceTextElement.scrollHeight;
+    // Auto-scroll to bottom if:
+    // 1. User was already at/near bottom, OR
+    // 2. Content wasn't scrollable before (first time showing content)
+    // This ensures new content is always visible unless user manually scrolled up
+    const shouldAutoScroll = !hadScrollableContent || wasAtBottom;
     
-    if (textHeight > containerHeight) {
-        // Calculate how much to shift up (show only the bottom portion)
-        const shiftAmount = textHeight - containerHeight;
-        traceTextElement.style.transform = `translateY(-${shiftAmount}px)`;
-    } else {
-        traceTextElement.style.transform = 'translateY(0)';
+    if (shouldAutoScroll) {
+        // Use requestAnimationFrame to ensure DOM update is complete before scrolling
+        requestAnimationFrame(() => {
+            contentContainer.scrollTop = contentContainer.scrollHeight;
+        });
     }
     
     // Move agent window to top if not already there
@@ -239,8 +245,15 @@ function toggleAgentWindow(agentId) {
         agentWindow.classList.remove('expanded');
     } else {
         agentWindow.classList.add('expanded');
-        // Update window after expansion to adjust sliding
-        setTimeout(() => updateAgentWindow(agentId), 300);
+        // Update window after expansion to scroll to bottom and show latest content
+        setTimeout(() => {
+            updateAgentWindow(agentId);
+            // Force scroll to bottom when expanding
+            const contentContainer = document.getElementById(`agent-trace-${agentId}`)?.parentElement;
+            if (contentContainer) {
+                contentContainer.scrollTop = contentContainer.scrollHeight;
+            }
+        }, 300);
     }
 }
 
