@@ -1,16 +1,24 @@
+import sys
+from pathlib import Path
+
+# CRITICAL: Add parent directory to path BEFORE any other imports
+project_root = Path(__file__).parent.parent.parent.resolve()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from typing import AsyncIterator, Optional
 from langchain_core.prompts import ChatPromptTemplate
-from agents.base_agent import BaseAgent
-from llm import llm
-from cdss_demo.constants import CARDIOLOGY_AGENT
+from cdss_demo.agents.demo_base_agent import DemoBaseAgent
+from llm import mas_llm
+from callbacks.agent_streaming_callback import AgentStreamingCallback
 
 
-class LaboratoryAgent(BaseAgent):
+class LaboratoryAgent(DemoBaseAgent):
     """Laboratory specialist agent for lab result interpretation and recommendations"""
     
     def __init__(self, agent_id: str = "LaboratoryAgent"):
         super().__init__(agent_id)
-        self.llm = llm
+        self.llm = mas_llm
         self.prompt = ChatPromptTemplate.from_messages([
             ("system",
              "You are an expert clinical pathologist and laboratory medicine specialist "
@@ -52,9 +60,38 @@ class LaboratoryAgent(BaseAgent):
             ("user", "{input}")
         ])
     
+    def _build_prompt_with_history(self, input: str) -> ChatPromptTemplate:
+        """Build prompt including conversation history"""
+        # Extract system message content from the prompt template
+        system_message = self.prompt.messages[0]
+        if hasattr(system_message, 'prompt') and hasattr(system_message.prompt, 'template'):
+            system_content = system_message.prompt.template
+        elif hasattr(system_message, 'content'):
+            system_content = system_message.content
+        else:
+            # Fallback: get from original prompt definition
+            system_content = self.prompt.messages[0].prompt.template if hasattr(self.prompt.messages[0], 'prompt') else str(self.prompt.messages[0])
+        
+        messages = [
+            ("system", system_content)
+        ]
+        
+        # Add conversation history
+        for msg in self.conversation_history:
+            if msg["role"] == "user":
+                messages.append(("user", msg["content"]))
+            elif msg["role"] == "assistant":
+                messages.append(("assistant", msg["content"]))
+        
+        # Add current input
+        messages.append(("user", input))
+        
+        return ChatPromptTemplate.from_messages(messages)
+    
     async def act(self, input: str) -> str:
         """Interpret laboratory results and provide recommendations"""
-        chain = self.prompt | self.llm
+        prompt = self._build_prompt_with_history(input)
+        chain = prompt | self.llm
         response = await chain.ainvoke({"input": input})
         return response.content
     
@@ -67,9 +104,11 @@ class LaboratoryAgent(BaseAgent):
         Yields:
             Tokens as strings as they are generated
         """
-        chain = self.prompt | self.llm
+        prompt = self._build_prompt_with_history(input)
+        chain = prompt | self.llm
+        callback = AgentStreamingCallback(agent_id=self.agent_id)
         try:
-            async for chunk in chain.astream({"input": input}):
+            async for chunk in chain.astream({"input": input}, callbacks=[callback]):
                 # Handle different chunk formats from LangChain
                 if hasattr(chunk, 'content'):
                     content = chunk.content
@@ -99,10 +138,10 @@ class LaboratoryAgent(BaseAgent):
             consulted_agents: List of agents that have already been consulted
             
         Returns:
-            CARDIOLOGY_AGENT if cardiology consultation is needed, None otherwise
+            "cardiology" if cardiology consultation is needed, None otherwise
         """
         # Don't request consultation if cardiology has already been consulted
-        if CARDIOLOGY_AGENT in consulted_agents:
+        if "cardiology" in consulted_agents:
             return None
         
         consultation_prompt = ChatPromptTemplate.from_messages([
@@ -129,7 +168,85 @@ class LaboratoryAgent(BaseAgent):
         response = await chain.ainvoke({"findings": findings})
         response_text = response.content.strip().lower()
         
-        if CARDIOLOGY_AGENT in response_text:
-            return CARDIOLOGY_AGENT
+        if "cardiology" in response_text:
+            return "cardiology"
         return None
+    
+    async def analyze_with_context(self, context: str, previous_findings: str, new_findings: dict) -> str:
+        """Analyze with incremental context, building on previous findings and incorporating new information
+        
+        Args:
+            context: The incremental context built by the context builder
+            previous_findings: The agent's own previous findings
+            new_findings: Dictionary of new findings from other agents (agent_id -> findings)
+            
+        Returns:
+            Updated analysis incorporating new information
+        """
+        # Build comprehensive input
+        input_text = context
+        if previous_findings:
+            input_text += f"\n\nYour Previous Analysis:\n{previous_findings}\n"
+        if new_findings:
+            input_text += "\n\nNew Findings from Other Agents:\n"
+            for agent_id, findings in new_findings.items():
+                input_text += f"\n{agent_id.upper()} Agent:\n{findings}\n"
+        
+        input_text += "\n\nBased on this information, provide your updated analysis."
+        
+        return await self.act(input_text)
+    
+    async def evaluate_other_agent_findings(self, other_agent_id: str, findings: str) -> Optional[str]:
+        """Review and potentially challenge other agents' findings
+        
+        Args:
+            other_agent_id: ID of the agent whose findings are being reviewed
+            findings: The findings to review
+            
+        Returns:
+            Question or challenge if one is needed, None otherwise
+        """
+        evaluation_prompt = ChatPromptTemplate.from_messages([
+            ("system",
+             "You are a laboratory medicine specialist reviewing findings from another agent. "
+             "Your role is to evaluate if their findings are consistent with laboratory data, "
+             "if there are any concerns, or if you need clarification.\n\n"
+             "You should raise a question or challenge if:\n"
+             "- The findings seem inconsistent with lab values\n"
+             "- Important lab data appears to be overlooked\n"
+             "- You need clarification on how they interpreted specific lab results\n"
+             "- There are contradictions between their findings and lab evidence\n\n"
+             "If everything looks reasonable, respond with 'none'.\n\n"
+             "If you have a question or concern, state it clearly and concisely."),
+            ("user",
+             f"Findings from {other_agent_id.upper()} Agent:\n{findings}\n\n"
+             "Do you have any questions, concerns, or need clarification? "
+             "Respond with your question/concern or 'none' if everything looks good.")
+        ])
+        
+        chain = evaluation_prompt | self.llm
+        response = await chain.ainvoke({})
+        response_text = response.content.strip()
+        
+        if response_text.lower() == "none" or not response_text:
+            return None
+        
+        return response_text
+    
+    async def decide_if_needs_response(self, new_findings: dict) -> bool:
+        """Determine if new findings require a response or update to your analysis
+        
+        Args:
+            new_findings: Dictionary of new findings from other agents
+            
+        Returns:
+            True if a response/update is needed, False otherwise
+        """
+        if not new_findings:
+            return False
+        
+        # If there are new findings, agent should review them
+        # This is a simple heuristic - in practice, the agent will be called
+        # by the orchestrator when new findings are available
+        return True
 

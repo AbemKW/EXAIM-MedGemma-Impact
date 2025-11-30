@@ -1,8 +1,17 @@
+import sys
+from pathlib import Path
+
+# CRITICAL: Add parent directory to path BEFORE any other imports
+project_root = Path(__file__).parent.parent.parent.resolve()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from typing import AsyncIterator
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
-from agents.base_agent import BaseAgent
-from llm import llm
+from cdss_demo.agents.demo_base_agent import DemoBaseAgent
+from llm import mas_llm
+from callbacks.agent_streaming_callback import AgentStreamingCallback
 
 
 class AgentDecision(BaseModel):
@@ -12,12 +21,12 @@ class AgentDecision(BaseModel):
     reasoning: str = Field(description="Brief reasoning for the decision")
 
 
-class OrchestratorAgent(BaseAgent):
+class OrchestratorAgent(DemoBaseAgent):
     """Orchestrator agent that coordinates clinical decision support workflow"""
     
     def __init__(self, agent_id: str = "OrchestratorAgent"):
         super().__init__(agent_id)
-        self.llm = llm
+        self.llm = mas_llm
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", 
              "You are an expert clinical decision support orchestrator in a multi-agent healthcare system. "
@@ -84,9 +93,38 @@ class OrchestratorAgent(BaseAgent):
         decision = await chain.ainvoke({"case_text": case_text})
         return decision
     
+    def _build_prompt_with_history(self, input: str) -> ChatPromptTemplate:
+        """Build prompt including conversation history"""
+        # Extract system message content from the prompt template
+        system_message = self.prompt.messages[0]
+        if hasattr(system_message, 'prompt') and hasattr(system_message.prompt, 'template'):
+            system_content = system_message.prompt.template
+        elif hasattr(system_message, 'content'):
+            system_content = system_message.content
+        else:
+            # Fallback: get from original prompt definition
+            system_content = self.prompt.messages[0].prompt.template if hasattr(self.prompt.messages[0], 'prompt') else str(self.prompt.messages[0])
+        
+        messages = [
+            ("system", system_content)
+        ]
+        
+        # Add conversation history
+        for msg in self.conversation_history:
+            if msg["role"] == "user":
+                messages.append(("user", msg["content"]))
+            elif msg["role"] == "assistant":
+                messages.append(("assistant", msg["content"]))
+        
+        # Add current input
+        messages.append(("user", input))
+        
+        return ChatPromptTemplate.from_messages(messages)
+    
     async def act(self, input: str) -> str:
         """Process clinical case and coordinate agent workflow"""
-        chain = self.prompt | self.llm
+        prompt = self._build_prompt_with_history(input)
+        chain = prompt | self.llm
         response = await chain.ainvoke({"input": input})
         return response.content
     
@@ -99,9 +137,11 @@ class OrchestratorAgent(BaseAgent):
         Yields:
             Tokens as strings as they are generated
         """
-        chain = self.prompt | self.llm
+        prompt = self._build_prompt_with_history(input)
+        chain = prompt | self.llm
+        callback = AgentStreamingCallback(agent_id=self.agent_id)
         try:
-            async for chunk in chain.astream({"input": input}):
+            async for chunk in chain.astream({"input": input}, callbacks=[callback]):
                 # Handle different chunk formats from LangChain
                 if hasattr(chunk, 'content'):
                     content = chunk.content

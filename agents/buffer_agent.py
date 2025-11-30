@@ -1,5 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate
-from llm import groq_llm
+from llm import exaid_llm
 from pydantic import BaseModel
 
 class TraceData(BaseModel):
@@ -8,7 +8,7 @@ class TraceData(BaseModel):
 class BufferAgent:
     def __init__(self):
         self.buffer: list[str] = []
-        self.llm = groq_llm
+        self.llm = exaid_llm
         self.flag_prompt = ChatPromptTemplate.from_messages([
             ("system",
             "You are monitoring the reasoning streams of multiple AI agents. "
