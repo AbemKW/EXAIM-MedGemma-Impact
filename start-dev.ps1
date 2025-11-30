@@ -4,17 +4,13 @@
 Write-Host "🚀 Starting EXAID Development Environment" -ForegroundColor Cyan
 Write-Host ""
 
-# Check if running from correct directory
-$projectRoot = "c:\Users\abemk\source\repos\AbemKW\ExAID"
-if ($PWD.Path -ne $projectRoot) {
-    Write-Host "⚠️  Please run this script from the project root: $projectRoot" -ForegroundColor Yellow
-    Write-Host "Current location: $($PWD.Path)" -ForegroundColor Yellow
-    exit 1
-}
+# Get the script's directory as project root (works across different machines)
+$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $projectRoot
 
-# Start FastAPI backend in a new terminal
+# Start FastAPI backend in a new terminal (assumes virtual environment is activated or python is in PATH)
 Write-Host "📡 Starting FastAPI Backend (port 8000)..." -ForegroundColor Green
-$backendJob = Start-Process pwsh -ArgumentList "-NoExit", "-Command", "cd '$projectRoot'; Write-Host '🔧 FastAPI Backend Server' -ForegroundColor Cyan; C:/Users/abemk/source/repos/AbemKW/ExAID/.venv/Scripts/python.exe -m uvicorn web_ui.server:app --reload" -PassThru
+$backendJob = Start-Process pwsh -ArgumentList "-NoExit", "-Command", "cd '$projectRoot'; Write-Host '🔧 FastAPI Backend Server' -ForegroundColor Cyan; python -m uvicorn web_ui.server:app --reload" -PassThru
 
 Start-Sleep -Seconds 2
 

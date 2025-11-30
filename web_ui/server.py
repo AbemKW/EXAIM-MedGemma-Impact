@@ -1,6 +1,6 @@
 import sys
-import json
 import asyncio
+import logging
 from pathlib import Path
 from typing import List
 from datetime import datetime
@@ -30,7 +30,11 @@ async def lifespan(app: FastAPI):
     try:
         await broadcaster_task
     except asyncio.CancelledError:
-        pass
+        pass  # Expected during shutdown - task was cancelled gracefully
+
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(lifespan=lifespan)
@@ -71,12 +75,27 @@ async def remove_connection(websocket: WebSocket):
         if websocket in active_connections:
             active_connections.remove(websocket)
 
-# Global CDSS instance (will be created per request)
+# Global CDSS instance for the current request.
+# Note: This is intentionally request-scoped - each POST to /api/process-case creates
+# a new instance. Access is protected by async/await semantics of FastAPI's request
+# handling. For high-concurrency scenarios, consider using request-scoped dependency injection.
 cdss_instance: CDSS = None
+
+# Maximum allowed length for case text to prevent resource abuse
+MAX_CASE_LENGTH = 100000
 
 
 class CaseRequest(BaseModel):
     case: str
+    
+    @property
+    def validated_case(self) -> str:
+        """Return validated case text."""
+        if not self.case or not self.case.strip():
+            raise ValueError("Case text cannot be empty")
+        if len(self.case) > MAX_CASE_LENGTH:
+            raise ValueError(f"Case text exceeds maximum length of {MAX_CASE_LENGTH} characters")
+        return self.case.strip()
 
 
 async def send_token_direct(agent_id: str, token: str):
@@ -100,7 +119,7 @@ async def send_token_direct(agent_id: str, token: str):
         try:
             await connection.send_json(message)
         except Exception as e:
-            print(f"Error sending token to client: {e}")
+            logger.warning(f"Error sending token to client: {e}")
             disconnected.append(connection)
     
     # Remove disconnected clients
@@ -139,12 +158,27 @@ async def send_summary_direct(summary):
         try:
             await connection.send_json(message)
         except Exception as e:
-            print(f"Error sending summary to client: {e}")
+            logger.warning(f"Error sending summary to client: {e}")
             disconnected.append(connection)
     
     # Remove disconnected clients
     for conn in disconnected:
         await remove_connection(conn)
+
+
+def _queue_message_fallback(message: dict, context: str = "message"):
+    """Helper function to queue a message as fallback when direct WebSocket send fails.
+    
+    Args:
+        message: The message dict to queue
+        context: Description of the message context for logging
+    """
+    try:
+        message_queue.put_nowait(message)
+    except asyncio.QueueFull:
+        logger.warning(f"Message queue full for {context}, message dropped.")
+    except Exception as queue_error:
+        logger.error(f"Error queueing {context}: {queue_error}")
 
 
 def trace_callback(agent_id: str, token: str):
@@ -160,39 +194,42 @@ def trace_callback(agent_id: str, token: str):
     # Schedule immediate async send without blocking
     # Since we're called from async context, we can safely create a task
     try:
-        # Try to get the running event loop
-        loop = asyncio.get_running_loop()
+        # Try to get the running event loop - will succeed if called from async context
+        asyncio.get_running_loop()
         # Schedule the send immediately as a task
         asyncio.create_task(send_token_direct(agent_id, token))
     except RuntimeError:
-        # No running event loop - this shouldn't happen but fallback to queue
+        # No running event loop - unexpected but log warning and fallback to queue
+        logger.warning(f"No running event loop in trace_callback for agent {agent_id} - using queue fallback")
         message = {
             "type": "token",
             "agent_id": agent_id,
             "token": token,
             "timestamp": datetime.now().isoformat()
         }
-        try:
-            message_queue.put_nowait(message)
-        except asyncio.QueueFull:
-            print(f"Warning: Message queue full for agent {agent_id}, token dropped.")
-        except Exception as queue_error:
-            print(f"Error queueing message for agent {agent_id}: {queue_error}")
+        _queue_message_fallback(message, f"agent {agent_id} token")
     except Exception as e:
         # Fallback to queue if direct send fails
-        print(f"Error sending token directly, falling back to queue: {e}")
+        logger.warning(f"Error sending token directly, falling back to queue: {e}")
         message = {
             "type": "token",
             "agent_id": agent_id,
             "token": token,
             "timestamp": datetime.now().isoformat()
         }
-        try:
-            message_queue.put_nowait(message)
-        except asyncio.QueueFull:
-            print(f"Warning: Message queue full for agent {agent_id}, token dropped.")
-        except Exception as queue_error:
-            print(f"Error queueing message for agent {agent_id}: {queue_error}")
+        _queue_message_fallback(message, f"agent {agent_id} token")
+
+
+def _summary_to_dict(summary) -> dict:
+    """Convert a summary Pydantic model to a dict for serialization."""
+    return {
+        "status_action": summary.status_action,
+        "key_findings": summary.key_findings,
+        "differential_rationale": summary.differential_rationale,
+        "uncertainty_confidence": summary.uncertainty_confidence,
+        "recommendation_next_step": summary.recommendation_next_step,
+        "agent_contributions": summary.agent_contributions
+    }
 
 
 def summary_callback(summary):
@@ -204,55 +241,28 @@ def summary_callback(summary):
         summary: AgentSummary Pydantic object
     """
     try:
-        # Try to get the running event loop
-        loop = asyncio.get_running_loop()
+        # Try to get the running event loop - will succeed if called from async context
+        asyncio.get_running_loop()
         # Schedule the send immediately as a task
         asyncio.create_task(send_summary_direct(summary))
     except RuntimeError:
-        # No running event loop - fallback to queue
-        # Convert Pydantic model to dict for queuing
-        summary_dict = {
-            "status_action": summary.status_action,
-            "key_findings": summary.key_findings,
-            "differential_rationale": summary.differential_rationale,
-            "uncertainty_confidence": summary.uncertainty_confidence,
-            "recommendation_next_step": summary.recommendation_next_step,
-            "agent_contributions": summary.agent_contributions
-        }
+        # No running event loop - unexpected but log warning and fallback to queue
+        logger.warning("No running event loop in summary_callback - using queue fallback")
         message = {
             "type": "summary",
-            "summary_data": summary_dict,
+            "summary_data": _summary_to_dict(summary),
             "timestamp": datetime.now().isoformat()
         }
-        try:
-            message_queue.put_nowait(message)
-        except asyncio.QueueFull:
-            print(f"Warning: Message queue full, summary dropped.")
-        except Exception as queue_error:
-            print(f"Error queueing summary message: {queue_error}")
+        _queue_message_fallback(message, "summary")
     except Exception as e:
         # Fallback to queue if direct send fails
-        print(f"Error sending summary directly, falling back to queue: {e}")
-        # Convert Pydantic model to dict for queuing
-        summary_dict = {
-            "status_action": summary.status_action,
-            "key_findings": summary.key_findings,
-            "differential_rationale": summary.differential_rationale,
-            "uncertainty_confidence": summary.uncertainty_confidence,
-            "recommendation_next_step": summary.recommendation_next_step,
-            "agent_contributions": summary.agent_contributions
-        }
+        logger.warning(f"Error sending summary directly, falling back to queue: {e}")
         message = {
             "type": "summary",
-            "summary_data": summary_dict,
+            "summary_data": _summary_to_dict(summary),
             "timestamp": datetime.now().isoformat()
         }
-        try:
-            message_queue.put_nowait(message)
-        except asyncio.QueueFull:
-            print(f"Warning: Message queue full, summary dropped.")
-        except Exception as queue_error:
-            print(f"Error queueing summary message: {queue_error}")
+        _queue_message_fallback(message, "summary")
 
 
 async def broadcast_message(message: dict):
@@ -266,7 +276,7 @@ async def broadcast_message(message: dict):
         try:
             await connection.send_json(message)
         except Exception as e:
-            print(f"Error sending message to client: {e}")
+            logger.warning(f"Error sending message to client: {e}")
             disconnected.append(connection)
     
     # Remove disconnected clients
@@ -296,43 +306,61 @@ async def message_broadcaster():
                 except asyncio.QueueEmpty:
                     break
                 except Exception as e:
-                    print(f"Error processing queued message: {e}")
+                    logger.error(f"Error processing queued message: {e}")
                     message_queue.task_done()
                     
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"Error in message broadcaster: {e}")
+            logger.error(f"Error in message broadcaster: {e}")
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time trace updates."""
+    """WebSocket endpoint for real-time trace updates.
+    
+    This endpoint maintains a persistent connection for streaming agent traces
+    and summaries to the client. Client messages are received to keep the
+    connection alive but are not processed - all communication is server-to-client
+    via broadcast_message().
+    """
     await websocket.accept()
     await add_connection(websocket)
     connections = await get_active_connections()
-    print(f"Client connected. Total connections: {len(connections)}")
+    logger.info(f"Client connected. Total connections: {len(connections)}")
     
     try:
         # Keep connection alive - just wait for disconnect
         # Messages are sent via broadcast_message() from other parts of the app
         while True:
-            # Wait for any message (or disconnect)
-            data = await websocket.receive_text()
-            # Optional: handle client messages here if needed
+            # Wait for any message (or disconnect) - messages are received but not
+            # processed as this is a server-push only endpoint for trace streaming
+            await websocket.receive_text()
     except WebSocketDisconnect:
         await remove_connection(websocket)
         connections = await get_active_connections()
-        print(f"Client disconnected. Total connections: {len(connections)}")
+        logger.info(f"Client disconnected. Total connections: {len(connections)}")
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.error(f"WebSocket error: {e}")
         await remove_connection(websocket)
 
 
 @app.post("/api/process-case")
 async def process_case(request: CaseRequest):
-    """Process a clinical case through the CDSS system."""
+    """Process a clinical case through the CDSS system.
+    
+    Note: A new CDSS instance is created for each request. The global cdss_instance
+    variable is used for callback registration but FastAPI's async request handling
+    ensures sequential processing. For true concurrent request handling, consider
+    using request-scoped dependency injection with proper instance isolation.
+    """
     global cdss_instance
+    
+    # Validate input
+    try:
+        validated_case = request.validated_case
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     
     try:
         # Create a new CDSS instance for this request
@@ -340,11 +368,11 @@ async def process_case(request: CaseRequest):
         
         # Register trace callback with EXAID
         cdss_instance.exaid.register_trace_callback(trace_callback)
-        print(f"Trace callback registered. Callbacks: {len(cdss_instance.exaid.trace_callbacks)}")
+        logger.debug(f"Trace callback registered. Callbacks: {len(cdss_instance.exaid.trace_callbacks)}")
         
         # Register summary callback with EXAID
         cdss_instance.exaid.register_summary_callback(summary_callback)
-        print(f"Summary callback registered. Callbacks: {len(cdss_instance.exaid.summary_callbacks)}")
+        logger.debug(f"Summary callback registered. Callbacks: {len(cdss_instance.exaid.summary_callbacks)}")
         
         # Send start message
         await broadcast_message({
@@ -353,7 +381,7 @@ async def process_case(request: CaseRequest):
         })
         
         # Process the case (this will stream traces via callbacks)
-        result = await cdss_instance.process_case(request.case)
+        await cdss_instance.process_case(validated_case)
         
         # Send completion message
         await broadcast_message({
@@ -367,7 +395,7 @@ async def process_case(request: CaseRequest):
         }
     except Exception as e:
         error_msg = str(e)
-        print(f"Error processing case: {error_msg}")
+        logger.error(f"Error processing case: {error_msg}")
         
         # Send error message to clients
         await broadcast_message({
