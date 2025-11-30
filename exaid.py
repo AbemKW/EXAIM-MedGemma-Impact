@@ -1,4 +1,4 @@
-from typing import Optional, AsyncIterator
+from typing import Optional, AsyncIterator, Callable, List
 from agents.buffer_agent import BufferAgent
 from agents.summarizer_agent import SummarizerAgent
 from agents.token_gate import TokenGate
@@ -10,6 +10,24 @@ class EXAID:
         self.summarizer_agent = SummarizerAgent()
         self.token_gate = TokenGate()
         self.summaries: list[AgentSummary] = []
+        self.trace_callbacks: List[Callable[[str, str], None]] = []
+        self.summary_callbacks: List[Callable[[AgentSummary], None]] = []
+    
+    def register_trace_callback(self, callback: Callable[[str, str], None]):
+        """Register a callback function to be called when trace tokens are received.
+        
+        Args:
+            callback: Function that takes (agent_id: str, token: str) as arguments
+        """
+        self.trace_callbacks.append(callback)
+    
+    def register_summary_callback(self, callback: Callable[[AgentSummary], None]):
+        """Register a callback function to be called when summaries are created.
+        
+        Args:
+            callback: Function that takes (summary: AgentSummary) as argument
+        """
+        self.summary_callbacks.append(callback)
     
     def _print_summary(self, summary: AgentSummary):
         print(f"\n{'='*60}")
@@ -58,6 +76,14 @@ class EXAID:
             AgentSummary: if summarization was triggered.
             None: otherwise.
         """
+        # Emit trace text as tokens to callbacks (for non-streaming traces)
+        for callback in self.trace_callbacks:
+            try:
+                # Send the entire text as a single "token" for non-streaming traces
+                callback(id, text)
+            except Exception as e:
+                print(f"Error in trace callback: {e}")
+        
         trigger = await self.buffer_agent.addchunk(id, text)
         if trigger:
             agent_buffer = self.buffer_agent.flush()
@@ -72,6 +98,14 @@ class EXAID:
             )
             self.summaries.append(summary)
             self._print_summary(summary)
+            
+            # Emit summary event to callbacks
+            for callback in self.summary_callbacks:
+                try:
+                    callback(summary)
+                except Exception as e:
+                    print(f"Error in summary callback: {e}")
+            
             return summary
         return None
     
@@ -93,10 +127,27 @@ class EXAID:
                 )
                 self.summaries.append(summary)
                 self._print_summary(summary)
+                
+                # Emit summary event to callbacks
+                for callback in self.summary_callbacks:
+                    try:
+                        callback(summary)
+                    except Exception as e:
+                        print(f"Error in summary callback: {e}")
+                
                 return summary
             return None
         
         async for token in token_generator:
+            # Emit token event to callbacks
+            for callback in self.trace_callbacks:
+                try:
+                    callback(agent_id, token)
+                except Exception as e:
+                    # Don't let callback errors break trace processing
+                    print(f"Error in trace callback: {e}")
+            
+            
             chunk = await self.token_gate.add_token(agent_id, token)
             if chunk:
                 summary = await process_chunk(chunk)
@@ -113,5 +164,8 @@ class EXAID:
             summary = await process_chunk(remaining)
             if summary:
                 last_summary = summary
+        
+        # Note: Trace completion is handled via token-by-token callbacks above
+        # No separate completion event needed since tokens are streamed in real-time
         
         return last_summary
