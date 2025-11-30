@@ -52,7 +52,7 @@ class CDSS:
         else:
             case_text = str(case)
         
-        # Initialize graph state
+        # Initialize graph state with all new collaborative workflow fields
         initial_state: CDSSGraphState = {
             "case_text": case_text,
             "orchestrator_analysis": None,
@@ -60,7 +60,25 @@ class CDSS:
             "laboratory_findings": None,
             "cardiology_findings": None,
             "final_synthesis": None,
-            "exaid": self.exaid
+            "exaid": self.exaid,
+            # New collaborative workflow fields
+            "agent_turn_history": [],
+            "new_findings_since_last_turn": {},
+            "agent_awareness": {
+                "laboratory": [],
+                "cardiology": []
+            },
+            "debate_requests": [],
+            "consensus_status": None,
+            "iteration_count": 0,
+            "max_iterations": 10,
+            # Agent instances (will be created lazily)
+            "orchestrator_agent": None,
+            "laboratory_agent": None,
+            "cardiology_agent": None,
+            # Legacy fields
+            "consultation_request": None,
+            "consulted_agents": []
         }
         
         # Run the graph workflow

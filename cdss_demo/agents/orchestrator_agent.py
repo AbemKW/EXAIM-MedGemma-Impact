@@ -92,9 +92,38 @@ class OrchestratorAgent(DemoBaseAgent):
         decision = await chain.ainvoke({"case_text": case_text})
         return decision
     
+    def _build_prompt_with_history(self, input: str) -> ChatPromptTemplate:
+        """Build prompt including conversation history"""
+        # Extract system message content from the prompt template
+        system_message = self.prompt.messages[0]
+        if hasattr(system_message, 'prompt') and hasattr(system_message.prompt, 'template'):
+            system_content = system_message.prompt.template
+        elif hasattr(system_message, 'content'):
+            system_content = system_message.content
+        else:
+            # Fallback: get from original prompt definition
+            system_content = self.prompt.messages[0].prompt.template if hasattr(self.prompt.messages[0], 'prompt') else str(self.prompt.messages[0])
+        
+        messages = [
+            ("system", system_content)
+        ]
+        
+        # Add conversation history
+        for msg in self.conversation_history:
+            if msg["role"] == "user":
+                messages.append(("user", msg["content"]))
+            elif msg["role"] == "assistant":
+                messages.append(("assistant", msg["content"]))
+        
+        # Add current input
+        messages.append(("user", input))
+        
+        return ChatPromptTemplate.from_messages(messages)
+    
     async def act(self, input: str) -> str:
         """Process clinical case and coordinate agent workflow"""
-        chain = self.prompt | self.llm
+        prompt = self._build_prompt_with_history(input)
+        chain = prompt | self.llm
         response = await chain.ainvoke({"input": input})
         return response.content
     
@@ -107,7 +136,8 @@ class OrchestratorAgent(DemoBaseAgent):
         Yields:
             Tokens as strings as they are generated
         """
-        chain = self.prompt | self.llm
+        prompt = self._build_prompt_with_history(input)
+        chain = prompt | self.llm
         try:
             async for chunk in chain.astream({"input": input}):
                 # Handle different chunk formats from LangChain
