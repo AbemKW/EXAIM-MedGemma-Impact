@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict
 
 class DemoBaseAgent(ABC):
     def __init__(self, agent_id: str):
