@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { AgentTrace, Summary, ConnectionStatus, ModalState, SummaryData } from '@/lib/types';
 
+// Token batching interval in milliseconds - controls how frequently buffered tokens
+// are flushed to the UI. Lower values mean more responsive updates but higher CPU usage.
+const TOKEN_BATCH_INTERVAL_MS = 50;
+
 interface CDSSState {
   // Agent traces
   agents: Map<string, AgentTrace>;
@@ -74,7 +78,7 @@ export const useCDSSStore = create<CDSSState>()(
       }
       tokenBuffer.get(agentId)!.push(token);
       
-      // Start flush interval if not already running (50ms batching)
+      // Start flush interval if not already running
       if (!flushInterval) {
         flushInterval = setInterval(() => {
           const store = get();
@@ -82,7 +86,7 @@ export const useCDSSStore = create<CDSSState>()(
           if (tokenBuffer.size > 0) {
             store.flushTokens();
           }
-        }, 50);
+        }, TOKEN_BATCH_INTERVAL_MS);
       }
     },
     
