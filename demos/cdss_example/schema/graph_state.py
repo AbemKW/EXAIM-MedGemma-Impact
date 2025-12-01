@@ -2,6 +2,8 @@ from typing import TypedDict, Optional, List, Dict, Any
 from demos.cdss_example.agents.cardiology_agent import CardiologyAgent
 from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
 from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent
+from demos.cdss_example.agents.internal_medicine_agent import InternalMedicineAgent
+from demos.cdss_example.agents.radiology_agent import RadiologyAgent
 from exaid_core.exaid import EXAID
 
 
@@ -20,6 +22,12 @@ class CDSSGraphState(TypedDict):
     
     cardiology_agent: Optional[CardiologyAgent]
     """Cardiology agent instance"""
+    
+    internal_medicine_agent: Optional[InternalMedicineAgent]
+    """Internal Medicine agent instance"""
+    
+    radiology_agent: Optional[RadiologyAgent]
+    """Radiology agent instance"""
     
     orchestrator_analysis: Optional[str]
     """Orchestrator's initial analysis of the case"""
@@ -42,6 +50,12 @@ class CDSSGraphState(TypedDict):
     
     cardiology_findings: Optional[str]
     """Cardiology agent's findings and recommendations"""
+    
+    internal_medicine_findings: Optional[str]
+    """Internal Medicine agent's findings and recommendations"""
+    
+    radiology_findings: Optional[str]
+    """Radiology agent's findings and recommendations"""
     
     final_synthesis: Optional[str]
     """Final synthesis from orchestrator combining all findings"""
