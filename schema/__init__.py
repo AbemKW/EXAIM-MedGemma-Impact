@@ -1,2 +1,0 @@
-"""EXAID schema package"""
-
