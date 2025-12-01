@@ -29,7 +29,7 @@ web_ui/
 
 ### Removed FastAPI Server Routes
 
-The following routes and mounts were removed from `web_ui/server.py`:
+The following routes and mounts were removed from `demos/backend/server.py`:
 
 ```python
 # ❌ REMOVED: Static file serving
@@ -45,7 +45,7 @@ async def read_root():
 ### Removed Imports
 
 ```python
-# ❌ REMOVED from web_ui/server.py
+# ❌ REMOVED from demos/backend/server.py
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 ```
@@ -54,7 +54,7 @@ from fastapi.responses import FileResponse
 
 ## Updated Server Architecture
 
-### FastAPI Server (web_ui/server.py)
+### FastAPI Server (demos/backend/server.py)
 
 **Purpose:** Lightweight API backend providing only WebSocket and REST endpoints
 
@@ -73,7 +73,7 @@ from fastapi.responses import FileResponse
 **Server Startup:**
 ```bash
 cd c:\Users\abemk\source\repos\AbemKW\ExAID
-C:/Users/abemk/source/repos/AbemKW/ExAID/.venv/Scripts/python.exe -m uvicorn web_ui.server:app --reload
+C:/Users/abemk/source/repos/AbemKW/ExAID/.venv/Scripts/python.exe -m uvicorn demos.backend.server:app --reload
 ```
 
 **Output:**
@@ -88,7 +88,7 @@ INFO:     Uvicorn running on http://127.0.0.1:8000
 
 ## New Frontend Architecture
 
-### Next.js 14 Application (exaid-frontend/)
+### Next.js 14 Application (demos/frontend/)
 
 **Tech Stack:**
 - **Next.js 14** (App Router)
@@ -99,7 +99,7 @@ INFO:     Uvicorn running on http://127.0.0.1:8000
 
 **Project Structure:**
 ```
-exaid-frontend/
+demos/frontend/
 ├── app/
 │   ├── layout.tsx          # Root layout with fonts
 │   ├── page.tsx            # Main page component
@@ -162,12 +162,12 @@ This script automatically:
 **Terminal 1 - FastAPI Backend:**
 ```powershell
 cd c:\Users\abemk\source\repos\AbemKW\ExAID
-C:/Users/abemk/source/repos/AbemKW/ExAID/.venv/Scripts/python.exe -m uvicorn web_ui.server:app --reload
+C:/Users/abemk/source/repos/AbemKW/ExAID/.venv/Scripts/python.exe -m uvicorn demos.backend.server:app --reload
 ```
 
 **Terminal 2 - Next.js Frontend:**
 ```powershell
-cd c:\Users\abemk\source\repos\AbemKW\ExAID\exaid-frontend
+cd c:\Users\abemk\source\repos\AbemKW\ExAID\demos/frontend
 npm run dev
 ```
 
@@ -183,7 +183,7 @@ npm run dev
 ### Build for Production
 
 ```powershell
-cd c:\Users\abemk\source\repos\AbemKW\ExAID\exaid-frontend
+cd c:\Users\abemk\source\repos\AbemKW\ExAID\demos/frontend
 npm run build
 ```
 
@@ -205,19 +205,19 @@ Route (app)                              Size     First Load JS
 **Terminal 1 - FastAPI (Production Mode):**
 ```powershell
 cd c:\Users\abemk\source\repos\AbemKW\ExAID
-C:/Users/abemk/source/repos/AbemKW/ExAID/.venv/Scripts/python.exe -m uvicorn web_ui.server:app --host 0.0.0.0 --port 8000
+C:/Users/abemk/source/repos/AbemKW/ExAID/.venv/Scripts/python.exe -m uvicorn demos.backend.server:app --host 0.0.0.0 --port 8000
 ```
 
 **Terminal 2 - Next.js (Production Server):**
 ```powershell
-cd c:\Users\abemk\source\repos\AbemKW\ExAID\exaid-frontend
+cd c:\Users\abemk\source\repos\AbemKW\ExAID\demos/frontend
 npm start
 ```
 
 ### Production Deployment Checklist
 
 - [ ] Update `NEXT_PUBLIC_WS_URL` and `NEXT_PUBLIC_API_URL` in `.env.production`
-- [ ] Configure CORS in `web_ui/server.py` to allow production domain
+- [ ] Configure CORS in `demos/backend/server.py` to allow production domain
 - [ ] Run `npm run build` to generate optimized production bundle
 - [ ] Serve FastAPI with production ASGI server (e.g., Gunicorn + Uvicorn workers)
 - [ ] Deploy Next.js using Vercel, Docker, or standalone Node.js server
@@ -233,7 +233,7 @@ npm start
 **Symptom:** WebSocket connects then immediately disconnects
 
 **Solution:**
-1. Check CORS configuration in `web_ui/server.py`:
+1. Check CORS configuration in `demos/backend/server.py`:
    ```python
    allow_origins=["http://localhost:3000", "http://localhost:3001"]
    ```
@@ -472,7 +472,7 @@ services:
     ports:
       - "8000:8000"
   frontend:
-    build: ./exaid-frontend
+    build: ./demos/frontend
     ports:
       - "3000:3000"
     environment:
@@ -529,3 +529,4 @@ The application is now easier to maintain, extend, and deploy. All original func
 **Last Updated:** November 30, 2025  
 **Migration By:** GitHub Copilot (Claude Sonnet 4.5)  
 **Repository:** AbemKW/LiveThoughtSum (Branch: UI_token_streaming)
+
