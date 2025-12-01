@@ -3,6 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from exaid_core.llm import mas_llm
 from exaid_core.callbacks.agent_streaming_callback import AgentStreamingCallback
+from demos.cdss_example.schema.agent_messages import ConsultationRequest
 
 
 class CardiologyAgent(DemoBaseAgent):
@@ -118,48 +119,69 @@ class CardiologyAgent(DemoBaseAgent):
             else:
                 raise
     
-    async def decide_consultation(self, findings: str, consulted_agents: list[str]) -> Optional[str]:
-        """Decide if laboratory consultation is needed based on findings
+    async def decide_consultation(self, findings: str, consulted_agents: list[str]) -> Optional[ConsultationRequest]:
+        """Decide if specialist consultation is needed based on findings
         
         Args:
             findings: The cardiology agent's findings and analysis
             consulted_agents: List of agents that have already been consulted
             
         Returns:
-            "laboratory" if laboratory consultation is needed, None otherwise
+            ConsultationRequest object if consultation is needed, None otherwise
         """
-        # Don't request consultation if laboratory has already been consulted
-        if "laboratory" in consulted_agents:
+        # Check which specialists haven't been consulted yet
+        available_specialists = []
+        if "internal_medicine" not in consulted_agents:
+            available_specialists.append("internal_medicine")
+        if "laboratory" not in consulted_agents:
+            available_specialists.append("laboratory")
+        if "radiology" not in consulted_agents:
+            available_specialists.append("radiology")
+        
+        if not available_specialists:
             return None
         
         consultation_prompt = ChatPromptTemplate.from_messages([
             ("system",
              "You are a cardiologist analyzing your findings to determine "
-             "if a laboratory consultation is needed.\n\n"
-             "Request laboratory consultation if:\n"
-             "- You need additional lab values to complete your cardiac assessment\n"
-             "- You need interpretation of specific lab results (cardiac biomarkers, metabolic panels, etc.)\n"
-             "- Lab values are mentioned but not fully analyzed in the case\n"
-             "- You need laboratory expertise to interpret abnormal values\n"
-             "- The clinical context requires detailed lab interpretation\n\n"
+             "if specialist consultation is needed.\n\n"
+             "Available specialists for consultation:\n"
+             "- Internal Medicine: For overall clinical correlation and patient management\n"
+             "- Laboratory: For lab test interpretation (cardiac biomarkers, metabolic panels, etc.)\n"
+             "- Radiology: For cardiac imaging correlation\n\n"
+             "Request consultation if:\n"
+             "- You need specialist expertise to complete your cardiac assessment\n"
+             "- Your findings require correlation with lab/imaging/clinical data\n"
+             "- You identified concerns that need specialist interpretation\n"
+             "- The clinical context requires specialist input\n\n"
              "Do NOT request consultation if:\n"
-             "- Your findings are complete and don't require lab interpretation\n"
-             "- The case has no laboratory-related concerns\n"
-             "- You can provide complete assessment without laboratory input\n\n"
-             "Respond with ONLY 'laboratory' if consultation is needed, or 'none' if not needed."),
+             "- Your findings are complete and don't require specialist input\n"
+             "- The case has no concerns requiring that specialty\n"
+             "- You can provide complete assessment without additional consultation\n\n"
+             f"Available specialists: {', '.join(available_specialists)}\n\n"
+             "If consultation is needed, respond with the specialist name and a brief clinical reason (1-2 sentences). "
+             "If no consultation is needed, respond with requested_specialist as empty string."),
             ("user", 
              "Cardiology Findings:\n{findings}\n\n"
-             "Based on these findings, do you need laboratory consultation? "
-             "Respond with 'laboratory' or 'none'.")
+             "Based on these findings, do you need specialist consultation? "
+             f"Available options: {', '.join(available_specialists)}")
         ])
         
-        chain = consultation_prompt | self.llm
-        response = await chain.ainvoke({"findings": findings})
-        response_text = response.content.strip().lower()
+        structured_llm = self.llm.with_structured_output(ConsultationRequest)
+        chain = consultation_prompt | structured_llm
         
-        if "laboratory" in response_text:
-            return "laboratory"
-        return None
+        try:
+            response = await chain.ainvoke({"findings": findings})
+            
+            # Validate the requested specialist is in available list
+            if response.requested_specialist and response.requested_specialist in available_specialists:
+                return response
+            else:
+                return None
+        except Exception as e:
+            # If structured output fails, return None
+            print(f"[WARNING] Structured output failed in cardiology decide_consultation: {e}")
+            return None
     
     async def analyze_with_context(self, context: str, previous_findings: str, new_findings: dict) -> str:
         """Analyze with incremental context, building on previous findings and incorporating new information

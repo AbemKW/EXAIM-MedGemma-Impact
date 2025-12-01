@@ -3,6 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from exaid_core.llm import mas_llm
 from exaid_core.callbacks.agent_streaming_callback import AgentStreamingCallback
+from demos.cdss_example.schema.agent_messages import ConsultationRequest
 
 
 class RadiologyAgent(DemoBaseAgent):
@@ -127,7 +128,7 @@ class RadiologyAgent(DemoBaseAgent):
             else:
                 raise
     
-    async def decide_consultation(self, findings: str, consulted_agents: list[str]) -> Optional[str]:
+    async def decide_consultation(self, findings: str, consulted_agents: list[str]) -> Optional[ConsultationRequest]:
         """Decide if specialist consultation is needed based on imaging findings
         
         Args:
@@ -135,7 +136,7 @@ class RadiologyAgent(DemoBaseAgent):
             consulted_agents: List of agents that have already been consulted
             
         Returns:
-            Agent name if consultation is needed (e.g., "internal_medicine", "cardiology", "laboratory"), None otherwise
+            ConsultationRequest object if consultation is needed, None otherwise
         """
         # Check which specialists haven't been consulted yet
         available_specialists = []
@@ -153,38 +154,71 @@ class RadiologyAgent(DemoBaseAgent):
             ("system",
              "You are a radiologist analyzing your imaging findings to determine "
              "if clinical or specialist consultation is needed.\n\n"
+             "IMPORTANT: Before requesting consultation, check if the case contains adequate imaging data. "
+             "If imaging modality information is missing or incomplete, note this in your reason.\n\n"
              "Available specialists for consultation:\n"
-             f"- Internal Medicine: For clinical correlation and overall patient management\n"
-             f"- Cardiology: For cardiac imaging correlation and cardiac-specific assessment\n"
-             f"- Laboratory: For lab correlation with imaging findings\n\n"
+             "- Internal Medicine: For clinical correlation and overall patient management\n"
+             "- Cardiology: For cardiac imaging correlation and cardiac-specific assessment\n"
+             "- Laboratory: For lab correlation with imaging findings\n\n"
              "Request consultation if:\n"
              "- Your imaging findings require clinical correlation\n"
              "- You identified abnormalities that need specialist interpretation\n"
              "- The case requires integration with clinical or laboratory data\n"
-             "- You need specialist input to narrow the differential\n\n"
+             "- You need specialist input to narrow the differential\n"
+             "- Imaging data is insufficient and you need clinical guidance\n\n"
              "Do NOT request consultation if:\n"
              "- Your radiological interpretation is complete and clear\n"
              "- The imaging findings are definitive without additional input\n"
              "- No clinical correlation is needed\n\n"
              f"Available specialists: {', '.join(available_specialists)}\n\n"
-             "Respond with ONLY the specialist name if consultation is needed (e.g., 'internal_medicine', 'cardiology', 'laboratory'), "
-             "or 'none' if no consultation is needed."),
+             "If consultation is needed, respond with the specialist name and a brief clinical reason (1-2 sentences). "
+             "If imaging data is missing or incomplete, mention this in your reason. "
+             "If no consultation is needed, respond with requested_specialist as empty string."),
             ("user", 
              "Radiology Findings:\n{findings}\n\n"
              "Based on these imaging findings, do you need specialist consultation? "
-             f"Respond with one of: {', '.join(available_specialists)}, or 'none'.")
+             f"Available options: {', '.join(available_specialists)}")
         ])
         
-        chain = consultation_prompt | self.llm
-        response = await chain.ainvoke({"findings": findings})
-        response_text = response.content.strip().lower()
+        structured_llm = self.llm.with_structured_output(ConsultationRequest)
+        chain = consultation_prompt | structured_llm
         
-        # Check if any specialist name is mentioned
-        for specialist in available_specialists:
-            if specialist in response_text:
-                return specialist
+        try:
+            response = await chain.ainvoke({"findings": findings})
+            
+            # Validate the requested specialist is in available list
+            if response.requested_specialist and response.requested_specialist in available_specialists:
+                return response
+            else:
+                return None
+        except Exception as e:
+            # If structured output fails, return None
+            print(f"[WARNING] Structured output failed in radiology decide_consultation: {e}")
+            return None
+    
+    async def analyze_with_context(self, context: str, previous_findings: str, new_findings: dict) -> str:
+        """Analyze with incremental context, building on previous findings and incorporating new information
         
-        return None
+        Args:
+            context: The incremental context built by the context builder
+            previous_findings: The agent's own previous findings
+            new_findings: Dictionary of new findings from other agents (agent_id -> findings)
+            
+        Returns:
+            Updated radiological interpretation incorporating new information
+        """
+        # Build comprehensive input
+        input_text = context
+        if previous_findings:
+            input_text += f"\n\nYour Previous Radiological Interpretation:\n{previous_findings}\n"
+        if new_findings:
+            input_text += "\n\nNew Findings from Other Specialists:\n"
+            for agent_id, findings in new_findings.items():
+                input_text += f"\n{agent_id.upper()} Specialist:\n{findings}\n"
+        
+        input_text += "\n\nBased on this information, provide your updated radiological interpretation incorporating clinical and specialist input."
+        
+        return await self.act(input_text)
     
     async def evaluate_other_agent_findings(self, other_agent_id: str, findings: str) -> Optional[str]:
         """Review and potentially challenge other agents' findings

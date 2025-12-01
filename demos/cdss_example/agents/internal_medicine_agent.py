@@ -3,6 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from exaid_core.llm import mas_llm
 from exaid_core.callbacks.agent_streaming_callback import AgentStreamingCallback
+from demos.cdss_example.schema.agent_messages import ConsultationRequest
 
 
 class InternalMedicineAgent(DemoBaseAgent):
@@ -128,7 +129,7 @@ class InternalMedicineAgent(DemoBaseAgent):
             else:
                 raise
     
-    async def decide_consultation(self, findings: str, consulted_agents: list[str]) -> Optional[str]:
+    async def decide_consultation(self, findings: str, consulted_agents: list[str]) -> Optional[ConsultationRequest]:
         """Decide if specialist consultation is needed based on findings
         
         Args:
@@ -136,7 +137,7 @@ class InternalMedicineAgent(DemoBaseAgent):
             consulted_agents: List of agents that have already been consulted
             
         Returns:
-            Agent name if consultation is needed (e.g., "laboratory", "cardiology", "radiology"), None otherwise
+            ConsultationRequest object if consultation is needed, None otherwise
         """
         # Check which specialists haven't been consulted yet
         available_specialists = []
@@ -155,9 +156,9 @@ class InternalMedicineAgent(DemoBaseAgent):
              "You are an Internal Medicine physician analyzing your findings to determine "
              "if specialist consultation is needed.\n\n"
              "Available specialists for consultation:\n"
-             f"- Laboratory: For lab test interpretation (CBC, metabolic panels, biomarkers, etc.)\n"
-             f"- Cardiology: For cardiac assessment, ECG interpretation, cardiac biomarkers\n"
-             f"- Radiology: For imaging interpretation (X-ray, CT, MRI findings)\n\n"
+             "- Laboratory: For lab test interpretation (CBC, metabolic panels, biomarkers, etc.)\n"
+             "- Cardiology: For cardiac assessment, ECG interpretation, cardiac biomarkers\n"
+             "- Radiology: For imaging interpretation (X-ray, CT, MRI findings)\n\n"
              "Request consultation if:\n"
              "- You need specialist expertise to interpret specific findings\n"
              "- The case requires detailed analysis from that specialty\n"
@@ -168,24 +169,53 @@ class InternalMedicineAgent(DemoBaseAgent):
              "- The case has no concerns requiring that specialty\n"
              "- You can provide complete assessment without additional consultation\n\n"
              f"Available specialists: {', '.join(available_specialists)}\n\n"
-             "Respond with ONLY the specialist name if consultation is needed (e.g., 'laboratory', 'cardiology', 'radiology'), "
-             "or 'none' if no consultation is needed."),
+             "If consultation is needed, respond with the specialist name and a brief clinical reason (1-2 sentences). "
+             "If no consultation is needed, respond with requested_specialist as empty string."),
             ("user", 
              "Internal Medicine Findings:\n{findings}\n\n"
              "Based on these findings, do you need specialist consultation? "
-             f"Respond with one of: {', '.join(available_specialists)}, or 'none'.")
+             f"Available options: {', '.join(available_specialists)}")
         ])
         
-        chain = consultation_prompt | self.llm
-        response = await chain.ainvoke({"findings": findings})
-        response_text = response.content.strip().lower()
+        structured_llm = self.llm.with_structured_output(ConsultationRequest)
+        chain = consultation_prompt | structured_llm
         
-        # Check if any specialist name is mentioned
-        for specialist in available_specialists:
-            if specialist in response_text:
-                return specialist
+        try:
+            response = await chain.ainvoke({"findings": findings})
+            
+            # Validate the requested specialist is in available list
+            if response.requested_specialist and response.requested_specialist in available_specialists:
+                return response
+            else:
+                return None
+        except Exception as e:
+            # If structured output fails, return None
+            print(f"[WARNING] Structured output failed in internal_medicine decide_consultation: {e}")
+            return None
+    
+    async def analyze_with_context(self, context: str, previous_findings: str, new_findings: dict) -> str:
+        """Analyze with incremental context, building on previous findings and incorporating new information
         
-        return None
+        Args:
+            context: The incremental context built by the context builder
+            previous_findings: The agent's own previous findings
+            new_findings: Dictionary of new findings from other agents (agent_id -> findings)
+            
+        Returns:
+            Updated analysis incorporating new information
+        """
+        # Build comprehensive input
+        input_text = context
+        if previous_findings:
+            input_text += f"\n\nYour Previous Analysis:\n{previous_findings}\n"
+        if new_findings:
+            input_text += "\n\nNew Findings from Other Specialists:\n"
+            for agent_id, findings in new_findings.items():
+                input_text += f"\n{agent_id.upper()} Specialist:\n{findings}\n"
+        
+        input_text += "\n\nBased on this information, provide your updated analysis integrating all specialist input."
+        
+        return await self.act(input_text)
     
     async def evaluate_other_agent_findings(self, other_agent_id: str, findings: str) -> Optional[str]:
         """Review and potentially challenge other agents' findings
