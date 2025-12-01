@@ -1,19 +1,7 @@
 import asyncio
-import sys
-from pathlib import Path
 
-# CRITICAL: Add parent directory to path BEFORE any other imports
-# This must happen first so that all modules can find their dependencies
-project_root = Path(__file__).parent.parent.resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-# Verify the path is set correctly (for debugging)
-# print(f"Project root: {project_root}")
-# print(f"Python path includes project root: {str(project_root) in sys.path}")
-
-from cdss_demo.cdss import CDSS
-from cdss_demo.schema.clinical_case import ClinicalCase, VitalSigns, LabResult
+from demos.cdss_example.cdss import CDSS
+from demos.cdss_example.schema.clinical_case import ClinicalCase, VitalSigns, LabResult
 
 
 def format_summary_display(summary) -> str:

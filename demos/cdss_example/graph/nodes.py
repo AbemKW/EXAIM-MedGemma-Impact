@@ -1,19 +1,12 @@
-import sys
-from pathlib import Path
 from datetime import datetime
 
-# CRITICAL: Add parent directory to path BEFORE any other imports
-project_root = Path(__file__).parent.parent.parent.resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 from typing import Dict, Any
-from cdss_demo.schema.graph_state import CDSSGraphState
-from cdss_demo.agents.orchestrator_agent import OrchestratorAgent, AgentDecision
-from cdss_demo.agents.laboratory_agent import LaboratoryAgent
-from cdss_demo.agents.cardiology_agent import CardiologyAgent
-from cdss_demo.graph.agent_context import build_agent_context, get_new_findings_for_agent
-from cdss_demo.graph.consensus import check_consensus
+from demos.cdss_example.schema.graph_state import CDSSGraphState
+from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent, AgentDecision
+from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
+from demos.cdss_example.agents.cardiology_agent import CardiologyAgent
+from .agent_context import build_agent_context, get_new_findings_for_agent
+from .consensus import check_consensus
 
 
 def _generate_finding_id(agent_id: str, turns: list) -> str:

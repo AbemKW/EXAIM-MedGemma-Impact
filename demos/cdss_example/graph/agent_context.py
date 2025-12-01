@@ -1,13 +1,5 @@
-import sys
-from pathlib import Path
-
-# CRITICAL: Add parent directory to path BEFORE any other imports
-project_root = Path(__file__).parent.parent.parent.resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 from typing import Dict
-from cdss_demo.schema.graph_state import CDSSGraphState
+from demos.cdss_example.schema.graph_state import CDSSGraphState
 
 
 def build_agent_context(agent_id: str, state: CDSSGraphState) -> str:
