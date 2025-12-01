@@ -643,7 +643,7 @@ Trace metadata stored by BufferAgent:
 
 ```python
 import asyncio
-from exaid import EXAID
+from exaid_core import EXAID
 
 async def main():
     # Initialize EXAID
@@ -884,7 +884,7 @@ llm = ChatOpenAI(
 
 ```python
 import asyncio
-from exaid import EXAID
+from exaid_core import EXAID
 
 async def main():
     exaid = EXAID()
@@ -906,7 +906,7 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from exaid import EXAID
+from exaid_core import EXAID
 
 async def main():
     exaid = EXAID()
@@ -929,7 +929,7 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from exaid import EXAID
+from exaid_core import EXAID
 
 async def token_stream():
     """Simulate a token stream"""
@@ -985,7 +985,7 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from exaid import EXAID
+from exaid_core import EXAID
 
 async def main():
     exaid = EXAID()

@@ -30,12 +30,12 @@ This guide provides step-by-step instructions for migrating from the vanilla HTM
 
 ### 1. Install Next.js Frontend
 
-The Next.js project has been created at `c:\Users\abemk\source\repos\AbemKW\ExAID\exaid-frontend\`
+The Next.js project has been created at `c:\Users\abemk\source\repos\AbemKW\ExAID\demos/frontend\`
 
 Navigate to the frontend directory:
 
 ```powershell
-cd c:\Users\abemk\source\repos\AbemKW\ExAID\exaid-frontend
+cd c:\Users\abemk\source\repos\AbemKW\ExAID\demos/frontend
 ```
 
 Dependencies are already installed:
@@ -83,7 +83,7 @@ You need TWO terminal windows running simultaneously:
 ```powershell
 # From project root
 cd c:\Users\abemk\source\repos\AbemKW\ExAID
-python -m uvicorn web_ui.server:app --reload
+python -m uvicorn demos.backend.server:app --reload
 ```
 
 Expected output:
@@ -96,7 +96,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8000
 #### Terminal 2: Next.js Frontend
 ```powershell
 # From frontend directory
-cd c:\Users\abemk\source\repos\AbemKW\ExAID\exaid-frontend
+cd c:\Users\abemk\source\repos\AbemKW\ExAID\demos/frontend
 npm run dev
 ```
 
@@ -244,7 +244,7 @@ Test all functionality to ensure behavior matches the original:
 ## File Structure Reference
 
 ```
-exaid-frontend/
+demos/frontend/
 ├── app/
 │   ├── layout.tsx          # Root layout with modal portal
 │   ├── page.tsx            # Main page with WebSocket initialization
@@ -340,7 +340,7 @@ app.add_middleware(
 
 ### Build Next.js
 ```powershell
-cd exaid-frontend
+cd demos/frontend
 npm run build
 npm run start  # Production server on port 3000
 ```
@@ -385,3 +385,4 @@ Migration is complete when:
 **Backend**: FastAPI (unchanged)  
 **State Management**: Zustand 4.x  
 **Styling**: Tailwind CSS 3.x
+

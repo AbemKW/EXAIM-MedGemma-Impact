@@ -44,7 +44,7 @@ EXAID is an experimental Python project for capturing short, live traces from mu
 
    ```python
    import asyncio
-   from exaid import EXAID
+   from exaid_core import EXAID
 
    async def main():
        exaid = EXAID()
