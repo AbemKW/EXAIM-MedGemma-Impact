@@ -25,7 +25,7 @@ mas_llm = ChatGroq(
 
 # EXAID LLM (Gemini — strong reasoning)
 exaid_llm = ChatGoogleGenerativeAI(
-    model=os.getenv("LLM_MODEL_NAME", "gemini-2.5-flash"),
+    model=os.getenv("LLM_MODEL_NAME", "gemini-2.5-pro"),
     google_api_key=os.getenv("LLM_API_KEY"),
     streaming=True
 )

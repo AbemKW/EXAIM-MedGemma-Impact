@@ -1,14 +1,23 @@
 from datetime import datetime
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from demos.cdss_example.schema.graph_state import CDSSGraphState
 from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent, AgentDecision
 from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
 from demos.cdss_example.agents.cardiology_agent import CardiologyAgent
 from demos.cdss_example.agents.internal_medicine_agent import InternalMedicineAgent
 from demos.cdss_example.agents.radiology_agent import RadiologyAgent
-from .agent_context import build_agent_context, get_new_findings_for_agent
+from demos.cdss_example.schema.agent_messages import ConsultationRequest
+from .agent_context import build_agent_context
 from .consensus import check_consensus
+from .utils import (
+    ensure_agent_awareness,
+    get_new_findings_for_agent,
+    create_agent_turn_entry,
+    update_consulted_agents,
+    create_challenge_dict,
+    create_consultation_request_dict
+)
 
 
 def _generate_finding_id(agent_id: str, turns: list) -> str:
@@ -250,6 +259,14 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
     iteration_count = state.get("iteration_count", 0)
     consulted_agents = state.get("consulted_agents") or []
     
+    # Ensure agent awareness is initialized
+    awareness_update = ensure_agent_awareness("laboratory", state)
+    updated_agent_awareness = agent_awareness.copy()
+    updated_agent_awareness.update(awareness_update)
+    
+    # Get new findings from other agents
+    new_findings_dict, finding_ids = get_new_findings_for_agent("laboratory", state)
+    
     # Build incremental context for this agent
     context = build_agent_context("laboratory", state)
     
@@ -297,45 +314,49 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Add response to conversation history
     laboratory.add_to_history("assistant", findings)
     
-    # Update agent awareness - mark that lab has seen current findings
-    if "laboratory" not in agent_awareness:
-        agent_awareness["laboratory"] = []
+    # Update agent awareness with new findings seen
+    for finding_id in finding_ids:
+        if finding_id not in updated_agent_awareness["laboratory"]:
+            updated_agent_awareness["laboratory"].append(finding_id)
     
-    # Mark findings from other agents as seen
-    new_findings = get_new_findings_for_agent("laboratory", state)
-    for other_agent_id, other_findings in new_findings.items():
-        finding_id = f"{other_agent_id}_{len(agent_turn_history)}"
-        if finding_id not in agent_awareness["laboratory"]:
-            agent_awareness["laboratory"].append(finding_id)
+    # Evaluate other agents' findings and potentially issue challenges
+    challenge: Optional[Dict[str, str]] = None
+    for other_agent_id, other_findings in new_findings_dict.items():
+        critique = await laboratory.evaluate_other_agent_findings(other_agent_id, other_findings)
+        if critique:
+            challenge = create_challenge_dict("laboratory", other_agent_id, critique)
+            break  # Only issue one challenge per turn
     
-    # Add turn to history
-    turn_entry = {
-        "agent_id": "laboratory",
-        "turn_number": iteration_count,
-        "timestamp": datetime.now().isoformat(),
-        "findings": findings
-    }
+    # Create turn entry
+    turn_entry = create_agent_turn_entry("laboratory", findings, iteration_count)
     updated_turn_history = agent_turn_history + [turn_entry]
     
     # Decide if consultation is needed
-    consultation_request = await laboratory.decide_consultation(findings, consulted_agents)
+    consultation_request_obj: Optional[ConsultationRequest] = await laboratory.decide_consultation(findings, consulted_agents)
     
-    # Update consulted_agents if not already present
-    updated_consulted_agents = consulted_agents.copy()
-    if "laboratory" not in updated_consulted_agents:
-        updated_consulted_agents.append("laboratory")
+    # Convert ConsultationRequest to dict format for node output
+    consultation_request_dict: Optional[Dict[str, str]] = None
+    consultation_request_str: Optional[str] = None  # For backward compatibility with orchestrator
+    if consultation_request_obj:
+        consultation_request_dict = create_consultation_request_dict(
+            consultation_request_obj.requested_specialist,
+            consultation_request_obj.reason
+        )
+        consultation_request_str = consultation_request_obj.requested_specialist
     
-    # Check for debate requests (if agent wants to challenge other findings)
-    # This would be implemented in the agent's decide_if_needs_response method
-    # For now, we'll just return the findings
+    # Update consulted_agents
+    updated_consulted_agents = update_consulted_agents("laboratory", consulted_agents)
     
     return {
         "laboratory_findings": findings,
-        "consultation_request": consultation_request,
+        "consultation_request": consultation_request_str,  # For orchestrator (backward compatible)
         "consulted_agents": updated_consulted_agents,
         "agent_turn_history": updated_turn_history,
-        "agent_awareness": agent_awareness,
-        "new_findings_since_last_turn": {}  # Will be updated by orchestrator
+        "agent_awareness": updated_agent_awareness,
+        "new_findings_since_last_turn": {},  # Placeholder for Phase 3
+        # Phase 2 additions (stored in node output only, not in state):
+        "_laboratory_consultation_request": consultation_request_dict,  # Full dict with reason
+        "_laboratory_challenge": challenge  # Challenge dict if issued
     }
 
 
@@ -349,6 +370,14 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     agent_awareness = state.get("agent_awareness") or {}
     iteration_count = state.get("iteration_count", 0)
     consulted_agents = state.get("consulted_agents") or []
+    
+    # Ensure agent awareness is initialized
+    awareness_update = ensure_agent_awareness("cardiology", state)
+    updated_agent_awareness = agent_awareness.copy()
+    updated_agent_awareness.update(awareness_update)
+    
+    # Get new findings from other agents
+    new_findings_dict, finding_ids = get_new_findings_for_agent("cardiology", state)
     
     # Build incremental context for this agent
     context = build_agent_context("cardiology", state)
@@ -401,41 +430,49 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Add response to conversation history
     cardiology.add_to_history("assistant", findings)
     
-    # Update agent awareness - mark that cardiology has seen current findings
-    if "cardiology" not in agent_awareness:
-        agent_awareness["cardiology"] = []
+    # Update agent awareness with new findings seen
+    for finding_id in finding_ids:
+        if finding_id not in updated_agent_awareness["cardiology"]:
+            updated_agent_awareness["cardiology"].append(finding_id)
     
-    # Mark findings from other agents as seen
-    new_findings = get_new_findings_for_agent("cardiology", state)
-    for other_agent_id, other_findings in new_findings.items():
-        finding_id = f"{other_agent_id}_{len(agent_turn_history)}"
-        if finding_id not in agent_awareness["cardiology"]:
-            agent_awareness["cardiology"].append(finding_id)
+    # Evaluate other agents' findings and potentially issue challenges
+    challenge: Optional[Dict[str, str]] = None
+    for other_agent_id, other_findings in new_findings_dict.items():
+        critique = await cardiology.evaluate_other_agent_findings(other_agent_id, other_findings)
+        if critique:
+            challenge = create_challenge_dict("cardiology", other_agent_id, critique)
+            break  # Only issue one challenge per turn
     
-    # Add turn to history
-    turn_entry = {
-        "agent_id": "cardiology",
-        "turn_number": iteration_count,
-        "timestamp": datetime.now().isoformat(),
-        "findings": findings
-    }
+    # Create turn entry
+    turn_entry = create_agent_turn_entry("cardiology", findings, iteration_count)
     updated_turn_history = agent_turn_history + [turn_entry]
     
     # Decide if consultation is needed
-    consultation_request = await cardiology.decide_consultation(findings, consulted_agents)
+    consultation_request_obj: Optional[ConsultationRequest] = await cardiology.decide_consultation(findings, consulted_agents)
     
-    # Update consulted_agents if not already present
-    updated_consulted_agents = consulted_agents.copy()
-    if "cardiology" not in updated_consulted_agents:
-        updated_consulted_agents.append("cardiology")
+    # Convert ConsultationRequest to dict format for node output
+    consultation_request_dict: Optional[Dict[str, str]] = None
+    consultation_request_str: Optional[str] = None  # For backward compatibility with orchestrator
+    if consultation_request_obj:
+        consultation_request_dict = create_consultation_request_dict(
+            consultation_request_obj.requested_specialist,
+            consultation_request_obj.reason
+        )
+        consultation_request_str = consultation_request_obj.requested_specialist
+    
+    # Update consulted_agents
+    updated_consulted_agents = update_consulted_agents("cardiology", consulted_agents)
     
     return {
         "cardiology_findings": findings,
-        "consultation_request": consultation_request,
+        "consultation_request": consultation_request_str,  # For orchestrator (backward compatible)
         "consulted_agents": updated_consulted_agents,
         "agent_turn_history": updated_turn_history,
-        "agent_awareness": agent_awareness,
-        "new_findings_since_last_turn": {}  # Will be updated by orchestrator
+        "agent_awareness": updated_agent_awareness,
+        "new_findings_since_last_turn": {},  # Placeholder for Phase 3
+        # Phase 2 additions (stored in node output only, not in state):
+        "_cardiology_consultation_request": consultation_request_dict,  # Full dict with reason
+        "_cardiology_challenge": challenge  # Challenge dict if issued
     }
 
 
@@ -449,6 +486,14 @@ async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
     agent_awareness = state.get("agent_awareness") or {}
     iteration_count = state.get("iteration_count", 0)
     consulted_agents = state.get("consulted_agents") or []
+    
+    # Ensure agent awareness is initialized
+    awareness_update = ensure_agent_awareness("internal_medicine", state)
+    updated_agent_awareness = agent_awareness.copy()
+    updated_agent_awareness.update(awareness_update)
+    
+    # Get new findings from other agents
+    new_findings_dict, finding_ids = get_new_findings_for_agent("internal_medicine", state)
     
     # Build incremental context for this agent
     context = build_agent_context("internal_medicine", state)
@@ -500,41 +545,49 @@ async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Add response to conversation history
     internal_med.add_to_history("assistant", findings)
     
-    # Update agent awareness - mark that internal medicine has seen current findings
-    if "internal_medicine" not in agent_awareness:
-        agent_awareness["internal_medicine"] = []
+    # Update agent awareness with new findings seen
+    for finding_id in finding_ids:
+        if finding_id not in updated_agent_awareness["internal_medicine"]:
+            updated_agent_awareness["internal_medicine"].append(finding_id)
     
-    # Mark findings from other agents as seen
-    new_findings = get_new_findings_for_agent("internal_medicine", state)
-    for other_agent_id, other_findings in new_findings.items():
-        finding_id = f"{other_agent_id}_{len(agent_turn_history)}"
-        if finding_id not in agent_awareness["internal_medicine"]:
-            agent_awareness["internal_medicine"].append(finding_id)
+    # Evaluate other agents' findings and potentially issue challenges
+    challenge: Optional[Dict[str, str]] = None
+    for other_agent_id, other_findings in new_findings_dict.items():
+        critique = await internal_med.evaluate_other_agent_findings(other_agent_id, other_findings)
+        if critique:
+            challenge = create_challenge_dict("internal_medicine", other_agent_id, critique)
+            break  # Only issue one challenge per turn
     
-    # Add turn to history
-    turn_entry = {
-        "agent_id": "internal_medicine",
-        "turn_number": iteration_count,
-        "timestamp": datetime.now().isoformat(),
-        "findings": findings
-    }
+    # Create turn entry
+    turn_entry = create_agent_turn_entry("internal_medicine", findings, iteration_count)
     updated_turn_history = agent_turn_history + [turn_entry]
     
-    # Decide if consultation is needed (for now, set to None as per Phase 1 requirements)
-    consultation_request = None
+    # Decide if consultation is needed (now wired up for Phase 2)
+    consultation_request_obj: Optional[ConsultationRequest] = await internal_med.decide_consultation(findings, consulted_agents)
     
-    # Update consulted_agents if not already present
-    updated_consulted_agents = consulted_agents.copy()
-    if "internal_medicine" not in updated_consulted_agents:
-        updated_consulted_agents.append("internal_medicine")
+    # Convert ConsultationRequest to dict format for node output
+    consultation_request_dict: Optional[Dict[str, str]] = None
+    consultation_request_str: Optional[str] = None  # For backward compatibility with orchestrator
+    if consultation_request_obj:
+        consultation_request_dict = create_consultation_request_dict(
+            consultation_request_obj.requested_specialist,
+            consultation_request_obj.reason
+        )
+        consultation_request_str = consultation_request_obj.requested_specialist
+    
+    # Update consulted_agents
+    updated_consulted_agents = update_consulted_agents("internal_medicine", consulted_agents)
     
     return {
         "internal_medicine_findings": findings,
-        "consultation_request": consultation_request,
+        "consultation_request": consultation_request_str,  # For orchestrator (backward compatible)
         "consulted_agents": updated_consulted_agents,
         "agent_turn_history": updated_turn_history,
-        "agent_awareness": agent_awareness,
-        "new_findings_since_last_turn": {}  # Will be updated by orchestrator
+        "agent_awareness": updated_agent_awareness,
+        "new_findings_since_last_turn": {},  # Placeholder for Phase 3
+        # Phase 2 additions (stored in node output only, not in state):
+        "_internal_medicine_consultation_request": consultation_request_dict,  # Full dict with reason
+        "_internal_medicine_challenge": challenge  # Challenge dict if issued
     }
 
 
@@ -548,6 +601,14 @@ async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     agent_awareness = state.get("agent_awareness") or {}
     iteration_count = state.get("iteration_count", 0)
     consulted_agents = state.get("consulted_agents") or []
+    
+    # Ensure agent awareness is initialized
+    awareness_update = ensure_agent_awareness("radiology", state)
+    updated_agent_awareness = agent_awareness.copy()
+    updated_agent_awareness.update(awareness_update)
+    
+    # Get new findings from other agents
+    new_findings_dict, finding_ids = get_new_findings_for_agent("radiology", state)
     
     # Build incremental context for this agent
     context = build_agent_context("radiology", state)
@@ -597,41 +658,49 @@ async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Add response to conversation history
     radiology.add_to_history("assistant", findings)
     
-    # Update agent awareness - mark that radiology has seen current findings
-    if "radiology" not in agent_awareness:
-        agent_awareness["radiology"] = []
+    # Update agent awareness with new findings seen
+    for finding_id in finding_ids:
+        if finding_id not in updated_agent_awareness["radiology"]:
+            updated_agent_awareness["radiology"].append(finding_id)
     
-    # Mark findings from other agents as seen
-    new_findings = get_new_findings_for_agent("radiology", state)
-    for other_agent_id, other_findings in new_findings.items():
-        finding_id = f"{other_agent_id}_{len(agent_turn_history)}"
-        if finding_id not in agent_awareness["radiology"]:
-            agent_awareness["radiology"].append(finding_id)
+    # Evaluate other agents' findings and potentially issue challenges
+    challenge: Optional[Dict[str, str]] = None
+    for other_agent_id, other_findings in new_findings_dict.items():
+        critique = await radiology.evaluate_other_agent_findings(other_agent_id, other_findings)
+        if critique:
+            challenge = create_challenge_dict("radiology", other_agent_id, critique)
+            break  # Only issue one challenge per turn
     
-    # Add turn to history
-    turn_entry = {
-        "agent_id": "radiology",
-        "turn_number": iteration_count,
-        "timestamp": datetime.now().isoformat(),
-        "findings": findings
-    }
+    # Create turn entry
+    turn_entry = create_agent_turn_entry("radiology", findings, iteration_count)
     updated_turn_history = agent_turn_history + [turn_entry]
     
-    # Decide if consultation is needed (for now, set to None as per Phase 1 requirements)
-    consultation_request = None
+    # Decide if consultation is needed (now wired up for Phase 2)
+    consultation_request_obj: Optional[ConsultationRequest] = await radiology.decide_consultation(findings, consulted_agents)
     
-    # Update consulted_agents if not already present
-    updated_consulted_agents = consulted_agents.copy()
-    if "radiology" not in updated_consulted_agents:
-        updated_consulted_agents.append("radiology")
+    # Convert ConsultationRequest to dict format for node output
+    consultation_request_dict: Optional[Dict[str, str]] = None
+    consultation_request_str: Optional[str] = None  # For backward compatibility with orchestrator
+    if consultation_request_obj:
+        consultation_request_dict = create_consultation_request_dict(
+            consultation_request_obj.requested_specialist,
+            consultation_request_obj.reason
+        )
+        consultation_request_str = consultation_request_obj.requested_specialist
+    
+    # Update consulted_agents
+    updated_consulted_agents = update_consulted_agents("radiology", consulted_agents)
     
     return {
         "radiology_findings": findings,
-        "consultation_request": consultation_request,
+        "consultation_request": consultation_request_str,  # For orchestrator (backward compatible)
         "consulted_agents": updated_consulted_agents,
         "agent_turn_history": updated_turn_history,
-        "agent_awareness": agent_awareness,
-        "new_findings_since_last_turn": {}  # Will be updated by orchestrator
+        "agent_awareness": updated_agent_awareness,
+        "new_findings_since_last_turn": {},  # Placeholder for Phase 3
+        # Phase 2 additions (stored in node output only, not in state):
+        "_radiology_consultation_request": consultation_request_dict,  # Full dict with reason
+        "_radiology_challenge": challenge  # Challenge dict if issued
     }
 
 
