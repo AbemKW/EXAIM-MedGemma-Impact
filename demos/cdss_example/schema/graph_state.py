@@ -1,8 +1,8 @@
 from typing import TypedDict, Optional, List, Dict, Any
-from cdss_demo.agents.cardiology_agent import CardiologyAgent
-from cdss_demo.agents.laboratory_agent import LaboratoryAgent
-from cdss_demo.agents.orchestrator_agent import OrchestratorAgent
-from exaid import EXAID
+from demos.cdss_example.agents.cardiology_agent import CardiologyAgent
+from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
+from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent
+from exaid_core.exaid import EXAID
 
 
 class CDSSGraphState(TypedDict):

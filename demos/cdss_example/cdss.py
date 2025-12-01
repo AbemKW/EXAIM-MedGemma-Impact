@@ -1,22 +1,13 @@
-import sys
-from pathlib import Path
-
-# CRITICAL: Add parent directory to path BEFORE any other imports
-# This must happen first so that exaid.py can find its dependencies
-project_root = Path(__file__).parent.parent.resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 # Now we can safely import modules that depend on the project root being in sys.path
 from typing import Union
-from exaid import EXAID
-from schema.agent_summary import AgentSummary
-from cdss_demo.agents.orchestrator_agent import OrchestratorAgent
-from cdss_demo.agents.cardiology_agent import CardiologyAgent
-from cdss_demo.agents.laboratory_agent import LaboratoryAgent
-from cdss_demo.schema.clinical_case import ClinicalCase
-from cdss_demo.graph.cdss_graph import build_cdss_graph
-from cdss_demo.schema.graph_state import CDSSGraphState
+from exaid_core.exaid import EXAID
+from exaid_core.schema.agent_summary import AgentSummary
+from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent
+from demos.cdss_example.agents.cardiology_agent import CardiologyAgent
+from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
+from demos.cdss_example.schema.clinical_case import ClinicalCase
+from demos.cdss_example.graph.cdss_graph import build_cdss_graph
+from demos.cdss_example.schema.graph_state import CDSSGraphState
 
 
 class CDSS:

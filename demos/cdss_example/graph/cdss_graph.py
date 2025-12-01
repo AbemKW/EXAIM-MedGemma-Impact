@@ -1,20 +1,12 @@
-import sys
-from pathlib import Path
-
-# CRITICAL: Add parent directory to path BEFORE any other imports
-project_root = Path(__file__).parent.parent.parent.resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 from langgraph.graph import StateGraph, END
-from cdss_demo.schema.graph_state import CDSSGraphState
-from cdss_demo.graph.nodes import (
+from demos.cdss_example.schema.graph_state import CDSSGraphState
+from .nodes import (
     orchestrator_node,
     laboratory_node,
     cardiology_node,
     synthesis_node
 )
-from cdss_demo.graph.edges import (
+from .edges import (
     should_call_laboratory,
     route_to_orchestrator
 )

@@ -1,16 +1,8 @@
-import sys
-from pathlib import Path
-
-# CRITICAL: Add parent directory to path BEFORE any other imports
-project_root = Path(__file__).parent.parent.parent.resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 from typing import AsyncIterator, Optional
 from langchain_core.prompts import ChatPromptTemplate
-from cdss_demo.agents.demo_base_agent import DemoBaseAgent
-from llm import mas_llm
-from callbacks.agent_streaming_callback import AgentStreamingCallback
+from .demo_base_agent import DemoBaseAgent
+from exaid_core.llm import mas_llm
+from exaid_core.callbacks.agent_streaming_callback import AgentStreamingCallback
 
 
 class CardiologyAgent(DemoBaseAgent):

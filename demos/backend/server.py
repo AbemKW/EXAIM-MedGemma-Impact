@@ -1,4 +1,3 @@
-import sys
 import asyncio
 import logging
 from pathlib import Path
@@ -6,17 +5,12 @@ from typing import List
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
-from cdss_demo.cdss import CDSS
-from cdss_demo.message_bus import message_queue
+from demos.cdss_example.cdss import CDSS
+from demos.cdss_example.message_bus import message_queue
 
 
 @asynccontextmanager
