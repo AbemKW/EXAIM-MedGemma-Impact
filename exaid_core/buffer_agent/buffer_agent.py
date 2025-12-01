@@ -1,5 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate
-from llm import exaid_llm
+from exaid_core.llm import exaid_llm
 from pydantic import BaseModel
 
 class TraceData(BaseModel):

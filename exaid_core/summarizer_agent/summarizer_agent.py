@@ -1,7 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate
-from schema.agent_summary import AgentSummary
+from exaid_core.schema.agent_summary import AgentSummary
 from typing import List
-from llm import exaid_llm
+from exaid_core.llm import exaid_llm
 
 class SummarizerAgent:
     def __init__(self):

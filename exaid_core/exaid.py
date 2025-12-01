@@ -1,8 +1,8 @@
 from typing import Optional, AsyncIterator, Callable, List
-from agents.buffer_agent import BufferAgent
-from agents.summarizer_agent import SummarizerAgent
-from agents.token_gate import TokenGate
-from schema.agent_summary import AgentSummary
+from exaid_core.buffer_agent.buffer_agent import BufferAgent
+from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
+from exaid_core.token_gate.token_gate import TokenGate
+from exaid_core.schema.agent_summary import AgentSummary
 
 class EXAID:
     def __init__(self):

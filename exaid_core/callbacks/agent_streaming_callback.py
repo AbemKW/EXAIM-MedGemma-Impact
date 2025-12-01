@@ -2,7 +2,7 @@
 import asyncio
 from datetime import datetime
 from langchain_core.callbacks import AsyncCallbackHandler
-from cdss_demo.message_bus import message_queue
+from demos.cdss_example.message_bus import message_queue
 
 
 class AgentStreamingCallback(AsyncCallbackHandler):
