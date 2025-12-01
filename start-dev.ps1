@@ -10,7 +10,7 @@ Set-Location $projectRoot
 
 # Start FastAPI backend in a new terminal (assumes virtual environment is activated or python is in PATH)
 Write-Host "📡 Starting FastAPI Backend (port 8000)..." -ForegroundColor Green
-$backendJob = Start-Process pwsh -ArgumentList "-NoExit", "-Command", "cd '$projectRoot'; Write-Host '🔧 FastAPI Backend Server' -ForegroundColor Cyan; python -m uvicorn demos.backend.server:app --reload" -PassThru
+$backendJob = Start-Process pwsh -ArgumentList "-NoExit", "-Command", "cd '$projectRoot'; Write-Host '🔧 FastAPI Backend Server' -ForegroundColor Cyan; .\.venv\Scripts\python.exe -m uvicorn demos.backend.server:app --reload" -PassThru
 
 Start-Sleep -Seconds 2
 
