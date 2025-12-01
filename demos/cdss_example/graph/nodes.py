@@ -5,6 +5,8 @@ from demos.cdss_example.schema.graph_state import CDSSGraphState
 from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent, AgentDecision
 from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
 from demos.cdss_example.agents.cardiology_agent import CardiologyAgent
+from demos.cdss_example.agents.internal_medicine_agent import InternalMedicineAgent
+from demos.cdss_example.agents.radiology_agent import RadiologyAgent
 from .agent_context import build_agent_context, get_new_findings_for_agent
 from .consensus import check_consensus
 
@@ -46,6 +48,20 @@ def _get_or_create_cardiology(state: CDSSGraphState) -> CardiologyAgent:
     if state.get("cardiology_agent") is None:
         state["cardiology_agent"] = CardiologyAgent()
     return state["cardiology_agent"]
+
+
+def _get_or_create_internal_medicine(state: CDSSGraphState) -> InternalMedicineAgent:
+    """Get internal medicine agent from state or create if not exists"""
+    if state.get("internal_medicine_agent") is None:
+        state["internal_medicine_agent"] = InternalMedicineAgent()
+    return state["internal_medicine_agent"]
+
+
+def _get_or_create_radiology(state: CDSSGraphState) -> RadiologyAgent:
+    """Get radiology agent from state or create if not exists"""
+    if state.get("radiology_agent") is None:
+        state["radiology_agent"] = RadiologyAgent()
+    return state["radiology_agent"]
 
 async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     """Orchestrator node: manages collaborative workflow, tracks agent awareness, handles debates, checks consensus"""
@@ -423,6 +439,202 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     }
 
 
+async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
+    """Internal Medicine node: provides comprehensive diagnostic reasoning and clinical integration"""
+    internal_med = _get_or_create_internal_medicine(state)
+    exaid = state["exaid"]
+    
+    # Initialize state fields
+    agent_turn_history = state.get("agent_turn_history") or []
+    agent_awareness = state.get("agent_awareness") or {}
+    iteration_count = state.get("iteration_count", 0)
+    consulted_agents = state.get("consulted_agents") or []
+    
+    # Build incremental context for this agent
+    context = build_agent_context("internal_medicine", state)
+    
+    # Determine if this is first turn or continuation
+    im_turns = [t for t in agent_turn_history if t.get("agent_id") == "internal_medicine"]
+    is_first_turn = len(im_turns) == 0
+    
+    # Build the input prompt
+    if is_first_turn:
+        # First turn: receive orchestrator's initial analysis and case
+        im_input = (
+            f"{context}\n\n"
+            "As the Internal Medicine specialist, provide a comprehensive diagnostic assessment. "
+            "Build a broad differential diagnosis considering all body systems. "
+            "Integrate all available clinical information (history, symptoms, vital signs, findings from other specialists). "
+            "Identify the most likely diagnoses and recommend appropriate workup and management. "
+            "Show your step-by-step reasoning process."
+        )
+    else:
+        # Continue from previous analysis
+        im_input = (
+            f"{context}\n\n"
+            "Based on the new information provided above, continue your analysis. "
+            "If there are new findings from other specialists, integrate them into your assessment. "
+            "If there are questions or challenges directed at you, address them. "
+            "Update or refine your previous differential diagnosis and recommendations as needed."
+        )
+    
+    # Add to conversation history
+    internal_med.add_to_history("user", im_input)
+    
+    # Get internal medicine agent's analysis stream
+    token_stream = internal_med.act_stream(im_input)
+    
+    # Collect tokens while streaming to EXAID
+    collected = []
+    async def wrapper():
+        async for token in token_stream:
+            collected.append(token)
+            yield token
+    
+    # Process streamed tokens through EXAID
+    await exaid.received_streamed_tokens(internal_med.agent_id, wrapper())
+    
+    # Build full findings from collected tokens
+    findings = "".join(collected)
+    
+    # Add response to conversation history
+    internal_med.add_to_history("assistant", findings)
+    
+    # Update agent awareness - mark that internal medicine has seen current findings
+    if "internal_medicine" not in agent_awareness:
+        agent_awareness["internal_medicine"] = []
+    
+    # Mark findings from other agents as seen
+    new_findings = get_new_findings_for_agent("internal_medicine", state)
+    for other_agent_id, other_findings in new_findings.items():
+        finding_id = f"{other_agent_id}_{len(agent_turn_history)}"
+        if finding_id not in agent_awareness["internal_medicine"]:
+            agent_awareness["internal_medicine"].append(finding_id)
+    
+    # Add turn to history
+    turn_entry = {
+        "agent_id": "internal_medicine",
+        "turn_number": iteration_count,
+        "timestamp": datetime.now().isoformat(),
+        "findings": findings
+    }
+    updated_turn_history = agent_turn_history + [turn_entry]
+    
+    # Decide if consultation is needed (for now, set to None as per Phase 1 requirements)
+    consultation_request = None
+    
+    # Update consulted_agents if not already present
+    updated_consulted_agents = consulted_agents.copy()
+    if "internal_medicine" not in updated_consulted_agents:
+        updated_consulted_agents.append("internal_medicine")
+    
+    return {
+        "internal_medicine_findings": findings,
+        "consultation_request": consultation_request,
+        "consulted_agents": updated_consulted_agents,
+        "agent_turn_history": updated_turn_history,
+        "agent_awareness": agent_awareness,
+        "new_findings_since_last_turn": {}  # Will be updated by orchestrator
+    }
+
+
+async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
+    """Radiology node: interprets imaging studies and correlates with clinical presentation"""
+    radiology = _get_or_create_radiology(state)
+    exaid = state["exaid"]
+    
+    # Initialize state fields
+    agent_turn_history = state.get("agent_turn_history") or []
+    agent_awareness = state.get("agent_awareness") or {}
+    iteration_count = state.get("iteration_count", 0)
+    consulted_agents = state.get("consulted_agents") or []
+    
+    # Build incremental context for this agent
+    context = build_agent_context("radiology", state)
+    
+    # Determine if this is first turn or continuation
+    rad_turns = [t for t in agent_turn_history if t.get("agent_id") == "radiology"]
+    is_first_turn = len(rad_turns) == 0
+    
+    # Build the input prompt
+    if is_first_turn:
+        rad_input = (
+            f"{context}\n\n"
+            "Interpret any available imaging studies (X-ray, CT, MRI, ultrasound). "
+            "Systematically describe the imaging findings using standard radiological terminology. "
+            "Build a radiological differential diagnosis and correlate findings with the clinical presentation. "
+            "Recommend additional imaging if needed. Show your step-by-step reasoning process."
+        )
+    else:
+        # Continue from previous analysis
+        rad_input = (
+            f"{context}\n\n"
+            "Based on the new information provided above, continue your analysis. "
+            "If there are new findings from other specialists, incorporate them into your imaging interpretation. "
+            "If there are questions or challenges directed at you, address them. "
+            "Update or refine your previous radiological assessment as needed."
+        )
+    
+    # Add to conversation history
+    radiology.add_to_history("user", rad_input)
+    
+    # Get radiology agent's analysis stream
+    token_stream = radiology.act_stream(rad_input)
+    
+    # Collect tokens while streaming to EXAID
+    collected = []
+    async def wrapper():
+        async for token in token_stream:
+            collected.append(token)
+            yield token
+    
+    # Process streamed tokens through EXAID
+    await exaid.received_streamed_tokens(radiology.agent_id, wrapper())
+    
+    # Build full findings from collected tokens
+    findings = "".join(collected)
+    
+    # Add response to conversation history
+    radiology.add_to_history("assistant", findings)
+    
+    # Update agent awareness - mark that radiology has seen current findings
+    if "radiology" not in agent_awareness:
+        agent_awareness["radiology"] = []
+    
+    # Mark findings from other agents as seen
+    new_findings = get_new_findings_for_agent("radiology", state)
+    for other_agent_id, other_findings in new_findings.items():
+        finding_id = f"{other_agent_id}_{len(agent_turn_history)}"
+        if finding_id not in agent_awareness["radiology"]:
+            agent_awareness["radiology"].append(finding_id)
+    
+    # Add turn to history
+    turn_entry = {
+        "agent_id": "radiology",
+        "turn_number": iteration_count,
+        "timestamp": datetime.now().isoformat(),
+        "findings": findings
+    }
+    updated_turn_history = agent_turn_history + [turn_entry]
+    
+    # Decide if consultation is needed (for now, set to None as per Phase 1 requirements)
+    consultation_request = None
+    
+    # Update consulted_agents if not already present
+    updated_consulted_agents = consulted_agents.copy()
+    if "radiology" not in updated_consulted_agents:
+        updated_consulted_agents.append("radiology")
+    
+    return {
+        "radiology_findings": findings,
+        "consultation_request": consultation_request,
+        "consulted_agents": updated_consulted_agents,
+        "agent_turn_history": updated_turn_history,
+        "agent_awareness": agent_awareness,
+        "new_findings_since_last_turn": {}  # Will be updated by orchestrator
+    }
+
+
 async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
     """Synthesis node: orchestrator synthesizes all findings"""
     orchestrator = _get_or_create_orchestrator(state)
@@ -432,11 +644,17 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Collect findings from called agents
     findings_parts = []
     
+    if state.get("internal_medicine_findings"):
+        findings_parts.append(f"Internal Medicine Agent Findings:\n{state['internal_medicine_findings']}")
+    
     if state.get("laboratory_findings"):
         findings_parts.append(f"Laboratory Agent Findings:\n{state['laboratory_findings']}")
     
     if state.get("cardiology_findings"):
         findings_parts.append(f"Cardiology Agent Findings:\n{state['cardiology_findings']}")
+    
+    if state.get("radiology_findings"):
+        findings_parts.append(f"Radiology Agent Findings:\n{state['radiology_findings']}")
     
     # Get all summaries for context
     all_summaries = exaid.get_all_summaries()

@@ -4,6 +4,8 @@ from .nodes import (
     orchestrator_node,
     laboratory_node,
     cardiology_node,
+    internal_medicine_node,
+    radiology_node,
     synthesis_node
 )
 from .edges import (
@@ -22,6 +24,8 @@ def build_cdss_graph():
     workflow.add_node("orchestrator", orchestrator_node)
     workflow.add_node("laboratory", laboratory_node)
     workflow.add_node("cardiology", cardiology_node)
+    workflow.add_node("internal_medicine", internal_medicine_node)
+    workflow.add_node("radiology", radiology_node)
     workflow.add_node("synthesis", synthesis_node)
     
     # Set entry point
