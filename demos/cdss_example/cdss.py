@@ -1,41 +1,34 @@
-# Now we can safely import modules that depend on the project root being in sys.path
+"""Simplified CDSS - orchestrator-driven multi-agent clinical decision support"""
+
 from typing import Union
 from exaid_core.exaid import EXAID
 from exaid_core.schema.agent_summary import AgentSummary
-from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent
-from demos.cdss_example.agents.cardiology_agent import CardiologyAgent
-from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
 from demos.cdss_example.schema.clinical_case import ClinicalCase
 from demos.cdss_example.graph.cdss_graph import build_cdss_graph
 from demos.cdss_example.schema.graph_state import CDSSGraphState
 
 
 class CDSS:
-    """Clinical Decision Support System orchestrator using LangGraph workflow"""
+    """Clinical Decision Support System with simplified orchestrator-driven workflow"""
     
     def __init__(self):
-        """Initialize CDSS with EXAID and graph-based workflow"""
+        """Initialize CDSS with EXAID and simplified graph workflow"""
         self.exaid = EXAID()
         self.graph = build_cdss_graph()
-        # Keep agent references for trace count queries
-        self.orchestrator = OrchestratorAgent()
-        self.cardiology = CardiologyAgent()
-        self.laboratory = LaboratoryAgent()
     
     async def process_case(
         self, 
         case: Union[ClinicalCase, str],
         use_streaming: bool = True
     ) -> dict:
-        """Process a clinical case through the graph-based multi-agent system
+        """Process a clinical case through the simplified multi-agent system
         
         Args:
             case: ClinicalCase object or free-text case description
-            use_streaming: Whether to use streaming token processing (default: True)
-                          Note: Graph implementation always uses streaming internally
+            use_streaming: Whether to use streaming (always True in this implementation)
             
         Returns:
-            Dictionary containing agent findings and final recommendation
+            Dictionary containing final synthesis and summaries
         """
         # Convert case to clinical summary if it's a ClinicalCase object
         if isinstance(case, ClinicalCase):
@@ -43,66 +36,35 @@ class CDSS:
         else:
             case_text = str(case)
         
-        # Initialize graph state with all new collaborative workflow fields
+        # Initialize simplified graph state
         initial_state: CDSSGraphState = {
             "case_text": case_text,
-            "orchestrator_analysis": None,
-            "agents_to_call": None,
-            "laboratory_findings": None,
-            "cardiology_findings": None,
-            "final_synthesis": None,
+            "running_summary": "",
+            "recent_delta": "",
+            "recent_agent": "none",
+            "next_specialist_to_call": "orchestrator",
+            "task_instruction": "",
+            "specialists_called": [],
             "exaid": self.exaid,
-            # New collaborative workflow fields
-            "agent_turn_history": [],
-            "new_findings_since_last_turn": {},
-            "agent_awareness": {
-                "laboratory": [],
-                "cardiology": []
-            },
-            "debate_requests": [],
-            "consensus_status": None,
             "iteration_count": 0,
-            "max_iterations": 10,
-            # Agent instances (will be created lazily)
-            "orchestrator_agent": None,
-            "laboratory_agent": None,
-            "cardiology_agent": None,
-            # Legacy fields
-            "consultation_request": None,
-            "consulted_agents": []
+            "max_iterations": 20,
+            "final_synthesis": None
         }
         
         # Run the graph workflow
         final_state = await self.graph.ainvoke(initial_state)
         
-        # Get all summaries after graph execution
-        all_summaries = self.exaid.get_all_summaries()
-        
-        # Get the final synthesis summary (last one from orchestrator)
-        final_summary = None
-        if all_summaries:
-            # Try to find orchestrator summary with synthesis/final recommendation action
-            orchestrator_summaries = [
-                s for s in all_summaries 
-                if self.orchestrator.agent_id in s.agents
-            ]
-            synthesis_actions = {"synthesis", "final recommendation", "final_synthesis"}
-            synthesis_summaries = [
-                s for s in orchestrator_summaries
-                if s.action and s.action.strip().lower().replace(" ", "_") in synthesis_actions
-            ]
-            if synthesis_summaries:
-                final_summary = synthesis_summaries[-1]
-            elif orchestrator_summaries:
-                # Fallback to last orchestrator summary if no synthesis-specific summary found
-                final_summary = orchestrator_summaries[-1]
-            else:
-                # Fallback to last summary if no orchestrator summary found
-                final_summary = all_summaries[-1]
+        # Get all summaries after graph execution (for UI display only)
+        all_summaries = self.get_all_summaries()
         
         # Compile results
         result = {
             "case_summary": case_text,
+            "final_synthesis": final_state.get("final_synthesis", ""),
+            "running_summary": final_state.get("running_summary", ""),
+            "specialists_called": final_state.get("specialists_called", []),
+            "iteration_count": final_state.get("iteration_count", 0),
+            # EXAID summaries for UI display only - MAS workflow does not depend on these
             "agent_summaries": [
                 {
                     "status_action": s.status_action,
@@ -113,37 +75,26 @@ class CDSS:
                     "agent_contributions": s.agent_contributions
                 }
                 for s in all_summaries
-            ],
-            "final_recommendation": {
-                "status_action": final_summary.status_action if final_summary else "",
-                "key_findings": final_summary.key_findings if final_summary else "",
-                "differential_rationale": final_summary.differential_rationale if final_summary else "",
-                "uncertainty_confidence": final_summary.uncertainty_confidence if final_summary else "",
-                "recommendation_next_step": final_summary.recommendation_next_step if final_summary else "",
-                "agent_contributions": final_summary.agent_contributions if final_summary else ""
-            },
-            "trace_count": {
-                "orchestrator": self.exaid.get_agent_trace_count(self.orchestrator.agent_id),
-                "cardiology": self.exaid.get_agent_trace_count(self.cardiology.agent_id),
-                "laboratory": self.exaid.get_agent_trace_count(self.laboratory.agent_id)
-            },
-            "graph_state": {
-                "orchestrator_analysis": final_state.get("orchestrator_analysis"),
-                "agents_called": final_state.get("agents_to_call"),
-                "laboratory_findings": final_state.get("laboratory_findings"),
-                "cardiology_findings": final_state.get("cardiology_findings"),
-                "final_synthesis": final_state.get("final_synthesis")
-            }
+            ]
         }
         
         return result
     
     def get_all_summaries(self) -> list[AgentSummary]:
-        """Get all summaries from EXAID"""
+        """Get all summaries from EXAID
+        
+        NOTE: EXAID summaries are for UI display only.
+        The MAS workflow does not depend on these summaries.
+        Orchestrator maintains its own running_summary for workflow decisions.
+        """
         return self.exaid.get_all_summaries()
     
     def get_summaries_by_agent(self, agent_id: str) -> list[AgentSummary]:
-        """Get summaries for a specific agent"""
+        """Get summaries for a specific agent
+        
+        NOTE: EXAID summaries are for UI display only.
+        The MAS workflow does not depend on these summaries.
+        """
         return self.exaid.get_summaries_by_agent(agent_id)
     
     def reset(self):

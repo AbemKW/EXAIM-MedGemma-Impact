@@ -1,104 +1,67 @@
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator
 from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from exaid_core.llm import mas_llm
 from exaid_core.callbacks.agent_streaming_callback import AgentStreamingCallback
-from demos.cdss_example.schema.agent_messages import ConsultationRequest
 
 
 class CardiologyAgent(DemoBaseAgent):
-    """Cardiology specialist agent for cardiac assessment and recommendations"""
+    """Cardiology specialist agent for cardiovascular assessment and recommendations"""
     
     def __init__(self, agent_id: str = "CardiologyAgent"):
         super().__init__(agent_id)
         self.llm = mas_llm
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system",
-             "You are an expert cardiologist in a clinical decision support system. "
-             "You specialize in cardiac assessment, interpretation of cardiac tests, "
-             "and cardiovascular disease management.\n\n"
-             "IMPORTANT: Use Chain of Thought reasoning. Show your thinking process step-by-step:\n"
-             "1. First, review the cardiac history and risk factors\n"
-             "2. Analyze cardiac symptoms and physical exam findings\n"
-             "3. Interpret cardiac biomarkers and diagnostic tests\n"
-             "4. Consider differential diagnoses systematically\n"
-             "5. Evaluate urgency and severity\n"
-             "6. Formulate evidence-based recommendations\n\n"
-             "Always show your reasoning process explicitly. Use phrases like:\n"
-             "- 'Let me think through this cardiac case step by step...'\n"
-             "- 'First, I need to assess the cardiac risk factors...'\n"
-             "- 'The elevated troponin suggests...'\n"
-             "- 'Given these findings, I conclude...'\n"
-             "- 'Therefore, my recommendation is...'\n\n"
-             "Your expertise includes:\n"
-             "- Cardiac history interpretation and risk stratification\n"
-             "- ECG interpretation and cardiac imaging\n"
-             "- Cardiac biomarker analysis (troponin, BNP, etc.)\n"
-             "- Heart failure, arrhythmias, coronary artery disease\n"
-             "- Hypertension and cardiovascular risk factors\n"
-             "- Cardiac medication recommendations\n\n"
-             "Guidelines:\n"
-             "- Follow ACC/AHA clinical practice guidelines\n"
-             "- Assess cardiovascular risk factors comprehensively\n"
-             "- Consider differential diagnoses systematically\n"
-             "- Provide evidence-based recommendations\n"
-             "- Identify urgent cardiac conditions requiring immediate attention\n"
-             "- Consider patient comorbidities and medications\n\n"
-             "Provide detailed cardiac assessment with clear reasoning and recommendations. "
-             "Always show your step-by-step thought process."),
-            ("user", "{input}")
-        ])
-    
-    def _build_prompt_with_history(self, input: str) -> ChatPromptTemplate:
-        """Build prompt including conversation history"""
-        # Extract system message content from the prompt template
-        system_message = self.prompt.messages[0]
-        if hasattr(system_message, 'prompt') and hasattr(system_message.prompt, 'template'):
-            system_content = system_message.prompt.template
-        elif hasattr(system_message, 'content'):
-            system_content = system_message.content
-        else:
-            # Fallback: get from original prompt definition
-            system_content = self.prompt.messages[0].prompt.template if hasattr(self.prompt.messages[0], 'prompt') else str(self.prompt.messages[0])
-        
-        messages = [
-            ("system", system_content)
-        ]
-        
-        # Add conversation history
-        for msg in self.conversation_history:
-            if msg["role"] == "user":
-                messages.append(("user", msg["content"]))
-            elif msg["role"] == "assistant":
-                messages.append(("assistant", msg["content"]))
-        
-        # Add current input
-        messages.append(("user", input))
-        
-        return ChatPromptTemplate.from_messages(messages)
-    
-    async def act(self, input: str) -> str:
-        """Perform cardiac assessment and provide recommendations"""
-        prompt = self._build_prompt_with_history(input)
-        chain = prompt | self.llm
-        response = await chain.ainvoke({"input": input})
-        return response.content
+        self.system_prompt = (
+            "You are the Cardiology specialist in a multi-agent clinical decision support system.\n\n"
+            "MULTI-AGENT SYSTEM CONTEXT:\n"
+            "- This is a collaborative MAS with Laboratory, Cardiology, Internal Medicine, and Radiology specialists\n"
+            "- An Orchestrator coordinates the workflow and maintains a running summary\n"
+            "- You will receive: the original case, a running summary (compressed context from prior work), "
+            "a recent update (raw output from the most recent specialist), and your specific task\n"
+            "- Build on the running summary and recent updates - do NOT restart analysis from scratch\n"
+            "- Provide ONLY your domain reasoning - no summaries, critiques, workflow management, or agent coordination\n\n"
+            "YOUR EXPERTISE:\n"
+            "You are an expert cardiologist specializing in cardiovascular medicine. Your expertise includes:\n"
+            "- Acute coronary syndromes (STEMI, NSTEMI, unstable angina)\n"
+            "- Heart failure (systolic and diastolic dysfunction)\n"
+            "- Arrhythmias and conduction disorders\n"
+            "- Valvular heart disease\n"
+            "- Cardiomyopathies\n"
+            "- Hypertension and cardiovascular risk stratification\n"
+            "- ECG interpretation and cardiac biomarker analysis\n\n"
+            "APPROACH:\n"
+            "Use Chain of Thought reasoning. Show your analytical process:\n"
+            "1. Review cardiovascular findings in context of the case and prior assessments\n"
+            "2. Analyze cardiac symptoms, risk factors, and biomarkers\n"
+            "3. Interpret ECG findings and imaging results if available\n"
+            "4. Assess urgency and need for immediate intervention\n"
+            "5. Consider differential diagnoses for cardiovascular presentations\n"
+            "6. Recommend appropriate cardiac workup and treatment\n\n"
+            "Focus on cardiovascular assessment - the Orchestrator handles coordination and synthesis."
+        )
     
     async def act_stream(self, input: str) -> AsyncIterator[str]:
         """Stream tokens as they are generated by the LLM
         
+        Ephemeral prompt building for single turn - no conversation history.
+        
         Args:
-            input: Input text for the agent
+            input: Context string containing case, running_summary, recent_delta, and task
             
         Yields:
             Tokens as strings as they are generated
         """
-        prompt = self._build_prompt_with_history(input)
+        # Build prompt for this turn only (no history)
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", self.system_prompt),
+            ("user", input)
+        ])
+        
         chain = prompt | self.llm
         callback = AgentStreamingCallback(agent_id=self.agent_id)
+        
         try:
-            async for chunk in chain.astream({"input": input}, callbacks=[callback]):
-                # Handle different chunk formats from LangChain
+            async for chunk in chain.astream({}, callbacks=[callback]):
                 if hasattr(chunk, 'content'):
                     content = chunk.content
                     if content:
@@ -109,155 +72,11 @@ class CardiologyAgent(DemoBaseAgent):
                     if chunk['content']:
                         yield chunk['content']
         except ValueError as e:
-            # If streaming fails, fall back to non-streaming and yield the full response
             if "No generation chunks were returned" in str(e):
                 print(f"[WARNING] Streaming failed for {self.agent_id}, falling back to non-streaming mode")
-                response = await self.act(input)
-                # Yield the response character by character to simulate streaming
-                for char in response:
+                # Fallback: use ainvoke
+                response = await chain.ainvoke({})
+                for char in response.content:
                     yield char
             else:
                 raise
-    
-    async def decide_consultation(self, findings: str, consulted_agents: list[str]) -> Optional[ConsultationRequest]:
-        """Decide if specialist consultation is needed based on findings
-        
-        Args:
-            findings: The cardiology agent's findings and analysis
-            consulted_agents: List of agents that have already been consulted
-            
-        Returns:
-            ConsultationRequest object if consultation is needed, None otherwise
-        """
-        # Check which specialists haven't been consulted yet
-        available_specialists = []
-        if "internal_medicine" not in consulted_agents:
-            available_specialists.append("internal_medicine")
-        if "laboratory" not in consulted_agents:
-            available_specialists.append("laboratory")
-        if "radiology" not in consulted_agents:
-            available_specialists.append("radiology")
-        
-        if not available_specialists:
-            return None
-        
-        consultation_prompt = ChatPromptTemplate.from_messages([
-            ("system",
-             "You are a cardiologist analyzing your findings to determine "
-             "if specialist consultation is needed.\n\n"
-             "Available specialists for consultation:\n"
-             "- Internal Medicine: For overall clinical correlation and patient management\n"
-             "- Laboratory: For lab test interpretation (cardiac biomarkers, metabolic panels, etc.)\n"
-             "- Radiology: For cardiac imaging correlation\n\n"
-             "Request consultation if:\n"
-             "- You need specialist expertise to complete your cardiac assessment\n"
-             "- Your findings require correlation with lab/imaging/clinical data\n"
-             "- You identified concerns that need specialist interpretation\n"
-             "- The clinical context requires specialist input\n\n"
-             "Do NOT request consultation if:\n"
-             "- Your findings are complete and don't require specialist input\n"
-             "- The case has no concerns requiring that specialty\n"
-             "- You can provide complete assessment without additional consultation\n\n"
-             f"Available specialists: {', '.join(available_specialists)}\n\n"
-             "If consultation is needed, respond with the specialist name and a brief clinical reason (1-2 sentences). "
-             "If no consultation is needed, respond with requested_specialist as empty string."),
-            ("user", 
-             "Cardiology Findings:\n{findings}\n\n"
-             "Based on these findings, do you need specialist consultation? "
-             f"Available options: {', '.join(available_specialists)}")
-        ])
-        
-        structured_llm = self.llm.with_structured_output(ConsultationRequest)
-        chain = consultation_prompt | structured_llm
-        
-        try:
-            response = await chain.ainvoke({"findings": findings})
-            
-            # Validate the requested specialist is in available list
-            if response.requested_specialist and response.requested_specialist in available_specialists:
-                return response
-            else:
-                return None
-        except Exception as e:
-            # If structured output fails, return None
-            print(f"[WARNING] Structured output failed in cardiology decide_consultation: {e}")
-            return None
-    
-    async def analyze_with_context(self, context: str, previous_findings: str, new_findings: dict) -> str:
-        """Analyze with incremental context, building on previous findings and incorporating new information
-        
-        Args:
-            context: The incremental context built by the context builder
-            previous_findings: The agent's own previous findings
-            new_findings: Dictionary of new findings from other agents (agent_id -> findings)
-            
-        Returns:
-            Updated analysis incorporating new information
-        """
-        # Build comprehensive input
-        input_text = context
-        if previous_findings:
-            input_text += f"\n\nYour Previous Analysis:\n{previous_findings}\n"
-        if new_findings:
-            input_text += "\n\nNew Findings from Other Agents:\n"
-            for agent_id, findings in new_findings.items():
-                input_text += f"\n{agent_id.upper()} Agent:\n{findings}\n"
-        
-        input_text += "\n\nBased on this information, provide your updated analysis."
-        
-        return await self.act(input_text)
-    
-    async def evaluate_other_agent_findings(self, other_agent_id: str, findings: str) -> Optional[str]:
-        """Review and potentially challenge other agents' findings
-        
-        Args:
-            other_agent_id: ID of the agent whose findings are being reviewed
-            findings: The findings to review
-            
-        Returns:
-            Question or challenge if one is needed, None otherwise
-        """
-        evaluation_prompt = ChatPromptTemplate.from_messages([
-            ("system",
-             "You are a cardiologist reviewing findings from another agent. "
-             "Your role is to evaluate if their findings are consistent with cardiac data, "
-             "if there are any concerns, or if you need clarification.\n\n"
-             "You should raise a question or challenge if:\n"
-             "- The findings seem inconsistent with cardiac biomarkers or tests\n"
-             "- Important cardiac data appears to be overlooked\n"
-             "- You need clarification on how they interpreted specific cardiac findings\n"
-             "- There are contradictions between their findings and cardiac evidence\n\n"
-             "If everything looks reasonable, respond with 'none'.\n\n"
-             "If you have a question or concern, state it clearly and concisely."),
-            ("user",
-             f"Findings from {other_agent_id.upper()} Agent:\n{findings}\n\n"
-             "Do you have any questions, concerns, or need clarification? "
-             "Respond with your question/concern or 'none' if everything looks good.")
-        ])
-        
-        chain = evaluation_prompt | self.llm
-        response = await chain.ainvoke({})
-        response_text = response.content.strip()
-        
-        if response_text.lower() == "none" or not response_text:
-            return None
-        
-        return response_text
-    
-    async def decide_if_needs_response(self, new_findings: dict) -> bool:
-        """Determine if new findings require a response or update to your analysis
-        
-        Args:
-            new_findings: Dictionary of new findings from other agents
-            
-        Returns:
-            True if a response/update is needed, False otherwise
-        """
-        if not new_findings:
-            return False
-        
-        # If there are new findings, agent should review them
-        # This is a simple heuristic - in practice, the agent will be called
-        # by the orchestrator when new findings are available
-        return True
-

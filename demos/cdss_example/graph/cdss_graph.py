@@ -1,3 +1,5 @@
+"""Simplified CDSS graph - orchestrator-driven workflow with specialist reasoning"""
+
 from langgraph.graph import StateGraph, END
 from demos.cdss_example.schema.graph_state import CDSSGraphState
 from .nodes import (
@@ -9,16 +11,20 @@ from .nodes import (
     synthesis_node
 )
 from .edges import (
-    should_call_laboratory,
+    route_from_orchestrator,
     route_to_orchestrator
 )
 
 
 def build_cdss_graph():
-    """Build and compile the CDSS LangGraph workflow
+    """Build and compile the simplified CDSS LangGraph workflow
     
-    Phase 3 upgrade: Supports all four specialist agents (laboratory, cardiology, 
-    internal_medicine, radiology) with conditional routing for consultations and debates.
+    Workflow:
+    - Orchestrator compresses context and decides next specialist
+    - Specialists provide domain reasoning based on case + summary + recent_delta
+    - All specialists route back to orchestrator
+    - Orchestrator eventually routes to synthesis
+    - Synthesis ends the workflow
     """
     
     # Create the graph
@@ -35,10 +41,10 @@ def build_cdss_graph():
     # Set entry point
     workflow.set_entry_point("orchestrator")
     
-    # Add conditional edges from orchestrator to all four specialists and synthesis
+    # Add conditional edge from orchestrator to specialists or synthesis
     workflow.add_conditional_edges(
         "orchestrator",
-        should_call_laboratory,
+        route_from_orchestrator,
         {
             "laboratory": "laboratory",
             "cardiology": "cardiology",
@@ -48,37 +54,29 @@ def build_cdss_graph():
         }
     )
     
-    # Add conditional edges from all specialist agents back to orchestrator
+    # Add edges from all specialists back to orchestrator
     workflow.add_conditional_edges(
         "laboratory",
         route_to_orchestrator,
-        {
-            "orchestrator": "orchestrator"
-        }
+        {"orchestrator": "orchestrator"}
     )
     
     workflow.add_conditional_edges(
         "cardiology",
         route_to_orchestrator,
-        {
-            "orchestrator": "orchestrator"
-        }
+        {"orchestrator": "orchestrator"}
     )
     
     workflow.add_conditional_edges(
         "internal_medicine",
         route_to_orchestrator,
-        {
-            "orchestrator": "orchestrator"
-        }
+        {"orchestrator": "orchestrator"}
     )
     
     workflow.add_conditional_edges(
         "radiology",
         route_to_orchestrator,
-        {
-            "orchestrator": "orchestrator"
-        }
+        {"orchestrator": "orchestrator"}
     )
     
     # Add edge from synthesis to END
@@ -88,5 +86,6 @@ def build_cdss_graph():
     app = workflow.compile()
     
     return app
+
 
 
