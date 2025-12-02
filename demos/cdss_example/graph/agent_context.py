@@ -5,8 +5,16 @@ from demos.cdss_example.schema.graph_state import CDSSGraphState
 def build_agent_context(agent_id: str, state: CDSSGraphState) -> str:
     """Build incremental context for an agent based on what they've seen and what's new.
     
+    This function builds context for any of the four specialist agents (laboratory,
+    cardiology, internal_medicine, radiology) including:
+    - Clinical case (first turn only)
+    - Agent's previous findings (continuation turns)
+    - New findings from other agents (filtered by agent_awareness)
+    - Unresolved challenges directed at this agent (critical for Phase 3)
+    - Orchestrator guidance (first turn only)
+    
     Args:
-        agent_id: The ID of the agent ("laboratory" or "cardiology")
+        agent_id: The ID of the agent ("laboratory", "cardiology", "internal_medicine", or "radiology")
         state: The current graph state
         
     Returns:
@@ -41,33 +49,31 @@ def build_agent_context(agent_id: str, state: CDSSGraphState) -> str:
     # 3. New findings from other agents since last turn
     seen_findings = agent_awareness.get(agent_id, [])
     
-    # Determine which agent is the "other" agent
-    other_agent_id = "cardiology" if agent_id == "laboratory" else "laboratory"
-    
-    # Check for new findings from the other agent
-    other_agent_findings = None
-    if agent_id == "laboratory" and state.get("cardiology_findings"):
-        other_agent_findings = state["cardiology_findings"]
-    elif agent_id == "cardiology" and state.get("laboratory_findings"):
-        other_agent_findings = state["laboratory_findings"]
-    
-    # Check if this finding is new (not in agent's awareness)
-    if other_agent_findings:
-        # Create a simple hash/identifier for this finding
-        finding_id = f"{other_agent_id}_{len(agent_turn_history)}"
+    # Check all four agents for new findings (excluding self)
+    all_agents = ["laboratory", "cardiology", "internal_medicine", "radiology"]
+    for other_agent_id in all_agents:
+        if other_agent_id == agent_id:
+            continue
         
-        # Check if agent has seen this finding
-        if finding_id not in seen_findings:
-            context_parts.append(f"=== NEW FINDINGS FROM {other_agent_id.upper()} AGENT ===")
-            context_parts.append(other_agent_findings)
-            context_parts.append("")
-            
-            # Mark this finding as seen (will be updated in state by the node)
-            if agent_id not in agent_awareness:
-                agent_awareness[agent_id] = []
-            agent_awareness[agent_id].append(finding_id)
+        # Get findings from this other agent
+        other_agent_findings = state.get(f"{other_agent_id}_findings")
+        
+        if other_agent_findings:
+            # Get other agent's turns to generate finding_id
+            other_agent_turns = [t for t in agent_turn_history if t.get("agent_id") == other_agent_id]
+            if other_agent_turns:
+                latest_turn = other_agent_turns[-1]
+                turn_number = latest_turn.get("turn_number", len(other_agent_turns))
+                finding_id = f"{other_agent_id}_{turn_number}"
+                
+                # Check if agent has seen this finding
+                if finding_id not in seen_findings:
+                    context_parts.append(f"=== NEW FINDINGS FROM {other_agent_id.upper().replace('_', ' ')} AGENT ===")
+                    context_parts.append(other_agent_findings)
+                    context_parts.append("")
     
-    # 4. Debate/challenge requests directed at this agent
+    # 4. Debate/challenge requests directed at this agent (CRITICAL for Phase 3)
+    # Filter for unresolved challenges where to_agent == agent_id
     relevant_debates = [
         d for d in debate_requests 
         if d.get("to_agent") == agent_id and not d.get("resolved", False)
@@ -78,7 +84,7 @@ def build_agent_context(agent_id: str, state: CDSSGraphState) -> str:
         for debate in relevant_debates:
             from_agent = debate.get("from_agent", "Unknown")
             question = debate.get("question", "")
-            context_parts.append(f"{from_agent.upper()} Agent asks: {question}")
+            context_parts.append(f"{from_agent.upper().replace('_', ' ')} Agent asks: {question}")
         context_parts.append("")
     
     # 5. Orchestrator guidance/updates
