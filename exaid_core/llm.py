@@ -13,13 +13,13 @@ llm = ChatGoogleGenerativeAI(
 
 groq_llm = ChatGroq(
     api_key=os.getenv("GROQ_API_KEY"),
-    model=os.getenv("GROQ_MODEL", "qwen/qwen3-32b"),
+    model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
 )
 
 # MAS LLM (Groq — streaming, Qwen3-32B)
 mas_llm = ChatGroq(
     api_key=os.getenv("GROQ_API_KEY"),
-    model=os.getenv("GROQ_MODEL", "qwen/qwen3-32b"),
+    model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
     streaming=True
 )
 

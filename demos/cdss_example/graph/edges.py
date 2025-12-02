@@ -1,92 +1,43 @@
+"""Simplified CDSS graph edges - orchestrator-driven routing"""
+
 from typing import Literal
 from demos.cdss_example.schema.graph_state import CDSSGraphState
 
 
-def route_to_orchestrator(state: CDSSGraphState) -> Literal["orchestrator"]:
-    """Route reasoning agents back to orchestrator after analysis"""
-    return "orchestrator"
-
-
-def evaluate_orchestrator_routing(state: CDSSGraphState) -> Literal["laboratory", "cardiology", "internal_medicine", "radiology", "synthesis"]:
-    """Evaluate orchestrator routing: route based on agents_to_call, consensus, debate requests, and max iterations
+def route_from_orchestrator(state: CDSSGraphState) -> Literal["laboratory", "cardiology", "internal_medicine", "radiology", "synthesis"]:
+    """Route from orchestrator based on next_specialist_to_call
     
-    Supports routing to all four specialist agents: laboratory, cardiology, internal_medicine, radiology.
+    Orchestrator decides which specialist to call next or if synthesis should begin.
+    Simple pass-through of orchestrator's decision.
+    
+    Args:
+        state: Current graph state
+        
+    Returns:
+        Specialist name or "synthesis"
     """
-    agents_to_call = state.get("agents_to_call")
+    next_specialist = state.get("next_specialist_to_call", "synthesis")
     
-    # Check if synthesis was explicitly requested
-    if agents_to_call and agents_to_call.get("synthesis", False):
-        return "synthesis"
+    # Validate and return
+    valid_options = ["laboratory", "cardiology", "internal_medicine", "radiology", "synthesis"]
+    if next_specialist in valid_options:
+        return next_specialist
     
-    # Check consensus status
-    consensus_status = state.get("consensus_status")
-    if consensus_status and consensus_status.get("consensus_reached", False):
-        return "synthesis"
-    
-    # Check max iterations
-    iteration_count = state.get("iteration_count", 0)
-    max_iterations = state.get("max_iterations", 20)  # Phase 3: updated to 20
-    if iteration_count >= max_iterations:
-        return "synthesis"
-    
-    # Check for debate requests that need routing
-    debate_requests = state.get("debate_requests") or []
-    unresolved_debates = [d for d in debate_requests if not d.get("resolved", False)]
-    if unresolved_debates:
-        # The orchestrator should have already set agents_to_call for the debate target
-        # But we can also check here as a fallback
-        next_debate = unresolved_debates[0]
-        target_agent = next_debate.get("to_agent")
-        if target_agent in ["laboratory", "cardiology", "internal_medicine", "radiology"]:
-            return target_agent
-    
-    # Route based on agents_to_call (set by orchestrator)
-    # Check all four specialist agents
-    if agents_to_call:
-        if agents_to_call.get("laboratory", False):
-            return "laboratory"
-        if agents_to_call.get("cardiology", False):
-            return "cardiology"
-        if agents_to_call.get("internal_medicine", False):
-            return "internal_medicine"
-        if agents_to_call.get("radiology", False):
-            return "radiology"
-    
-    # Default to synthesis if no agents to call
+    # Default to synthesis if invalid
     return "synthesis"
 
 
-# Keep old function names for backward compatibility, but use new logic
-def should_call_laboratory(state: CDSSGraphState) -> Literal["laboratory", "cardiology", "internal_medicine", "radiology", "synthesis"]:
-    """Route to laboratory node if needed, otherwise check other agents or go to synthesis"""
-    return evaluate_orchestrator_routing(state)
-
-
-def should_call_cardiology(state: CDSSGraphState) -> Literal["cardiology", "internal_medicine", "radiology", "synthesis"]:
-    """Route to cardiology node if needed, otherwise check other agents or go to synthesis"""
-    agents_to_call = state.get("agents_to_call")
+def route_to_orchestrator(state: CDSSGraphState) -> Literal["orchestrator"]:
+    """Route specialist nodes back to orchestrator
     
-    # Check consensus and max iterations first
-    consensus_status = state.get("consensus_status")
-    if consensus_status and consensus_status.get("consensus_reached", False):
-        return "synthesis"
+    All specialists return to orchestrator for compression and routing decisions.
     
-    iteration_count = state.get("iteration_count", 0)
-    max_iterations = state.get("max_iterations", 20)  # Phase 3: updated to 20
-    if iteration_count >= max_iterations:
-        return "synthesis"
-    
-    if agents_to_call and agents_to_call.get("cardiology", False):
-        return "cardiology"
-    
-    # Check other specialist agents
-    if agents_to_call:
-        if agents_to_call.get("internal_medicine", False):
-            return "internal_medicine"
-        if agents_to_call.get("radiology", False):
-            return "radiology"
-    
-    # No agents needed, go to synthesis
-    return "synthesis"
+    Args:
+        state: Current graph state
+        
+    Returns:
+        Always "orchestrator"
+    """
+    return "orchestrator"
 
 
