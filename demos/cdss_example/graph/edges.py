@@ -7,8 +7,11 @@ def route_to_orchestrator(state: CDSSGraphState) -> Literal["orchestrator"]:
     return "orchestrator"
 
 
-def evaluate_orchestrator_routing(state: CDSSGraphState) -> Literal["laboratory", "cardiology", "synthesis"]:
-    """Evaluate orchestrator routing: route based on agents_to_call, consensus, debate requests, and max iterations"""
+def evaluate_orchestrator_routing(state: CDSSGraphState) -> Literal["laboratory", "cardiology", "internal_medicine", "radiology", "synthesis"]:
+    """Evaluate orchestrator routing: route based on agents_to_call, consensus, debate requests, and max iterations
+    
+    Supports routing to all four specialist agents: laboratory, cardiology, internal_medicine, radiology.
+    """
     agents_to_call = state.get("agents_to_call")
     
     # Check if synthesis was explicitly requested
@@ -22,7 +25,7 @@ def evaluate_orchestrator_routing(state: CDSSGraphState) -> Literal["laboratory"
     
     # Check max iterations
     iteration_count = state.get("iteration_count", 0)
-    max_iterations = state.get("max_iterations", 10)
+    max_iterations = state.get("max_iterations", 20)  # Phase 3: updated to 20
     if iteration_count >= max_iterations:
         return "synthesis"
     
@@ -34,32 +37,33 @@ def evaluate_orchestrator_routing(state: CDSSGraphState) -> Literal["laboratory"
         # But we can also check here as a fallback
         next_debate = unresolved_debates[0]
         target_agent = next_debate.get("to_agent")
-        if target_agent == "laboratory":
-            return "laboratory"
-        elif target_agent == "cardiology":
-            return "cardiology"
+        if target_agent in ["laboratory", "cardiology", "internal_medicine", "radiology"]:
+            return target_agent
     
     # Route based on agents_to_call (set by orchestrator)
-    # Route to laboratory if requested
-    if agents_to_call and agents_to_call.get("laboratory", False):
-        return "laboratory"
-    
-    # Route to cardiology if requested
-    if agents_to_call and agents_to_call.get("cardiology", False):
-        return "cardiology"
+    # Check all four specialist agents
+    if agents_to_call:
+        if agents_to_call.get("laboratory", False):
+            return "laboratory"
+        if agents_to_call.get("cardiology", False):
+            return "cardiology"
+        if agents_to_call.get("internal_medicine", False):
+            return "internal_medicine"
+        if agents_to_call.get("radiology", False):
+            return "radiology"
     
     # Default to synthesis if no agents to call
     return "synthesis"
 
 
 # Keep old function names for backward compatibility, but use new logic
-def should_call_laboratory(state: CDSSGraphState) -> Literal["laboratory", "cardiology", "synthesis"]:
-    """Route to laboratory node if needed, otherwise check cardiology or go to synthesis"""
+def should_call_laboratory(state: CDSSGraphState) -> Literal["laboratory", "cardiology", "internal_medicine", "radiology", "synthesis"]:
+    """Route to laboratory node if needed, otherwise check other agents or go to synthesis"""
     return evaluate_orchestrator_routing(state)
 
 
-def should_call_cardiology(state: CDSSGraphState) -> Literal["cardiology", "synthesis"]:
-    """Route to cardiology node if needed, otherwise go to synthesis"""
+def should_call_cardiology(state: CDSSGraphState) -> Literal["cardiology", "internal_medicine", "radiology", "synthesis"]:
+    """Route to cardiology node if needed, otherwise check other agents or go to synthesis"""
     agents_to_call = state.get("agents_to_call")
     
     # Check consensus and max iterations first
@@ -68,13 +72,21 @@ def should_call_cardiology(state: CDSSGraphState) -> Literal["cardiology", "synt
         return "synthesis"
     
     iteration_count = state.get("iteration_count", 0)
-    max_iterations = state.get("max_iterations", 10)
+    max_iterations = state.get("max_iterations", 20)  # Phase 3: updated to 20
     if iteration_count >= max_iterations:
         return "synthesis"
     
     if agents_to_call and agents_to_call.get("cardiology", False):
         return "cardiology"
     
-    # Cardiology not needed, go to synthesis
+    # Check other specialist agents
+    if agents_to_call:
+        if agents_to_call.get("internal_medicine", False):
+            return "internal_medicine"
+        if agents_to_call.get("radiology", False):
+            return "radiology"
+    
+    # No agents needed, go to synthesis
     return "synthesis"
+
 

@@ -4,6 +4,7 @@ from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
 from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent
 from demos.cdss_example.agents.internal_medicine_agent import InternalMedicineAgent
 from demos.cdss_example.agents.radiology_agent import RadiologyAgent
+from demos.cdss_example.schema.agent_messages import ConsultationRequestDict, ChallengeRequestDict, DebateEntryDict
 from exaid_core.exaid import EXAID
 
 
@@ -34,12 +35,19 @@ class CDSSGraphState(TypedDict):
     
     agents_to_call: Optional[dict]
     """Dictionary indicating which agents should be called.
-    Format: {"laboratory": bool, "cardiology": bool}
+    Format: {"laboratory": bool, "cardiology": bool, "internal_medicine": bool, "radiology": bool}
     """
     
-    consultation_request: Optional[str]
-    """Agent name requested for consultation (e.g., "cardiology", "laboratory").
-    Only reasoning agents can set this field.
+    consultation_request: Optional[ConsultationRequestDict]
+    """Structured consultation request from an agent.
+    Contains requested_specialist and reason fields.
+    Replaced legacy string-based consultation_request in Phase 3.
+    """
+    
+    challenge: Optional[ChallengeRequestDict]
+    """Challenge issued by a specialist node to be ingested by orchestrator.
+    Orchestrator converts this to DebateEntryDict and appends to debate_requests.
+    Cleared after consumption.
     """
     
     consulted_agents: Optional[list[str]]
@@ -73,12 +81,13 @@ class CDSSGraphState(TypedDict):
     agent_awareness: Optional[Dict[str, List[str]]]
     """Track which findings each agent has seen. Key: agent_id, Value: list of finding IDs or timestamps"""
     
-    debate_requests: Optional[List[Dict[str, Any]]]
-    """Track when agents want to challenge/question other agents. Each dict contains:
+    debate_requests: Optional[list[DebateEntryDict]]
+    """Track when agents want to challenge/question other agents. Each entry contains:
     - from_agent: agent_id making the request
     - to_agent: agent_id being challenged
     - question: the question or challenge
     - timestamp: when the request was made
+    - resolved: whether the challenge has been addressed (Phase 4)
     """
     
     consensus_status: Optional[Dict[str, Any]]
@@ -92,5 +101,5 @@ class CDSSGraphState(TypedDict):
     """Track number of turns to prevent infinite loops"""
     
     max_iterations: Optional[int]
-    """Maximum turns before forcing synthesis"""
+    """Maximum turns before forcing synthesis (default: 20 to accommodate four-agent collaboration)"""
 

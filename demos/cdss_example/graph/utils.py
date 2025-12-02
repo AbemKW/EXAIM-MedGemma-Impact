@@ -87,6 +87,9 @@ def get_new_findings_for_agent(agent_id: str, state: CDSSGraphState) -> Tuple[Di
 def create_agent_turn_entry(agent_id: str, findings: str, iteration_count: int) -> Dict[str, Any]:
     """Create a turn entry dict for the agent_turn_history.
     
+    DEPRECATED: Use add_turn_history() instead for Phase 3+ consistency.
+    This function kept temporarily for backward compatibility.
+    
     Args:
         agent_id: The agent identifier
         findings: The agent's findings/analysis text
@@ -103,20 +106,55 @@ def create_agent_turn_entry(agent_id: str, findings: str, iteration_count: int) 
     }
 
 
-def update_consulted_agents(agent_id: str, consulted_agents: List[str]) -> List[str]:
-    """Add agent to consulted agents list if not already present.
+def add_turn_history(agent_id: str, findings: str, state: CDSSGraphState) -> Dict[str, List[Dict[str, Any]]]:
+    """Add a turn entry to agent_turn_history following immutable pattern.
+    
+    Reads current turn history from state, creates new entry with turn_number = iteration_count,
+    and returns complete updated history list.
+    
+    Args:
+        agent_id: The agent identifier
+        findings: The agent's findings/analysis text
+        state: The current graph state
+        
+    Returns:
+        Dict with key "agent_turn_history" containing full updated list.
+        LangGraph will replace the existing agent_turn_history with this list.
+    """
+    agent_turn_history = state.get("agent_turn_history") or []
+    iteration_count = state.get("iteration_count", 0)
+    
+    new_entry = {
+        "agent_id": agent_id,
+        "turn_number": iteration_count,
+        "timestamp": datetime.now().isoformat(),
+        "findings": findings
+    }
+    
+    return {"agent_turn_history": agent_turn_history + [new_entry]}
+
+
+def update_consulted_agents(agent_id: str, state: CDSSGraphState) -> Dict[str, List[str]]:
+    """Add agent to consulted agents list following immutable pattern.
+    
+    Reads current consulted_agents from state, adds agent_id if not present,
+    and returns complete updated list.
     
     Args:
         agent_id: The agent identifier to add
-        consulted_agents: Current list of consulted agents
+        state: The current graph state
         
     Returns:
-        Updated list of consulted agents
+        Dict with key "consulted_agents" containing full updated list.
+        LangGraph will replace the existing consulted_agents with this list.
     """
+    consulted_agents = state.get("consulted_agents") or []
     updated_list = consulted_agents.copy()
+    
     if agent_id not in updated_list:
         updated_list.append(agent_id)
-    return updated_list
+    
+    return {"consulted_agents": updated_list}
 
 
 def create_challenge_dict(from_agent: str, to_agent: str, question: str) -> Dict[str, str]:

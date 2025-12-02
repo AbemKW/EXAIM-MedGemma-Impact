@@ -13,7 +13,7 @@ from .consensus import check_consensus
 from .utils import (
     ensure_agent_awareness,
     get_new_findings_for_agent,
-    create_agent_turn_entry,
+    add_turn_history,
     update_consulted_agents,
     create_challenge_dict,
     create_consultation_request_dict
@@ -73,26 +73,34 @@ def _get_or_create_radiology(state: CDSSGraphState) -> RadiologyAgent:
     return state["radiology_agent"]
 
 async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Orchestrator node: manages collaborative workflow, tracks agent awareness, handles debates, checks consensus"""
+    """Orchestrator node: manages collaborative workflow, tracks agent awareness, handles debates, checks consensus
+    
+    Priority Order (strictly enforced):
+        P1: Check consensus → route to synthesis if reached
+        P2: Handle consultation_request → route to requested specialist or synthesis (if already consulted)
+        P3: Handle challenge → convert to DebateEntry, append to debate_requests, route to challenged agent
+        P4: Check awareness → route agents that have new findings to review
+        P5: Initial triage → Lab + Cardio ONLY (IM and Radiology join via consultation or debates)
+        P6: Synthesis fallback → if all relevant agents consulted and no activity
+    """
     orchestrator = _get_or_create_orchestrator(state)
     exaid = state["exaid"]
     case_text = state["case_text"]
     
-    # Initialize state fields if not present
+    # Initialize agent_awareness for ALL FOUR agents at the very top (before any conditional logic)
+    agent_awareness = state.get("agent_awareness") or {}
+    for agent_id in ["laboratory", "cardiology", "internal_medicine", "radiology"]:
+        if agent_id not in agent_awareness:
+            agent_awareness[agent_id] = []
+    
+    # Initialize other state fields
     consulted_agents = state.get("consulted_agents") or []
     agent_turn_history = state.get("agent_turn_history") or []
-    agent_awareness = state.get("agent_awareness") or {}
     debate_requests = state.get("debate_requests") or []
     iteration_count = state.get("iteration_count", 0)
-    max_iterations = state.get("max_iterations", 10)
+    max_iterations = state.get("max_iterations", 20)  # Phase 3: increased from 10 to 20
     
-    # Initialize agent_awareness for each agent if not present
-    if "laboratory" not in agent_awareness:
-        agent_awareness["laboratory"] = []
-    if "cardiology" not in agent_awareness:
-        agent_awareness["cardiology"] = []
-    
-    # Increment iteration count
+    # Increment iteration count FIRST (before any routing logic)
     iteration_count += 1
     
     # Check max iterations
@@ -102,6 +110,7 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
         orchestrator.add_to_history("assistant", decision_text)
         return {
             "iteration_count": iteration_count,
+            "agent_awareness": agent_awareness,
             "agents_to_call": {"synthesis": True}
         }
     
@@ -114,40 +123,81 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
         return {
             "consensus_status": consensus_status,
             "iteration_count": iteration_count,
+            "agent_awareness": agent_awareness,
             "agents_to_call": {"synthesis": True}
         }
     
-    # PRIORITY 2: Handle consultation requests
+    # PRIORITY 2: Handle consultation requests (structured ConsultationRequestDict)
     consultation_request = state.get("consultation_request")
     if consultation_request:
+        requested_specialist = consultation_request.get("requested_specialist")
+        reason = consultation_request.get("reason")
+        
         # Check if requested agent has already been consulted (loop prevention)
-        if consultation_request in consulted_agents:
+        if requested_specialist in consulted_agents:
             decision_text = (
-                f"Consultation request for {consultation_request} received, but this agent "
-                f"has already been consulted. Routing to synthesis to prevent loop."
+                f"Consultation request for {requested_specialist} received (reason: {reason}), "
+                f"but this agent has already been consulted. Routing to synthesis to prevent loop."
             )
             await exaid.received_trace(orchestrator.agent_id, decision_text)
             orchestrator.add_to_history("assistant", decision_text)
             return {
-                "consultation_request": None,
+                "consultation_request": None,  # Clear consumed consultation request
                 "iteration_count": iteration_count,
+                "agent_awareness": agent_awareness,
                 "agents_to_call": {"synthesis": True}
             }
         else:
             # Honor the consultation request
             decision_text = (
-                f"Honoring consultation request for {consultation_request} agent. "
-                f"This agent will be consulted to provide additional expertise."
+                f"Honoring consultation request for {requested_specialist} agent. "
+                f"Reason: {reason}"
             )
             await exaid.received_trace(orchestrator.agent_id, decision_text)
             orchestrator.add_to_history("assistant", decision_text)
             return {
-                "consultation_request": None,
+                "consultation_request": None,  # Clear consumed consultation request
                 "iteration_count": iteration_count,
-                "agents_to_call": {consultation_request: True}
+                "agent_awareness": agent_awareness,
+                "agents_to_call": {requested_specialist: True}
             }
     
-    # PRIORITY 3: Handle debate requests
+    # PRIORITY 3: Handle challenge (convert to DebateEntry and append to debate_requests)
+    # NOTE: Nodes must NEVER modify debate_requests directly. They return {"challenge": {...}}
+    # and orchestrator ingests it here.
+    challenge = state.get("challenge")
+    if challenge:
+        # Convert ChallengeRequestDict to DebateEntryDict with timestamp and resolved flag
+        from datetime import datetime
+        debate_entry = {
+            "from_agent": challenge["from_agent"],
+            "to_agent": challenge["to_agent"],
+            "question": challenge["question"],
+            "timestamp": datetime.now().isoformat(),
+            "resolved": False  # Phase 3: All challenges remain unresolved. Phase 4 will implement resolution logic.
+        }
+        updated_debate_requests = debate_requests + [debate_entry]
+        
+        # Route to the challenged agent
+        target_agent = challenge["to_agent"]
+        decision_text = (
+            f"Challenge received from {challenge['from_agent']} to {target_agent}: {challenge['question']}. "
+            f"Routing to {target_agent} to address the challenge."
+        )
+        await exaid.received_trace(orchestrator.agent_id, decision_text)
+        orchestrator.add_to_history("assistant", decision_text)
+        return {
+            "challenge": None,  # Clear consumed challenge
+            "debate_requests": updated_debate_requests,
+            "iteration_count": iteration_count,
+            "agent_awareness": agent_awareness,
+            "agents_to_call": {target_agent: True}
+        }
+    
+    # PRIORITY 3 (continued): Handle existing unresolved debates
+    # Phase 4 TODO: Add logic here to check if agent's response addressed the challenge
+    # Phase 4 TODO: Mark debates as resolved when agent explicitly responds
+    # Phase 4 TODO: Support multi-turn debate sequences (challenge -> response -> rebuttal -> closure)
     unresolved_debates = [d for d in debate_requests if not d.get("resolved", False)]
     if unresolved_debates:
         # Route to the agent being challenged
@@ -158,45 +208,94 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
         orchestrator.add_to_history("assistant", decision_text)
         return {
             "iteration_count": iteration_count,
+            "agent_awareness": agent_awareness,
             "agents_to_call": {target_agent: True}
         }
     
-    # PRIORITY 4: Check if agents need to respond to new findings
-    # Identify which agents have new findings to review
+    # PRIORITY 4: Check if agents need to respond to new findings (all four agents)
+    # Identify which agents have new findings to review using agent_awareness tracking
     lab_turns = [t for t in agent_turn_history if t.get("agent_id") == "laboratory"]
     cardio_turns = [t for t in agent_turn_history if t.get("agent_id") == "cardiology"]
+    im_turns = [t for t in agent_turn_history if t.get("agent_id") == "internal_medicine"]
+    rad_turns = [t for t in agent_turn_history if t.get("agent_id") == "radiology"]
+    
+    # Check each agent pair for unseen findings
+    # Only route if the agent has already been consulted (prevents premature activation)
     
     # Check if cardiology has new findings that lab hasn't seen
-    # Uses the agent_awareness tracking to determine if findings have been reviewed
-    if state.get("cardiology_findings") and cardio_turns:
+    if state.get("cardiology_findings") and cardio_turns and "laboratory" in consulted_agents:
         finding_id = _generate_finding_id("cardiology", cardio_turns)
         if finding_id not in agent_awareness.get("laboratory", []):
-            # Lab should see cardiology's findings
-            if "laboratory" in consulted_agents:
-                decision_text = f"Laboratory agent has new findings from Cardiology to review. Routing to Laboratory."
-                await exaid.received_trace(orchestrator.agent_id, decision_text)
-                orchestrator.add_to_history("assistant", decision_text)
-                return {
-                    "iteration_count": iteration_count,
-                    "agents_to_call": {"laboratory": True}
-                }
+            decision_text = f"Laboratory agent has new findings from Cardiology to review. Routing to Laboratory."
+            await exaid.received_trace(orchestrator.agent_id, decision_text)
+            orchestrator.add_to_history("assistant", decision_text)
+            return {
+                "iteration_count": iteration_count,
+                "agent_awareness": agent_awareness,
+                "agents_to_call": {"laboratory": True}
+            }
     
     # Check if laboratory has new findings that cardiology hasn't seen
-    # Uses the agent_awareness tracking to determine if findings have been reviewed
-    if state.get("laboratory_findings") and lab_turns:
+    if state.get("laboratory_findings") and lab_turns and "cardiology" in consulted_agents:
         finding_id = _generate_finding_id("laboratory", lab_turns)
         if finding_id not in agent_awareness.get("cardiology", []):
-            # Cardiology should see lab's findings
-            if "cardiology" in consulted_agents:
-                decision_text = f"Cardiology agent has new findings from Laboratory to review. Routing to Cardiology."
+            decision_text = f"Cardiology agent has new findings from Laboratory to review. Routing to Cardiology."
+            await exaid.received_trace(orchestrator.agent_id, decision_text)
+            orchestrator.add_to_history("assistant", decision_text)
+            return {
+                "iteration_count": iteration_count,
+                "agent_awareness": agent_awareness,
+                "agents_to_call": {"cardiology": True}
+            }
+    
+    # Check if internal_medicine has new findings that other agents haven't seen
+    if state.get("internal_medicine_findings") and im_turns:
+        finding_id = _generate_finding_id("internal_medicine", im_turns)
+        for other_agent in ["laboratory", "cardiology", "radiology"]:
+            if other_agent in consulted_agents and finding_id not in agent_awareness.get(other_agent, []):
+                decision_text = f"{other_agent.capitalize()} agent has new findings from Internal Medicine to review. Routing to {other_agent.capitalize()}."
                 await exaid.received_trace(orchestrator.agent_id, decision_text)
                 orchestrator.add_to_history("assistant", decision_text)
                 return {
                     "iteration_count": iteration_count,
-                    "agents_to_call": {"cardiology": True}
+                    "agent_awareness": agent_awareness,
+                    "agents_to_call": {other_agent: True}
                 }
     
+    # Check if radiology has new findings that other agents haven't seen
+    if state.get("radiology_findings") and rad_turns:
+        finding_id = _generate_finding_id("radiology", rad_turns)
+        for other_agent in ["laboratory", "cardiology", "internal_medicine"]:
+            if other_agent in consulted_agents and finding_id not in agent_awareness.get(other_agent, []):
+                decision_text = f"{other_agent.capitalize()} agent has new findings from Radiology to review. Routing to {other_agent.capitalize()}."
+                await exaid.received_trace(orchestrator.agent_id, decision_text)
+                orchestrator.add_to_history("assistant", decision_text)
+                return {
+                    "iteration_count": iteration_count,
+                    "agent_awareness": agent_awareness,
+                    "agents_to_call": {other_agent: True}
+                }
+    
+    # Check if any specialist has new findings that internal_medicine hasn't seen
+    if "internal_medicine" in consulted_agents:
+        for specialist, turns in [("laboratory", lab_turns), ("cardiology", cardio_turns), ("radiology", rad_turns)]:
+            if state.get(f"{specialist}_findings") and turns:
+                finding_id = _generate_finding_id(specialist, turns)
+                if finding_id not in agent_awareness.get("internal_medicine", []):
+                    decision_text = f"Internal Medicine agent has new findings from {specialist.capitalize()} to review. Routing to Internal Medicine."
+                    await exaid.received_trace(orchestrator.agent_id, decision_text)
+                    orchestrator.add_to_history("assistant", decision_text)
+                    return {
+                        "iteration_count": iteration_count,
+                        "agent_awareness": agent_awareness,
+                        "agents_to_call": {"internal_medicine": True}
+                    }
+    
     # PRIORITY 5: Initial analysis mode - determine which agents to call initially
+    # NOTE: Initial triage is Lab + Cardio ONLY. Internal Medicine and Radiology
+    # join ONLY via consultation requests or debate routing. This maintains agent
+    # autonomy and clinical realism (IM is coordinator, not automatic; Radiology
+    # requires imaging data).
     if not agent_turn_history:
         # First time - perform initial case analysis
         orchestrator.add_to_history("user", f"Clinical Case:\n{case_text}")
@@ -223,18 +322,19 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
         return {
             "orchestrator_analysis": decision_text,
             "iteration_count": iteration_count,
+            "agent_awareness": agent_awareness,
             "agents_to_call": agents_to_call,
-            "consulted_agents": consulted_agents,
-            "agent_awareness": agent_awareness
+            "consulted_agents": consulted_agents
         }
     
-    # PRIORITY 6: If all agents have been consulted and no new activity, route to synthesis
+    # PRIORITY 6: If all relevant agents have been consulted and no new activity, route to synthesis
     if len(consulted_agents) >= 2 and not unresolved_debates:
-        decision_text = "All agents have been consulted. Routing to synthesis."
+        decision_text = "All relevant agents have been consulted. Routing to synthesis."
         await exaid.received_trace(orchestrator.agent_id, decision_text)
         orchestrator.add_to_history("assistant", decision_text)
         return {
             "iteration_count": iteration_count,
+            "agent_awareness": agent_awareness,
             "agents_to_call": {"synthesis": True}
         }
     
@@ -244,6 +344,7 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     orchestrator.add_to_history("assistant", decision_text)
     return {
         "iteration_count": iteration_count,
+        "agent_awareness": agent_awareness,
         "agents_to_call": {"synthesis": True}
     }
 
@@ -253,16 +354,10 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
     laboratory = _get_or_create_laboratory(state)
     exaid = state["exaid"]
     
-    # Initialize state fields
-    agent_turn_history = state.get("agent_turn_history") or []
+    # Initialize agent awareness
     agent_awareness = state.get("agent_awareness") or {}
-    iteration_count = state.get("iteration_count", 0)
-    consulted_agents = state.get("consulted_agents") or []
-    
-    # Ensure agent awareness is initialized
     awareness_update = ensure_agent_awareness("laboratory", state)
-    updated_agent_awareness = agent_awareness.copy()
-    updated_agent_awareness.update(awareness_update)
+    agent_awareness.update(awareness_update)
     
     # Get new findings from other agents
     new_findings_dict, finding_ids = get_new_findings_for_agent("laboratory", state)
@@ -271,6 +366,7 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
     context = build_agent_context("laboratory", state)
     
     # Determine if this is first turn or continuation
+    agent_turn_history = state.get("agent_turn_history") or []
     lab_turns = [t for t in agent_turn_history if t.get("agent_id") == "laboratory"]
     is_first_turn = len(lab_turns) == 0
     
@@ -316,8 +412,8 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
     
     # Update agent awareness with new findings seen
     for finding_id in finding_ids:
-        if finding_id not in updated_agent_awareness["laboratory"]:
-            updated_agent_awareness["laboratory"].append(finding_id)
+        if finding_id not in agent_awareness["laboratory"]:
+            agent_awareness["laboratory"].append(finding_id)
     
     # Evaluate other agents' findings and potentially issue challenges
     challenge: Optional[Dict[str, str]] = None
@@ -327,37 +423,35 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
             challenge = create_challenge_dict("laboratory", other_agent_id, critique)
             break  # Only issue one challenge per turn
     
-    # Create turn entry
-    turn_entry = create_agent_turn_entry("laboratory", findings, iteration_count)
-    updated_turn_history = agent_turn_history + [turn_entry]
+    # Add turn history using utility (returns dict fragment)
+    turn_history_update = add_turn_history("laboratory", findings, state)
     
     # Decide if consultation is needed
-    consultation_request_obj: Optional[ConsultationRequest] = await laboratory.decide_consultation(findings, consulted_agents)
+    consultation_request_obj: Optional[ConsultationRequest] = await laboratory.decide_consultation(findings, state.get("consulted_agents") or [])
     
-    # Convert ConsultationRequest to dict format for node output
+    # Convert ConsultationRequest to dict format for state
     consultation_request_dict: Optional[Dict[str, str]] = None
-    consultation_request_str: Optional[str] = None  # For backward compatibility with orchestrator
     if consultation_request_obj:
         consultation_request_dict = create_consultation_request_dict(
             consultation_request_obj.requested_specialist,
             consultation_request_obj.reason
         )
-        consultation_request_str = consultation_request_obj.requested_specialist
     
-    # Update consulted_agents
-    updated_consulted_agents = update_consulted_agents("laboratory", consulted_agents)
+    # Update consulted_agents using utility (returns dict fragment)
+    consulted_agents_update = update_consulted_agents("laboratory", state)
     
-    return {
+    # Build and return complete state update
+    updates = {
         "laboratory_findings": findings,
-        "consultation_request": consultation_request_str,  # For orchestrator (backward compatible)
-        "consulted_agents": updated_consulted_agents,
-        "agent_turn_history": updated_turn_history,
-        "agent_awareness": updated_agent_awareness,
-        "new_findings_since_last_turn": {},  # Placeholder for Phase 3
-        # Phase 2 additions (stored in node output only, not in state):
-        "_laboratory_consultation_request": consultation_request_dict,  # Full dict with reason
-        "_laboratory_challenge": challenge  # Challenge dict if issued
+        "consultation_request": consultation_request_dict,
+        "challenge": challenge,
+        "agent_awareness": agent_awareness,
+        "new_findings_since_last_turn": new_findings_dict,
     }
+    updates.update(turn_history_update)
+    updates.update(consulted_agents_update)
+    
+    return updates
 
 
 async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
@@ -365,16 +459,10 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     cardiology = _get_or_create_cardiology(state)
     exaid = state["exaid"]
     
-    # Initialize state fields
-    agent_turn_history = state.get("agent_turn_history") or []
+    # Initialize agent awareness
     agent_awareness = state.get("agent_awareness") or {}
-    iteration_count = state.get("iteration_count", 0)
-    consulted_agents = state.get("consulted_agents") or []
-    
-    # Ensure agent awareness is initialized
     awareness_update = ensure_agent_awareness("cardiology", state)
-    updated_agent_awareness = agent_awareness.copy()
-    updated_agent_awareness.update(awareness_update)
+    agent_awareness.update(awareness_update)
     
     # Get new findings from other agents
     new_findings_dict, finding_ids = get_new_findings_for_agent("cardiology", state)
@@ -383,6 +471,7 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     context = build_agent_context("cardiology", state)
     
     # Determine if this is first turn or continuation
+    agent_turn_history = state.get("agent_turn_history") or []
     cardio_turns = [t for t in agent_turn_history if t.get("agent_id") == "cardiology"]
     is_first_turn = len(cardio_turns) == 0
     
@@ -432,8 +521,8 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     
     # Update agent awareness with new findings seen
     for finding_id in finding_ids:
-        if finding_id not in updated_agent_awareness["cardiology"]:
-            updated_agent_awareness["cardiology"].append(finding_id)
+        if finding_id not in agent_awareness["cardiology"]:
+            agent_awareness["cardiology"].append(finding_id)
     
     # Evaluate other agents' findings and potentially issue challenges
     challenge: Optional[Dict[str, str]] = None
@@ -443,37 +532,35 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
             challenge = create_challenge_dict("cardiology", other_agent_id, critique)
             break  # Only issue one challenge per turn
     
-    # Create turn entry
-    turn_entry = create_agent_turn_entry("cardiology", findings, iteration_count)
-    updated_turn_history = agent_turn_history + [turn_entry]
+    # Add turn history using utility (returns dict fragment)
+    turn_history_update = add_turn_history("cardiology", findings, state)
     
     # Decide if consultation is needed
-    consultation_request_obj: Optional[ConsultationRequest] = await cardiology.decide_consultation(findings, consulted_agents)
+    consultation_request_obj: Optional[ConsultationRequest] = await cardiology.decide_consultation(findings, state.get("consulted_agents") or [])
     
-    # Convert ConsultationRequest to dict format for node output
+    # Convert ConsultationRequest to dict format for state
     consultation_request_dict: Optional[Dict[str, str]] = None
-    consultation_request_str: Optional[str] = None  # For backward compatibility with orchestrator
     if consultation_request_obj:
         consultation_request_dict = create_consultation_request_dict(
             consultation_request_obj.requested_specialist,
             consultation_request_obj.reason
         )
-        consultation_request_str = consultation_request_obj.requested_specialist
     
-    # Update consulted_agents
-    updated_consulted_agents = update_consulted_agents("cardiology", consulted_agents)
+    # Update consulted_agents using utility (returns dict fragment)
+    consulted_agents_update = update_consulted_agents("cardiology", state)
     
-    return {
+    # Build and return complete state update
+    updates = {
         "cardiology_findings": findings,
-        "consultation_request": consultation_request_str,  # For orchestrator (backward compatible)
-        "consulted_agents": updated_consulted_agents,
-        "agent_turn_history": updated_turn_history,
-        "agent_awareness": updated_agent_awareness,
-        "new_findings_since_last_turn": {},  # Placeholder for Phase 3
-        # Phase 2 additions (stored in node output only, not in state):
-        "_cardiology_consultation_request": consultation_request_dict,  # Full dict with reason
-        "_cardiology_challenge": challenge  # Challenge dict if issued
+        "consultation_request": consultation_request_dict,
+        "challenge": challenge,
+        "agent_awareness": agent_awareness,
+        "new_findings_since_last_turn": new_findings_dict,
     }
+    updates.update(turn_history_update)
+    updates.update(consulted_agents_update)
+    
+    return updates
 
 
 async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
@@ -481,16 +568,10 @@ async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
     internal_med = _get_or_create_internal_medicine(state)
     exaid = state["exaid"]
     
-    # Initialize state fields
-    agent_turn_history = state.get("agent_turn_history") or []
+    # Initialize agent awareness
     agent_awareness = state.get("agent_awareness") or {}
-    iteration_count = state.get("iteration_count", 0)
-    consulted_agents = state.get("consulted_agents") or []
-    
-    # Ensure agent awareness is initialized
     awareness_update = ensure_agent_awareness("internal_medicine", state)
-    updated_agent_awareness = agent_awareness.copy()
-    updated_agent_awareness.update(awareness_update)
+    agent_awareness.update(awareness_update)
     
     # Get new findings from other agents
     new_findings_dict, finding_ids = get_new_findings_for_agent("internal_medicine", state)
@@ -499,6 +580,7 @@ async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
     context = build_agent_context("internal_medicine", state)
     
     # Determine if this is first turn or continuation
+    agent_turn_history = state.get("agent_turn_history") or []
     im_turns = [t for t in agent_turn_history if t.get("agent_id") == "internal_medicine"]
     is_first_turn = len(im_turns) == 0
     
@@ -547,8 +629,8 @@ async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
     
     # Update agent awareness with new findings seen
     for finding_id in finding_ids:
-        if finding_id not in updated_agent_awareness["internal_medicine"]:
-            updated_agent_awareness["internal_medicine"].append(finding_id)
+        if finding_id not in agent_awareness["internal_medicine"]:
+            agent_awareness["internal_medicine"].append(finding_id)
     
     # Evaluate other agents' findings and potentially issue challenges
     challenge: Optional[Dict[str, str]] = None
@@ -558,37 +640,35 @@ async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
             challenge = create_challenge_dict("internal_medicine", other_agent_id, critique)
             break  # Only issue one challenge per turn
     
-    # Create turn entry
-    turn_entry = create_agent_turn_entry("internal_medicine", findings, iteration_count)
-    updated_turn_history = agent_turn_history + [turn_entry]
+    # Add turn history using utility (returns dict fragment)
+    turn_history_update = add_turn_history("internal_medicine", findings, state)
     
-    # Decide if consultation is needed (now wired up for Phase 2)
-    consultation_request_obj: Optional[ConsultationRequest] = await internal_med.decide_consultation(findings, consulted_agents)
+    # Decide if consultation is needed
+    consultation_request_obj: Optional[ConsultationRequest] = await internal_med.decide_consultation(findings, state.get("consulted_agents") or [])
     
-    # Convert ConsultationRequest to dict format for node output
+    # Convert ConsultationRequest to dict format for state
     consultation_request_dict: Optional[Dict[str, str]] = None
-    consultation_request_str: Optional[str] = None  # For backward compatibility with orchestrator
     if consultation_request_obj:
         consultation_request_dict = create_consultation_request_dict(
             consultation_request_obj.requested_specialist,
             consultation_request_obj.reason
         )
-        consultation_request_str = consultation_request_obj.requested_specialist
     
-    # Update consulted_agents
-    updated_consulted_agents = update_consulted_agents("internal_medicine", consulted_agents)
+    # Update consulted_agents using utility (returns dict fragment)
+    consulted_agents_update = update_consulted_agents("internal_medicine", state)
     
-    return {
+    # Build and return complete state update
+    updates = {
         "internal_medicine_findings": findings,
-        "consultation_request": consultation_request_str,  # For orchestrator (backward compatible)
-        "consulted_agents": updated_consulted_agents,
-        "agent_turn_history": updated_turn_history,
-        "agent_awareness": updated_agent_awareness,
-        "new_findings_since_last_turn": {},  # Placeholder for Phase 3
-        # Phase 2 additions (stored in node output only, not in state):
-        "_internal_medicine_consultation_request": consultation_request_dict,  # Full dict with reason
-        "_internal_medicine_challenge": challenge  # Challenge dict if issued
+        "consultation_request": consultation_request_dict,
+        "challenge": challenge,
+        "agent_awareness": agent_awareness,
+        "new_findings_since_last_turn": new_findings_dict,
     }
+    updates.update(turn_history_update)
+    updates.update(consulted_agents_update)
+    
+    return updates
 
 
 async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
@@ -596,16 +676,10 @@ async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     radiology = _get_or_create_radiology(state)
     exaid = state["exaid"]
     
-    # Initialize state fields
-    agent_turn_history = state.get("agent_turn_history") or []
+    # Initialize agent awareness
     agent_awareness = state.get("agent_awareness") or {}
-    iteration_count = state.get("iteration_count", 0)
-    consulted_agents = state.get("consulted_agents") or []
-    
-    # Ensure agent awareness is initialized
     awareness_update = ensure_agent_awareness("radiology", state)
-    updated_agent_awareness = agent_awareness.copy()
-    updated_agent_awareness.update(awareness_update)
+    agent_awareness.update(awareness_update)
     
     # Get new findings from other agents
     new_findings_dict, finding_ids = get_new_findings_for_agent("radiology", state)
@@ -614,6 +688,7 @@ async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     context = build_agent_context("radiology", state)
     
     # Determine if this is first turn or continuation
+    agent_turn_history = state.get("agent_turn_history") or []
     rad_turns = [t for t in agent_turn_history if t.get("agent_id") == "radiology"]
     is_first_turn = len(rad_turns) == 0
     
@@ -660,8 +735,8 @@ async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     
     # Update agent awareness with new findings seen
     for finding_id in finding_ids:
-        if finding_id not in updated_agent_awareness["radiology"]:
-            updated_agent_awareness["radiology"].append(finding_id)
+        if finding_id not in agent_awareness["radiology"]:
+            agent_awareness["radiology"].append(finding_id)
     
     # Evaluate other agents' findings and potentially issue challenges
     challenge: Optional[Dict[str, str]] = None
@@ -671,37 +746,35 @@ async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
             challenge = create_challenge_dict("radiology", other_agent_id, critique)
             break  # Only issue one challenge per turn
     
-    # Create turn entry
-    turn_entry = create_agent_turn_entry("radiology", findings, iteration_count)
-    updated_turn_history = agent_turn_history + [turn_entry]
+    # Add turn history using utility (returns dict fragment)
+    turn_history_update = add_turn_history("radiology", findings, state)
     
-    # Decide if consultation is needed (now wired up for Phase 2)
-    consultation_request_obj: Optional[ConsultationRequest] = await radiology.decide_consultation(findings, consulted_agents)
+    # Decide if consultation is needed
+    consultation_request_obj: Optional[ConsultationRequest] = await radiology.decide_consultation(findings, state.get("consulted_agents") or [])
     
-    # Convert ConsultationRequest to dict format for node output
+    # Convert ConsultationRequest to dict format for state
     consultation_request_dict: Optional[Dict[str, str]] = None
-    consultation_request_str: Optional[str] = None  # For backward compatibility with orchestrator
     if consultation_request_obj:
         consultation_request_dict = create_consultation_request_dict(
             consultation_request_obj.requested_specialist,
             consultation_request_obj.reason
         )
-        consultation_request_str = consultation_request_obj.requested_specialist
     
-    # Update consulted_agents
-    updated_consulted_agents = update_consulted_agents("radiology", consulted_agents)
+    # Update consulted_agents using utility (returns dict fragment)
+    consulted_agents_update = update_consulted_agents("radiology", state)
     
-    return {
+    # Build and return complete state update
+    updates = {
         "radiology_findings": findings,
-        "consultation_request": consultation_request_str,  # For orchestrator (backward compatible)
-        "consulted_agents": updated_consulted_agents,
-        "agent_turn_history": updated_turn_history,
-        "agent_awareness": updated_agent_awareness,
-        "new_findings_since_last_turn": {},  # Placeholder for Phase 3
-        # Phase 2 additions (stored in node output only, not in state):
-        "_radiology_consultation_request": consultation_request_dict,  # Full dict with reason
-        "_radiology_challenge": challenge  # Challenge dict if issued
+        "consultation_request": consultation_request_dict,
+        "challenge": challenge,
+        "agent_awareness": agent_awareness,
+        "new_findings_since_last_turn": new_findings_dict,
     }
+    updates.update(turn_history_update)
+    updates.update(consulted_agents_update)
+    
+    return updates
 
 
 async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
