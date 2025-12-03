@@ -40,6 +40,12 @@ class CDSSGraphState(TypedDict):
     max_iterations: int
     """Maximum turns before forcing synthesis (default: 20)"""
     
+    current_step: str
+    """Current execution step for display differentiation (e.g., 'compression', 'decision', 'task', 'cardiology', 'synthesis')"""
+    
+    invocation_counter: int
+    """Global counter for unique agent invocation IDs across all steps"""
+    
     final_synthesis: Optional[str]
     """Final synthesis from orchestrator combining all findings"""
 

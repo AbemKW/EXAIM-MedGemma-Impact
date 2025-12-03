@@ -12,6 +12,7 @@ class EXAID:
         self.summaries: list[AgentSummary] = []
         self.trace_callbacks: List[Callable[[str, str], None]] = []
         self.summary_callbacks: List[Callable[[AgentSummary], None]] = []
+        self.current_invocation_id: Optional[str] = None  # For display differentiation
     
     def register_trace_callback(self, callback: Callable[[str, str], None]):
         """Register a callback function to be called when trace tokens are received.
