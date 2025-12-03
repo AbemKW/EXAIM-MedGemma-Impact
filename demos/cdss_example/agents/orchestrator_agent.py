@@ -82,10 +82,10 @@ class OrchestratorAgent(DemoBaseAgent):
         ])
         
         chain = prompt | self.llm
-        
+        callback = AgentStreamingCallback(agent_id=self.agent_id)
         # Collect tokens while streaming
         collected = []
-        async for chunk in chain.astream({}):
+        async for chunk in chain.astream({}, callbacks=[callback]):
             if hasattr(chunk, 'content'):
                 content = chunk.content
                 if content:
@@ -140,7 +140,8 @@ class OrchestratorAgent(DemoBaseAgent):
         ])
         
         chain = prompt | self.llm
-        response = await chain.ainvoke({})
+        callback = AgentStreamingCallback(agent_id=self.agent_id)
+        response = await chain.ainvoke({}, callbacks=[callback])
         
         # Extract decision and clean it
         decision = response.content.strip().lower()
@@ -198,7 +199,8 @@ class OrchestratorAgent(DemoBaseAgent):
         ])
         
         chain = prompt | self.llm
-        response = await chain.ainvoke({})
+        callback = AgentStreamingCallback(agent_id=self.agent_id)
+        response = await chain.ainvoke({}, callbacks=[callback])
         
         return response.content.strip()
     

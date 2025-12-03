@@ -75,6 +75,7 @@ class CDSS:
                     "agent_contributions": s.agent_contributions
                 }
                 for s in all_summaries
+                if s is not None  # Filter out any None summaries
             ]
         }
         
