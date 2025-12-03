@@ -30,6 +30,14 @@ class EXAID:
         self.summary_callbacks.append(callback)
     
     def _print_summary(self, summary: AgentSummary):
+        if summary is None:
+            print(f"\n{'='*60}")
+            print(f"Summary Update")
+            print(f"{'='*60}")
+            print(f"Warning: Received None summary")
+            print()
+            return
+        
         print(f"\n{'='*60}")
         print(f"Summary Update")
         print(f"{'='*60}")
@@ -96,8 +104,9 @@ class EXAID:
                 latest_summary_str,
                 buffer_str
             )
-            self.summaries.append(summary)
-            self._print_summary(summary)
+            if summary is not None:
+                self.summaries.append(summary)
+                self._print_summary(summary)
             
             # Emit summary event to callbacks
             for callback in self.summary_callbacks:
@@ -125,8 +134,9 @@ class EXAID:
                     latest_summary_str,
                     buffer_str
                 )
-                self.summaries.append(summary)
-                self._print_summary(summary)
+                if summary is not None:
+                    self.summaries.append(summary)
+                    self._print_summary(summary)
                 
                 # Emit summary event to callbacks
                 for callback in self.summary_callbacks:

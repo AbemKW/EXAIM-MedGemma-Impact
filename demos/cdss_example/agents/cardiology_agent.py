@@ -2,7 +2,7 @@ from typing import AsyncIterator
 from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from exaid_core.llm import mas_llm
-from exaid_core.callbacks.agent_streaming_callback import AgentStreamingCallback
+from demos.cdss_example.callbacks.agent_streaming_callback import AgentStreamingCallback
 
 
 class CardiologyAgent(DemoBaseAgent):
