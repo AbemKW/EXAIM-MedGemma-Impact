@@ -158,6 +158,11 @@ class WebSocketService {
     const store = useCDSSStore.getState();
 
     switch (message.type) {
+      case 'agent_started':
+        // Create a new card for this agent invocation
+        store.startNewAgent(message.agent_id);
+        break;
+
       case 'token':
         store.addToken(message.agent_id, message.token);
         break;
