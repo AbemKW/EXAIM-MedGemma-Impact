@@ -9,12 +9,32 @@ interface AgentWindowProps {
   agentId: string;
 }
 
+/**
+ * Format agent ID for display by extracting only the base agent name
+ * e.g., "OrchestratorAgent_compression_1" -> "OrchestratorAgent"
+ */
+function formatAgentDisplayName(agentId: string): string {
+  // Pattern: AgentName_stepName_number
+  const match = agentId.match(/^(.+?)_([a-z_]+)_(\d+)$/);
+  
+  if (match) {
+    const [, baseName] = match;
+    // Return only the base agent name
+    return baseName;
+  }
+  
+  // Fallback: return as-is if pattern doesn't match
+  return agentId;
+}
+
 function AgentWindow({ agentId }: AgentWindowProps) {
   const agent = useAgentTrace(agentId);
   const toggleAgent = useCDSSStore((state) => state.toggleAgent);
   const openModal = useCDSSStore((state) => state.openModal);
 
   if (!agent) return null;
+
+  const displayName = formatAgentDisplayName(agentId);
 
   const handleToggle = () => {
     toggleAgent(agentId);
@@ -38,7 +58,7 @@ function AgentWindow({ agentId }: AgentWindowProps) {
         className="px-4 py-3 bg-gray-50 border-b border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors flex justify-between items-center"
       >
         <div className="flex items-center gap-3">
-          <span className="font-semibold text-gray-800">{agentId}</span>
+          <span className="font-semibold text-gray-800">{displayName}</span>
           <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded uppercase">
             Active
           </span>

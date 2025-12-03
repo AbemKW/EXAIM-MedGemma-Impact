@@ -26,9 +26,18 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     recent_agent = state.get("recent_agent", "none")
     specialists_called = state.get("specialists_called", [])
     iteration_count = state.get("iteration_count", 0)
+    invocation_counter = state.get("invocation_counter", 0)
     
     # Step 1: Compress recent specialist output into running_summary (if exists)
     if recent_delta and recent_agent != "none":
+        # Set current step for display differentiation
+        invocation_counter += 1
+        state["current_step"] = f"compression_{invocation_counter}"
+        state["invocation_counter"] = invocation_counter
+        
+        # Set invocation ID in EXAID for display differentiation
+        exaid.current_invocation_id = f"compression_{invocation_counter}"
+        
         # Build compression prompt
         if not running_summary:
             compression_input = (
@@ -68,6 +77,14 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
         running_summary = "".join(collected_tokens)
     
     # Step 2: Decide next specialist or synthesis
+    invocation_counter = state.get("invocation_counter", 0)
+    invocation_counter += 1
+    state["current_step"] = f"decision_{invocation_counter}"
+    state["invocation_counter"] = invocation_counter
+    
+    # Set invocation ID in EXAID for display differentiation
+    exaid.current_invocation_id = f"decision_{invocation_counter}"
+    
     available_specialists = ['laboratory', 'cardiology', 'internal_medicine', 'radiology']
     not_called = [s for s in available_specialists if s not in specialists_called]
     
@@ -97,11 +114,6 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
             collected_decision.append(token)
             yield token
     
-    await exaid.received_streamed_tokens(
-        orchestrator.agent_id,
-        decision_stream()
-    )
-    
     # Extract and validate decision
     next_specialist = "".join(collected_decision).strip().lower()
     valid_options = available_specialists + ['synthesis']
@@ -118,6 +130,14 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Step 3: Generate task instruction if not synthesis
     task_instruction = ""
     if next_specialist != "synthesis":
+        invocation_counter = state.get("invocation_counter", 0)
+        invocation_counter += 1
+        state["current_step"] = f"task_{invocation_counter}"
+        state["invocation_counter"] = invocation_counter
+        
+        # Set invocation ID in EXAID for display differentiation
+        exaid.current_invocation_id = f"task_{invocation_counter}"
+        
         task_input = (
             f"Clinical Case:\n{case_text}\n\n"
             f"Running Summary:\n{running_summary}\n\n"
@@ -157,6 +177,15 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
     agent = LaboratoryAgent()
     exaid = state["exaid"]
     
+    # Set current step for display differentiation
+    invocation_counter = state.get("invocation_counter", 0)
+    invocation_counter += 1
+    state["current_step"] = f"laboratory_{invocation_counter}"
+    state["invocation_counter"] = invocation_counter
+    
+    # Set invocation ID in EXAID for display differentiation
+    exaid.current_invocation_id = f"laboratory_{invocation_counter}"
+    
     # Build context for specialist
     context = _build_specialist_context(state, "laboratory")
     
@@ -190,6 +219,15 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     """Cardiology specialist node: assess cardiovascular findings and provide domain reasoning"""
     agent = CardiologyAgent()
     exaid = state["exaid"]
+    
+    # Set current step for display differentiation
+    invocation_counter = state.get("invocation_counter", 0)
+    invocation_counter += 1
+    state["current_step"] = f"cardiology_{invocation_counter}"
+    state["invocation_counter"] = invocation_counter
+    
+    # Set invocation ID in EXAID for display differentiation
+    exaid.current_invocation_id = f"cardiology_{invocation_counter}"
     
     # Build context for specialist
     context = _build_specialist_context(state, "cardiology")
@@ -225,6 +263,15 @@ async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
     agent = InternalMedicineAgent()
     exaid = state["exaid"]
     
+    # Set current step for display differentiation
+    invocation_counter = state.get("invocation_counter", 0)
+    invocation_counter += 1
+    state["current_step"] = f"internal_medicine_{invocation_counter}"
+    state["invocation_counter"] = invocation_counter
+    
+    # Set invocation ID in EXAID for display differentiation
+    exaid.current_invocation_id = f"internal_medicine_{invocation_counter}"
+    
     # Build context for specialist
     context = _build_specialist_context(state, "internal_medicine")
     
@@ -258,6 +305,15 @@ async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     """Radiology specialist node: interpret imaging findings and provide domain reasoning"""
     agent = RadiologyAgent()
     exaid = state["exaid"]
+    
+    # Set current step for display differentiation
+    invocation_counter = state.get("invocation_counter", 0)
+    invocation_counter += 1
+    state["current_step"] = f"radiology_{invocation_counter}"
+    state["invocation_counter"] = invocation_counter
+    
+    # Set invocation ID in EXAID for display differentiation
+    exaid.current_invocation_id = f"radiology_{invocation_counter}"
     
     # Build context for specialist
     context = _build_specialist_context(state, "radiology")
@@ -294,6 +350,15 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
     exaid = state["exaid"]
     case_text = state["case_text"]
     running_summary = state.get("running_summary", "")
+    
+    # Set current step for display differentiation
+    invocation_counter = state.get("invocation_counter", 0)
+    invocation_counter += 1
+    state["current_step"] = f"synthesis_{invocation_counter}"
+    state["invocation_counter"] = invocation_counter
+    
+    # Set invocation ID in EXAID for display differentiation
+    exaid.current_invocation_id = f"synthesis_{invocation_counter}"
     
     # Build synthesis prompt
     synthesis_prompt = (

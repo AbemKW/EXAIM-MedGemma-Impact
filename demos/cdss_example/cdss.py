@@ -48,6 +48,8 @@ class CDSS:
             "exaid": self.exaid,
             "iteration_count": 0,
             "max_iterations": 20,
+            "current_step": "init",
+            "invocation_counter": 0,
             "final_synthesis": None
         }
         
