@@ -7,8 +7,8 @@ import type { AgentTrace, Summary, ConnectionStatus, ModalState, SummaryData } f
 const TOKEN_BATCH_INTERVAL_MS = 50;
 
 interface CDSSState {
-  // Agent traces
-  agents: Map<string, AgentTrace>;
+  // Agent traces (array for multiple invocations of same agent)
+  agents: AgentTrace[];
   
   // Summaries
   summaries: Summary[];
@@ -25,27 +25,29 @@ interface CDSSState {
   modal: ModalState;
   
   // Actions
+  startNewAgent: (agentId: string) => void;
   addToken: (agentId: string, token: string) => void;
   flushTokens: () => void;
   addSummary: (data: SummaryData, timestamp: Date) => void;
-  toggleAgent: (agentId: string) => void;
+  toggleAgent: (cardId: string) => void;
   toggleSummary: (id: string) => void;
   setWsStatus: (status: ConnectionStatus) => void;
   setReconnectAttempts: (attempts: number) => void;
   setProcessing: (isProcessing: boolean) => void;
-  openModal: (agentId: string, content: string) => void;
+  openModal: (cardId: string, content: string) => void;
   closeModal: () => void;
   resetState: () => void;
 }
 
 // Token buffer outside Zustand state to prevent triggering updates
+// Now keyed by cardId instead of agentId
 const tokenBuffer = new Map<string, string[]>();
 let flushInterval: NodeJS.Timeout | null = null;
 
 export const useCDSSStore = create<CDSSState>()(
   subscribeWithSelector((set, get) => ({
     // Initial state
-    agents: new Map(),
+    agents: [],  // Changed from Map to Array
     summaries: [],
     summaryIdCounter: 0,
     wsStatus: 'disconnected',
@@ -57,26 +59,44 @@ export const useCDSSStore = create<CDSSState>()(
       content: '',
     },
     
-    // Add token to buffer (doesn't trigger state update)
+    // Start a new agent invocation (creates new card)
+    startNewAgent: (agentId: string) => {
+      set((state) => {
+        const newCard: AgentTrace = {
+          id: `${agentId}_${Date.now()}`,  // Unique ID for React key
+          agentName: agentId,              // Base name for display
+          fullText: '',
+          isExpanded: false,
+          lastUpdate: new Date(),
+        };
+        
+        // Add new card at the beginning (most recent first)
+        return {
+          agents: [newCard, ...state.agents],
+        };
+      });
+    },
+    
+    // Add token to buffer for the most recent card of this agent
     addToken: (agentId: string, token: string) => {
       const state = get();
       
-      // Initialize agent if doesn't exist
-      if (!state.agents.has(agentId)) {
-        set((state) => ({
-          agents: new Map(state.agents).set(agentId, {
-            fullText: '',
-            isExpanded: false,
-            lastUpdate: new Date(),
-          }),
-        }));
+      // Find the most recent card for this agent (first match in array)
+      const cardIndex = state.agents.findIndex(a => a.agentName === agentId);
+      
+      if (cardIndex === -1) {
+        // No card exists - this shouldn't happen if agent_started was sent first
+        console.warn(`Token received for ${agentId} before agent_started message`);
+        return;
       }
       
-      // Add token to external buffer
-      if (!tokenBuffer.has(agentId)) {
-        tokenBuffer.set(agentId, []);
+      const card = state.agents[cardIndex];
+      
+      // Add token to external buffer using card ID
+      if (!tokenBuffer.has(card.id)) {
+        tokenBuffer.set(card.id, []);
       }
-      tokenBuffer.get(agentId)!.push(token);
+      tokenBuffer.get(card.id)!.push(token);
       
       // Start flush interval if not already running
       if (!flushInterval) {
@@ -106,20 +126,20 @@ export const useCDSSStore = create<CDSSState>()(
       }
       
       set((state) => {
-        const newAgents = new Map(state.agents);
-        const agentIdsToUpdate: string[] = [];
+        const newAgents = [...state.agents];
+        let hasUpdates = false;
         
-        // Update all agents with buffered tokens
-        tokenBuffer.forEach((tokens, agentId) => {
+        // Update all cards with buffered tokens
+        tokenBuffer.forEach((tokens, cardId) => {
           if (tokens.length > 0) {
-            const agent = newAgents.get(agentId);
-            if (agent) {
-              newAgents.set(agentId, {
-                ...agent,
-                fullText: agent.fullText + tokens.join(''),
+            const cardIndex = newAgents.findIndex(a => a.id === cardId);
+            if (cardIndex !== -1) {
+              newAgents[cardIndex] = {
+                ...newAgents[cardIndex],
+                fullText: newAgents[cardIndex].fullText + tokens.join(''),
                 lastUpdate: new Date(),
-              });
-              agentIdsToUpdate.push(agentId);
+              };
+              hasUpdates = true;
             }
           }
         });
@@ -128,27 +148,11 @@ export const useCDSSStore = create<CDSSState>()(
         tokenBuffer.clear();
         
         // If no updates were made, just return current state
-        if (agentIdsToUpdate.length === 0) {
+        if (!hasUpdates) {
           return state;
         }
         
-        // Reorder agents - move most recently updated to top
-        const sortedAgents = new Map();
-        // Add recently updated agents first
-        agentIdsToUpdate.forEach(id => {
-          const agent = newAgents.get(id);
-          if (agent) {
-            sortedAgents.set(id, agent);
-          }
-        });
-        // Add remaining agents
-        newAgents.forEach((agent, id) => {
-          if (!agentIdsToUpdate.includes(id)) {
-            sortedAgents.set(id, agent);
-          }
-        });
-        
-        return { agents: sortedAgents };
+        return { agents: newAgents };
       });
     },
     
@@ -177,15 +181,15 @@ export const useCDSSStore = create<CDSSState>()(
     },
     
     // Toggle agent expand/collapse
-    toggleAgent: (agentId: string) => {
+    toggleAgent: (cardId: string) => {
       set((state) => {
-        const newAgents = new Map(state.agents);
-        const agent = newAgents.get(agentId);
-        if (agent) {
-          newAgents.set(agentId, {
-            ...agent,
-            isExpanded: !agent.isExpanded,
-          });
+        const newAgents = [...state.agents];
+        const cardIndex = newAgents.findIndex(a => a.id === cardId);
+        if (cardIndex !== -1) {
+          newAgents[cardIndex] = {
+            ...newAgents[cardIndex],
+            isExpanded: !newAgents[cardIndex].isExpanded,
+          };
         }
         return { agents: newAgents };
       });
@@ -222,11 +226,11 @@ export const useCDSSStore = create<CDSSState>()(
     },
     
     // Open modal with agent trace
-    openModal: (agentId: string, content: string) => {
+    openModal: (cardId: string, content: string) => {
       set({
         modal: {
           isOpen: true,
-          agentId,
+          agentId: cardId,  // Store cardId for modal
           content,
         },
       });
@@ -253,7 +257,7 @@ export const useCDSSStore = create<CDSSState>()(
       tokenBuffer.clear();
       
       set({
-        agents: new Map(),
+        agents: [],  // Clear array
         summaries: [],
         summaryIdCounter: 0,
         modal: {
@@ -267,12 +271,12 @@ export const useCDSSStore = create<CDSSState>()(
 );
 
 // Selector hooks for optimized subscriptions
-export const useAgentTrace = (agentId: string) => {
-  return useCDSSStore((state) => state.agents.get(agentId));
+export const useAgentTrace = (cardId: string) => {
+  return useCDSSStore((state) => state.agents.find(a => a.id === cardId));
 };
 
-export const useAgentIds = () => {
-  return useCDSSStore((state) => Array.from(state.agents.keys()));
+export const useAllAgents = () => {
+  return useCDSSStore((state) => state.agents);
 };
 
 export const useSummaries = () => {

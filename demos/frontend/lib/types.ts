@@ -1,6 +1,8 @@
 // Type definitions for EXAID CDSS Frontend
 
 export interface AgentTrace {
+  id: string;  // Unique ID for React key
+  agentName: string;  // Base agent name for display
   fullText: string;
   isExpanded: boolean;
   lastUpdate: Date;
@@ -35,6 +37,12 @@ export interface CaseRequest {
 }
 
 // WebSocket message types
+export interface AgentStartedMessage {
+  type: 'agent_started';
+  agent_id: string;
+  timestamp: string;
+}
+
 export interface TokenMessage {
   type: 'token';
   agent_id: string;
@@ -65,6 +73,7 @@ export interface ErrorMessage {
 }
 
 export type WebSocketMessage = 
+  | AgentStartedMessage
   | TokenMessage 
   | SummaryMessage 
   | ProcessingStartedMessage 

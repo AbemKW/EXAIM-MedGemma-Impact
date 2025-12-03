@@ -162,6 +162,38 @@ async def send_summary_direct(summary):
         await remove_connection(conn)
 
 
+async def send_agent_started(agent_id: str):
+    """Send agent_started message to create a new card in the UI.
+    
+    This should be called before each agent invocation to signal that
+    a new reasoning session is beginning.
+    
+    Args:
+        agent_id: The base agent identifier (e.g., 'OrchestratorAgent')
+    """
+    connections = await get_active_connections()
+    if not connections:
+        return
+    
+    message = {
+        "type": "agent_started",
+        "agent_id": agent_id,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    disconnected = []
+    for connection in connections:
+        try:
+            await connection.send_json(message)
+        except Exception as e:
+            logger.warning(f"Error sending agent_started to client: {e}")
+            disconnected.append(connection)
+    
+    # Remove disconnected clients
+    for conn in disconnected:
+        await remove_connection(conn)
+
+
 def _queue_message_fallback(message: dict, context: str = "message"):
     """Helper function to queue a message as fallback when direct WebSocket send fails.
     
@@ -186,30 +218,20 @@ def trace_callback(agent_id: str, token: str):
     
     Every token from every agent that uses received_streamed_tokens() will
     trigger this callback, ensuring all tokens are captured and displayed.
-    
-    Generates unique display IDs by appending invocation_id to agent_id to ensure
-    each agent invocation gets its own card in the UI.
     """
-    # Generate unique display ID using invocation context from EXAID
-    display_id = agent_id
-    if cdss_instance and hasattr(cdss_instance.exaid, 'current_invocation_id') and cdss_instance.exaid.current_invocation_id:
-        # Append invocation ID to create unique display identifier
-        # e.g., "OrchestratorAgent" + "_compression_1" = "OrchestratorAgent_compression_1"
-        display_id = f"{agent_id}_{cdss_instance.exaid.current_invocation_id}"
-    
     # Schedule immediate async send without blocking
     # Since we're called from async context, we can safely create a task
     try:
         # Try to get the running event loop - will succeed if called from async context
         asyncio.get_running_loop()
-        # Schedule the send immediately as a task (use display_id instead of agent_id)
-        asyncio.create_task(send_token_direct(display_id, token))
+        # Schedule the send immediately as a task
+        asyncio.create_task(send_token_direct(agent_id, token))
     except RuntimeError:
         # No running event loop - unexpected but log warning and fallback to queue
         logger.warning(f"No running event loop in trace_callback for agent {agent_id} - using queue fallback")
         message = {
             "type": "token",
-            "agent_id": display_id,
+            "agent_id": agent_id,
             "token": token,
             "timestamp": datetime.now().isoformat()
         }
@@ -219,7 +241,7 @@ def trace_callback(agent_id: str, token: str):
         logger.warning(f"Error sending token directly, falling back to queue: {e}")
         message = {
             "type": "token",
-            "agent_id": display_id,
+            "agent_id": agent_id,
             "token": token,
             "timestamp": datetime.now().isoformat()
         }

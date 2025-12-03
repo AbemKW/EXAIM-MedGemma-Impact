@@ -1,12 +1,37 @@
 """Simplified CDSS graph nodes - orchestrator-driven workflow with specialist reasoning"""
 
-from typing import Dict, Any
+from typing import Dict, Any, AsyncIterator
 from demos.cdss_example.schema.graph_state import CDSSGraphState
 from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent
 from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
 from demos.cdss_example.agents.cardiology_agent import CardiologyAgent
 from demos.cdss_example.agents.internal_medicine_agent import InternalMedicineAgent
 from demos.cdss_example.agents.radiology_agent import RadiologyAgent
+
+# Import send_agent_started for UI card creation
+import sys
+def get_send_agent_started():
+    """Dynamically import send_agent_started to avoid circular imports"""
+    if 'demos.backend.server' in sys.modules:
+        server_module = sys.modules['demos.backend.server']
+        return server_module.send_agent_started
+    return None
+
+async def stream_with_card_creation(agent_id: str, exaid, token_generator: AsyncIterator[str]):
+    """Helper to send agent_started message before streaming tokens to EXAID
+    
+    Args:
+        agent_id: The agent identifier
+        exaid: EXAID instance
+        token_generator: Async generator of tokens
+    """
+    # Send agent_started message to create new card in UI
+    send_fn = get_send_agent_started()
+    if send_fn:
+        await send_fn(agent_id)
+    
+    # Stream tokens to EXAID
+    await exaid.received_streamed_tokens(agent_id, token_generator)
 
 
 async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
@@ -26,18 +51,9 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     recent_agent = state.get("recent_agent", "none")
     specialists_called = state.get("specialists_called", [])
     iteration_count = state.get("iteration_count", 0)
-    invocation_counter = state.get("invocation_counter", 0)
     
     # Step 1: Compress recent specialist output into running_summary (if exists)
     if recent_delta and recent_agent != "none":
-        # Set current step for display differentiation
-        invocation_counter += 1
-        state["current_step"] = f"compression_{invocation_counter}"
-        state["invocation_counter"] = invocation_counter
-        
-        # Set invocation ID in EXAID for display differentiation
-        exaid.current_invocation_id = f"compression_{invocation_counter}"
-        
         # Build compression prompt
         if not running_summary:
             compression_input = (
@@ -63,28 +79,21 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
                 f"Provide only the updated summary."
             )
         
-        # Stream compression to EXAID
+        # Stream compression to EXAID with new card creation
         collected_tokens = []
         async def compression_stream():
             async for token in orchestrator.act_stream(compression_input):
                 collected_tokens.append(token)
                 yield token
         
-        await exaid.received_streamed_tokens(
-            orchestrator.agent_id, 
+        await stream_with_card_creation(
+            orchestrator.agent_id,
+            exaid,
             compression_stream()
         )
         running_summary = "".join(collected_tokens)
     
     # Step 2: Decide next specialist or synthesis
-    invocation_counter = state.get("invocation_counter", 0)
-    invocation_counter += 1
-    state["current_step"] = f"decision_{invocation_counter}"
-    state["invocation_counter"] = invocation_counter
-    
-    # Set invocation ID in EXAID for display differentiation
-    exaid.current_invocation_id = f"decision_{invocation_counter}"
-    
     available_specialists = ['laboratory', 'cardiology', 'internal_medicine', 'radiology']
     not_called = [s for s in available_specialists if s not in specialists_called]
     
@@ -107,12 +116,18 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
         f"Respond with ONLY ONE WORD: the specialist name or 'synthesis'"
     )
     
-    # Stream decision to EXAID
+    # Stream decision to EXAID with new card creation
     collected_decision = []
     async def decision_stream():
         async for token in orchestrator.act_stream(decision_input):
             collected_decision.append(token)
             yield token
+    
+    await stream_with_card_creation(
+        orchestrator.agent_id,
+        exaid,
+        decision_stream()
+    )
     
     # Extract and validate decision
     next_specialist = "".join(collected_decision).strip().lower()
@@ -130,14 +145,6 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     # Step 3: Generate task instruction if not synthesis
     task_instruction = ""
     if next_specialist != "synthesis":
-        invocation_counter = state.get("invocation_counter", 0)
-        invocation_counter += 1
-        state["current_step"] = f"task_{invocation_counter}"
-        state["invocation_counter"] = invocation_counter
-        
-        # Set invocation ID in EXAID for display differentiation
-        exaid.current_invocation_id = f"task_{invocation_counter}"
-        
         task_input = (
             f"Clinical Case:\n{case_text}\n\n"
             f"Running Summary:\n{running_summary}\n\n"
@@ -151,15 +158,16 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
             f"Keep it concise (2-4 sentences) and actionable."
         )
         
-        # Stream task generation to EXAID
+        # Stream task generation to EXAID with new card creation
         collected_task = []
         async def task_stream():
             async for token in orchestrator.act_stream(task_input):
                 collected_task.append(token)
                 yield token
         
-        await exaid.received_streamed_tokens(
+        await stream_with_card_creation(
             orchestrator.agent_id,
+            exaid,
             task_stream()
         )
         task_instruction = "".join(collected_task)
@@ -177,15 +185,6 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
     agent = LaboratoryAgent()
     exaid = state["exaid"]
     
-    # Set current step for display differentiation
-    invocation_counter = state.get("invocation_counter", 0)
-    invocation_counter += 1
-    state["current_step"] = f"laboratory_{invocation_counter}"
-    state["invocation_counter"] = invocation_counter
-    
-    # Set invocation ID in EXAID for display differentiation
-    exaid.current_invocation_id = f"laboratory_{invocation_counter}"
-    
     # Build context for specialist
     context = _build_specialist_context(state, "laboratory")
     
@@ -197,8 +196,8 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
             collected_tokens.append(token)
             yield token
     
-    # Stream to EXAID (non-blocking)
-    await exaid.received_streamed_tokens(agent.agent_id, token_stream())
+    # Stream to EXAID with new card creation
+    await stream_with_card_creation(agent.agent_id, exaid, token_stream())
     
     # Collect raw output as recent_delta
     recent_delta = "".join(collected_tokens)
@@ -220,15 +219,6 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     agent = CardiologyAgent()
     exaid = state["exaid"]
     
-    # Set current step for display differentiation
-    invocation_counter = state.get("invocation_counter", 0)
-    invocation_counter += 1
-    state["current_step"] = f"cardiology_{invocation_counter}"
-    state["invocation_counter"] = invocation_counter
-    
-    # Set invocation ID in EXAID for display differentiation
-    exaid.current_invocation_id = f"cardiology_{invocation_counter}"
-    
     # Build context for specialist
     context = _build_specialist_context(state, "cardiology")
     
@@ -240,8 +230,8 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
             collected_tokens.append(token)
             yield token
     
-    # Stream to EXAID (non-blocking)
-    await exaid.received_streamed_tokens(agent.agent_id, token_stream())
+    # Stream to EXAID with new card creation
+    await stream_with_card_creation(agent.agent_id, exaid, token_stream())
     
     # Collect raw output as recent_delta
     recent_delta = "".join(collected_tokens)
@@ -263,15 +253,6 @@ async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
     agent = InternalMedicineAgent()
     exaid = state["exaid"]
     
-    # Set current step for display differentiation
-    invocation_counter = state.get("invocation_counter", 0)
-    invocation_counter += 1
-    state["current_step"] = f"internal_medicine_{invocation_counter}"
-    state["invocation_counter"] = invocation_counter
-    
-    # Set invocation ID in EXAID for display differentiation
-    exaid.current_invocation_id = f"internal_medicine_{invocation_counter}"
-    
     # Build context for specialist
     context = _build_specialist_context(state, "internal_medicine")
     
@@ -283,8 +264,8 @@ async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
             collected_tokens.append(token)
             yield token
     
-    # Stream to EXAID (non-blocking)
-    await exaid.received_streamed_tokens(agent.agent_id, token_stream())
+    # Stream to EXAID with new card creation
+    await stream_with_card_creation(agent.agent_id, exaid, token_stream())
     
     # Collect raw output as recent_delta
     recent_delta = "".join(collected_tokens)
@@ -306,15 +287,6 @@ async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     agent = RadiologyAgent()
     exaid = state["exaid"]
     
-    # Set current step for display differentiation
-    invocation_counter = state.get("invocation_counter", 0)
-    invocation_counter += 1
-    state["current_step"] = f"radiology_{invocation_counter}"
-    state["invocation_counter"] = invocation_counter
-    
-    # Set invocation ID in EXAID for display differentiation
-    exaid.current_invocation_id = f"radiology_{invocation_counter}"
-    
     # Build context for specialist
     context = _build_specialist_context(state, "radiology")
     
@@ -326,8 +298,8 @@ async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
             collected_tokens.append(token)
             yield token
     
-    # Stream to EXAID (non-blocking)
-    await exaid.received_streamed_tokens(agent.agent_id, token_stream())
+    # Stream to EXAID with new card creation
+    await stream_with_card_creation(agent.agent_id, exaid, token_stream())
     
     # Collect raw output as recent_delta
     recent_delta = "".join(collected_tokens)
@@ -351,15 +323,6 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
     case_text = state["case_text"]
     running_summary = state.get("running_summary", "")
     
-    # Set current step for display differentiation
-    invocation_counter = state.get("invocation_counter", 0)
-    invocation_counter += 1
-    state["current_step"] = f"synthesis_{invocation_counter}"
-    state["invocation_counter"] = invocation_counter
-    
-    # Set invocation ID in EXAID for display differentiation
-    exaid.current_invocation_id = f"synthesis_{invocation_counter}"
-    
     # Build synthesis prompt
     synthesis_prompt = (
         f"CLINICAL CASE:\n{case_text}\n\n"
@@ -373,7 +336,7 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
         f"Provide clear, actionable clinical recommendations."
     )
     
-    # Stream synthesis
+    # Stream synthesis with new card creation
     # The AgentStreamingCallback in orchestrator.act_stream handles message bus streaming
     collected_tokens = []
     async def token_stream():
@@ -381,8 +344,8 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
             collected_tokens.append(token)
             yield token
     
-    # Stream to EXAID
-    await exaid.received_streamed_tokens(f"{orchestrator.agent_id}_synthesis", token_stream())
+    # Stream to EXAID with new card creation
+    await stream_with_card_creation(orchestrator.agent_id, exaid, token_stream())
     
     # Collect final synthesis
     final_synthesis = "".join(collected_tokens)
