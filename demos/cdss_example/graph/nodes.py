@@ -62,7 +62,7 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
                 yield token
         
         await exaid.received_streamed_tokens(
-            f"{orchestrator.agent_id}_compress", 
+            orchestrator.agent_id, 
             compression_stream()
         )
         running_summary = "".join(collected_tokens)
@@ -98,7 +98,7 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
             yield token
     
     await exaid.received_streamed_tokens(
-        f"{orchestrator.agent_id}_decision",
+        orchestrator.agent_id,
         decision_stream()
     )
     
@@ -139,7 +139,7 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
                 yield token
         
         await exaid.received_streamed_tokens(
-            f"{orchestrator.agent_id}_task",
+            orchestrator.agent_id,
             task_stream()
         )
         task_instruction = "".join(collected_task)
