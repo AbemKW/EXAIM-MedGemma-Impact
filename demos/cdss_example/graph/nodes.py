@@ -13,9 +13,9 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     """Orchestrator node: compresses context, decides next specialist, generates task instruction
     
     Workflow:
-    1. If recent_delta exists, compress it into running_summary
-    2. Decide next specialist or synthesis
-    3. If not synthesis, generate task instruction for next specialist
+    1. If recent_delta exists, compress it into running_summary (streams to UI)
+    2. Decide next specialist or synthesis (streams to UI)
+    3. If not synthesis, generate task instruction for next specialist (streams to UI)
     4. Update state and return
     """
     orchestrator = OrchestratorAgent()
@@ -29,23 +29,120 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     
     # Step 1: Compress recent specialist output into running_summary (if exists)
     if recent_delta and recent_agent != "none":
-        # Compress using orchestrator method (streams to EXAID via act_stream internally)
-        # The AgentStreamingCallback in orchestrator.act_stream handles message bus streaming
-        running_summary = await orchestrator.compress_to_summary(
-            running_summary, recent_delta, recent_agent
+        # Build compression prompt
+        if not running_summary:
+            compression_input = (
+                f"A specialist ({recent_agent}) has provided analysis of a clinical case.\n\n"
+                f"Specialist Output:\n{recent_delta}\n\n"
+                f"Create a concise summary capturing:\n"
+                f"- Key clinical findings\n"
+                f"- Differential diagnoses\n"
+                f"- Recommended tests or interventions\n"
+                f"- Critical concerns or urgent issues\n\n"
+                f"Keep it focused and actionable."
+            )
+        else:
+            compression_input = (
+                f"Previous Summary:\n{running_summary}\n\n"
+                f"New Findings from {recent_agent.upper()}:\n{recent_delta}\n\n"
+                f"Generate an updated concise summary that:\n"
+                f"- Integrates the new findings\n"
+                f"- Maintains key information from previous summary\n"
+                f"- Removes redundant or superseded information\n"
+                f"- Keeps focus on differential diagnosis and clinical decision-making\n"
+                f"- Stays within ~300-500 tokens\n\n"
+                f"Provide only the updated summary."
+            )
+        
+        # Stream compression to EXAID
+        collected_tokens = []
+        async def compression_stream():
+            async for token in orchestrator.act_stream(compression_input):
+                collected_tokens.append(token)
+                yield token
+        
+        await exaid.received_streamed_tokens(
+            f"{orchestrator.agent_id}_compress", 
+            compression_stream()
         )
+        running_summary = "".join(collected_tokens)
     
     # Step 2: Decide next specialist or synthesis
-    next_specialist = await orchestrator.decide_next_specialist(
-        case_text, running_summary, recent_agent, specialists_called
+    available_specialists = ['laboratory', 'cardiology', 'internal_medicine', 'radiology']
+    not_called = [s for s in available_specialists if s not in specialists_called]
+    
+    decision_input = (
+        f"Clinical Case:\n{case_text}\n\n"
+        f"Running Summary:\n{running_summary}\n\n"
+        f"Recent Contributor: {recent_agent}\n"
+        f"Specialists Called: {', '.join(specialists_called) if specialists_called else 'none yet'}\n"
+        f"Available Specialists: {', '.join(not_called) if not_called else 'all have contributed'}\n\n"
+        f"Decide the next action:\n"
+        f"- If critical questions remain that a specific specialist should address, "
+        f"respond with ONLY the specialist name: 'laboratory' OR 'cardiology' OR 'internal_medicine' OR 'radiology'\n"
+        f"- If enough information has been gathered and a final synthesis should be generated, "
+        f"respond with ONLY: 'synthesis'\n\n"
+        f"Consider:\n"
+        f"- What clinical questions remain unanswered?\n"
+        f"- What specialist expertise would help clarify the diagnosis or treatment?\n"
+        f"- Have the key specialists for this case contributed?\n"
+        f"- Is there sufficient information for a final recommendation?\n\n"
+        f"Respond with ONLY ONE WORD: the specialist name or 'synthesis'"
     )
+    
+    # Stream decision to EXAID
+    collected_decision = []
+    async def decision_stream():
+        async for token in orchestrator.act_stream(decision_input):
+            collected_decision.append(token)
+            yield token
+    
+    await exaid.received_streamed_tokens(
+        f"{orchestrator.agent_id}_decision",
+        decision_stream()
+    )
+    
+    # Extract and validate decision
+    next_specialist = "".join(collected_decision).strip().lower()
+    valid_options = available_specialists + ['synthesis']
+    if next_specialist not in valid_options:
+        # Try to extract valid option from response
+        for option in valid_options:
+            if option in next_specialist:
+                next_specialist = option
+                break
+        else:
+            # Default to synthesis if unclear
+            next_specialist = 'synthesis'
     
     # Step 3: Generate task instruction if not synthesis
     task_instruction = ""
     if next_specialist != "synthesis":
-        task_instruction = await orchestrator.generate_task_instruction(
-            case_text, running_summary, recent_delta, recent_agent, next_specialist
+        task_input = (
+            f"Clinical Case:\n{case_text}\n\n"
+            f"Running Summary:\n{running_summary}\n\n"
+            f"Recent Update from {recent_agent.upper()}:\n{recent_delta}\n\n"
+            f"You are preparing a task for the {next_specialist.upper()} specialist.\n\n"
+            f"Generate a specific, focused task instruction that tells them:\n"
+            f"- What aspect of the case they should focus on\n"
+            f"- What questions they should address\n"
+            f"- What prior findings they should consider or verify\n"
+            f"- What their analysis should contribute to the diagnosis/treatment plan\n\n"
+            f"Keep it concise (2-4 sentences) and actionable."
         )
+        
+        # Stream task generation to EXAID
+        collected_task = []
+        async def task_stream():
+            async for token in orchestrator.act_stream(task_input):
+                collected_task.append(token)
+                yield token
+        
+        await exaid.received_streamed_tokens(
+            f"{orchestrator.agent_id}_task",
+            task_stream()
+        )
+        task_instruction = "".join(collected_task)
     
     return {
         "running_summary": running_summary,
