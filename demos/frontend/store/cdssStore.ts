@@ -17,6 +17,9 @@ interface CDSSState {
   // Processing state
   isProcessing: boolean;
   
+  // Word counting
+  totalWords: number;
+  
   // Modal state
   modal: ModalState;
   
@@ -34,6 +37,13 @@ interface CDSSState {
   resetState: () => void;
 }
 
+// Helper function to count words in a string
+function countWords(text: string): number {
+  if (!text || text.trim().length === 0) return 0;
+  // Split by whitespace and filter out empty strings
+  return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+}
+
 export const useCDSSStore = create<CDSSState>()(
   subscribeWithSelector((set, get) => ({
     // Initial state
@@ -43,6 +53,7 @@ export const useCDSSStore = create<CDSSState>()(
     wsStatus: 'disconnected',
     reconnectAttempts: 0,
     isProcessing: false,
+    totalWords: 0,
     modal: {
       isOpen: false,
       agentId: null,
@@ -60,9 +71,9 @@ export const useCDSSStore = create<CDSSState>()(
           lastUpdate: new Date(),
         };
         
-        // Add new card at the beginning (most recent first)
+        // Add new card at the end (append to bottom)
         return {
-          agents: [newCard, ...state.agents],
+          agents: [...state.agents, newCard],
         };
       });
     },
@@ -94,7 +105,11 @@ export const useCDSSStore = create<CDSSState>()(
             fullText: newAgents[updatedCardIndex].fullText + token,
             lastUpdate: new Date(),
           };
-          return { agents: newAgents };
+          const wordsInToken = countWords(token);
+          return { 
+            agents: newAgents,
+            totalWords: currentState.totalWords + wordsInToken,
+          };
         });
         return;
       }
@@ -107,7 +122,11 @@ export const useCDSSStore = create<CDSSState>()(
           fullText: newAgents[cardIndex].fullText + token,
           lastUpdate: new Date(),
         };
-        return { agents: newAgents };
+        const wordsInToken = countWords(token);
+        return { 
+          agents: newAgents,
+          totalWords: currentState.totalWords + wordsInToken,
+        };
       });
     },
     
@@ -208,6 +227,7 @@ export const useCDSSStore = create<CDSSState>()(
         agents: [],
         summaries: [],
         summaryIdCounter: 0,
+        totalWords: 0,
         modal: {
           isOpen: false,
           agentId: null,
@@ -241,5 +261,9 @@ export const useIsProcessing = () => {
 
 export const useModal = () => {
   return useCDSSStore((state) => state.modal);
+};
+
+export const useTotalWords = () => {
+  return useCDSSStore((state) => state.totalWords);
 };
 

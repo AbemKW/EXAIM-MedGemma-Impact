@@ -197,19 +197,100 @@
     word-wrap: break-word;
     white-space: pre-wrap;
     font-size: 0.9375rem; /* 15px */
+    position: relative;
   }
   
-  .console-agent-label {
+  .console-agent-label-sticky {
     font-weight: 600;
     flex-shrink: 0;
     user-select: none;
     font-size: 0.9375rem; /* 15px */
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    background: var(--console-bg);
+    padding: 0.5rem 0.75rem 0.5rem 0;
+    margin: -0.25rem 0;
+    z-index: 10;
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    border-right: 1px solid oklch(0.24 0 0 / 0.3);
+  }
+  
+  .console-content-wrapper {
+    flex: 1;
+    min-width: 0;
   }
   
   .console-content {
-    flex: 1;
     color: var(--console-text);
     font-size: 0.9375rem; /* 15px */
+    display: block;
+  }
+  
+  /* Custom scrollbar styling - consistent design across all scrollable areas */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.35 0.02 0 / 0.5) transparent;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 4px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: oklch(0.35 0.02 0 / 0.5);
+    border-radius: 4px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.40 0.02 0 / 0.7);
+    background-clip: padding-box;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:active {
+    background: oklch(0.45 0.02 0 / 0.8);
+    background-clip: padding-box;
+  }
+  
+  /* Console container scrollbar - slightly more visible */
+  .console-container {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.40 0.02 0 / 0.6) transparent;
+  }
+  
+  .console-container::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .console-container::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 4px;
+  }
+  
+  .console-container::-webkit-scrollbar-thumb {
+    background: oklch(0.40 0.02 0 / 0.6);
+    border-radius: 4px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+  
+  .console-container::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.45 0.02 0 / 0.75);
+    background-clip: padding-box;
+  }
+  
+  .console-container::-webkit-scrollbar-thumb:active {
+    background: oklch(0.50 0.02 0 / 0.85);
+    background-clip: padding-box;
   }
   
   /* Custom scrollbar for case input textarea */
@@ -238,5 +319,206 @@
   
   .case-input-textarea:focus::-webkit-scrollbar-thumb {
     background: oklch(0.38 0.02 0 / 0.6);
+  }
+  
+  /* Liquid Glass Design Language */
+  .liquid-glass-bg {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .liquid-glass-bg::before {
+    content: '';
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: 
+      radial-gradient(circle at 20% 50%, oklch(0.50 0.12 260 / 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, oklch(0.45 0.10 180 / 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 40% 20%, oklch(0.55 0.15 300 / 0.1) 0%, transparent 50%);
+    animation: liquid-flow 20s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 0;
+  }
+  
+  @keyframes liquid-flow {
+    0%, 100% {
+      transform: translate(0, 0) rotate(0deg);
+    }
+    33% {
+      transform: translate(30px, -30px) rotate(120deg);
+    }
+    66% {
+      transform: translate(-20px, 20px) rotate(240deg);
+    }
+  }
+  
+  .glass-morphism {
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    box-shadow: 
+      0 8px 32px 0 rgba(0, 0, 0, 0.37),
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.1);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .glass-morphism::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.1),
+      transparent
+    );
+    animation: shimmer 3s infinite;
+    pointer-events: none;
+  }
+  
+  @keyframes shimmer {
+    0% {
+      left: -100%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
+  
+  .glass-header {
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    box-shadow: 
+      0 4px 16px 0 rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .glass-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent
+    );
+  }
+  
+  .glass-card {
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    box-shadow: 
+      0 4px 24px 0 rgba(0, 0, 0, 0.25),
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.08);
+    position: relative;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+  }
+  
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(
+      circle,
+      rgba(255, 255, 255, 0.05) 0%,
+      transparent 70%
+    );
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+  
+  .glass-card:hover {
+    box-shadow: 
+      0 4px 24px 0 rgba(0, 0, 0, 0.25),
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  
+  .glass-card:hover::before {
+    opacity: 0;
+  }
+  
+  /* Liquid Ripple Effect */
+  .liquid-ripple {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .liquid-ripple::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+  }
+  
+  .liquid-ripple:active::after {
+    width: 300px;
+    height: 300px;
+  }
+  
+  /* Liquid Button Effect */
+  .liquid-button {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .liquid-button::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1), height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .liquid-button:hover::before {
+    width: 300px;
+    height: 300px;
+  }
+  
+  .liquid-button:hover {
+    transform: scale(1.05);
+  }
+  
+  /* Liquid Morphing Shapes */
+  .liquid-shape {
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+    animation: liquid-morph 8s ease-in-out infinite;
+  }
+  
+  @keyframes liquid-morph {
+    0%, 100% {
+      border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+    }
+    50% {
+      border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
+    }
   }
 }
