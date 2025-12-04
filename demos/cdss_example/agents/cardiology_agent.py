@@ -77,18 +77,10 @@ class CardiologyAgent(DemoBaseAgent):
         
         try:
             async for chunk in chain.astream({}, callbacks=[callback]):
-                if hasattr(chunk, 'content'):
-                    content = chunk.content
-                    if content:
-                        collected_tokens.append(content)
-                        yield content
-                elif isinstance(chunk, str) and chunk:
-                    collected_tokens.append(chunk)
-                    yield chunk
-                elif isinstance(chunk, dict) and 'content' in chunk:
-                    if chunk['content']:
-                        collected_tokens.append(chunk['content'])
-                        yield chunk['content']
+                token = self._extract_token(chunk)
+                if token:
+                    collected_tokens.append(token)
+                    yield token
         except ValueError as e:
             if "No generation chunks were returned" in str(e):
                 print(f"[WARNING] Streaming failed for {self.agent_id}, falling back to non-streaming mode")
