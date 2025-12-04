@@ -2,6 +2,7 @@ from typing import AsyncIterator, List
 from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from exaid_core.llm import mas_llm
+from exaid_core.exaid import EXAID
 from demos.cdss_example.callbacks.agent_streaming_callback import AgentStreamingCallback
 
 
@@ -15,8 +16,8 @@ class OrchestratorAgent(DemoBaseAgent):
     - Synthesize final recommendations
     """
     
-    def __init__(self, agent_id: str = "OrchestratorAgent"):
-        super().__init__(agent_id)
+    def __init__(self, agent_id: str = "OrchestratorAgent", exaid: EXAID = None):
+        super().__init__(agent_id, exaid)
         self.llm = mas_llm
         
         # System prompt for orchestrator (used in all tasks)
@@ -221,11 +222,19 @@ class OrchestratorAgent(DemoBaseAgent):
         
         return response.content.strip()
     
-    async def act_stream(self, input: str) -> AsyncIterator[str]:
-        """Stream tokens for synthesis or compression (used by EXAID for monitoring)
+    async def stream(self, input: str) -> AsyncIterator[str]:
+        """Unified streaming method that handles LLM streaming, UI callbacks, and EXAID token delivery
+        
+        Ephemeral prompt building for single turn - no conversation history.
+        
+        This method:
+        1. Attaches AgentStreamingCallback for UI token delivery via message_queue
+        2. Streams tokens from LLM
+        3. Collects tokens while yielding them to the caller
+        4. Sends collected tokens to EXAID for summarization pipeline
         
         Args:
-            input: Input text for the agent
+            input: Task-specific input (compression, decision, task generation, or synthesis)
             
         Yields:
             Tokens as strings as they are generated
@@ -238,16 +247,27 @@ class OrchestratorAgent(DemoBaseAgent):
         chain = prompt | self.llm
         callback = AgentStreamingCallback(agent_id=self.agent_id)
         
+        # Collect tokens for EXAID while yielding to caller
+        collected_tokens = []
+        
+        async def token_generator():
+            """Internal generator that yields collected tokens to EXAID"""
+            for token in collected_tokens:
+                yield token
+        
         try:
             async for chunk in chain.astream({}, callbacks=[callback]):
                 if hasattr(chunk, 'content'):
                     content = chunk.content
                     if content:
+                        collected_tokens.append(content)
                         yield content
                 elif isinstance(chunk, str) and chunk:
+                    collected_tokens.append(chunk)
                     yield chunk
                 elif isinstance(chunk, dict) and 'content' in chunk:
                     if chunk['content']:
+                        collected_tokens.append(chunk['content'])
                         yield chunk['content']
         except ValueError as e:
             if "No generation chunks were returned" in str(e):
@@ -255,8 +275,17 @@ class OrchestratorAgent(DemoBaseAgent):
                 # Fallback: use ainvoke instead
                 response = await chain.ainvoke({})
                 for char in response.content:
+                    collected_tokens.append(char)
                     yield char
             else:
                 raise
+        
+        # Send collected tokens to EXAID for summarization pipeline (with error handling)
+        if self.exaid and collected_tokens:
+            try:
+                await self.exaid.received_streamed_tokens(self.agent_id, token_generator())
+            except Exception as e:
+                print(f"[ERROR] EXAID streaming failed for {self.agent_id}: {e}")
+                # Continue execution - don't break workflow due to EXAID errors
 
 
