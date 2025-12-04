@@ -30,6 +30,37 @@ def get_send_agent_started():
         return None
 
 
+def _build_specialist_context(state: CDSSGraphState, specialist_name: str) -> str:
+    """Build context string for specialist
+    
+    Args:
+        state: Current graph state
+        specialist_name: Name of the specialist receiving this context
+        
+    Returns:
+        Formatted context string with case, summary, recent update, and task
+    """
+    case_text = state["case_text"]
+    running_summary = state.get("running_summary", "")
+    recent_delta = state.get("recent_delta", "")
+    recent_agent = state.get("recent_agent", "none")
+    task_instruction = state.get("task_instruction", "")
+    
+    # Build context
+    context_parts = [f"CLINICAL CASE:\n{case_text}"]
+    
+    if running_summary:
+        context_parts.append(f"\n\nSUMMARY SO FAR:\n{running_summary}")
+    
+    if recent_delta and recent_agent != "none":
+        context_parts.append(f"\n\nRECENT UPDATE FROM {recent_agent.upper()}:\n{recent_delta}")
+    
+    if task_instruction:
+        context_parts.append(f"\n\nYOUR TASK:\n{task_instruction}")
+    
+    return "".join(context_parts)
+
+
 async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> Dict[str, Any]:
     """Orchestrator node: compresses context, decides next specialist, generates task instruction
     
@@ -135,7 +166,9 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
     next_specialist = "".join(collected_decision).strip().lower()
     valid_options = available_specialists + ['synthesis']
     if next_specialist not in valid_options:
-        # Try to extract valid option as a standalone word using regex (single alternation pattern)
+        # Fallback: The LLM response may contain the specialist name embedded in text 
+        # (e.g., "I think cardiology would be best"). Try to extract a valid option
+        # as a standalone word using regex word boundaries.
         combined_pattern = r"\b(" + "|".join(re.escape(opt) for opt in valid_options) + r")\b"
         match = re.search(combined_pattern, next_specialist)
         if match:
@@ -349,34 +382,3 @@ async def synthesis_node(state: CDSSGraphState, agent: OrchestratorAgent) -> Dic
     return {
         "final_synthesis": final_synthesis
     }
-
-
-def _build_specialist_context(state: CDSSGraphState, specialist_name: str) -> str:
-    """Build context string for specialist
-    
-    Args:
-        state: Current graph state
-        specialist_name: Name of the specialist receiving this context
-        
-    Returns:
-        Formatted context string with case, summary, recent update, and task
-    """
-    case_text = state["case_text"]
-    running_summary = state.get("running_summary", "")
-    recent_delta = state.get("recent_delta", "")
-    recent_agent = state.get("recent_agent", "none")
-    task_instruction = state.get("task_instruction", "")
-    
-    # Build context
-    context_parts = [f"CLINICAL CASE:\n{case_text}"]
-    
-    if running_summary:
-        context_parts.append(f"\n\nSUMMARY SO FAR:\n{running_summary}")
-    
-    if recent_delta and recent_agent != "none":
-        context_parts.append(f"\n\nRECENT UPDATE FROM {recent_agent.upper()}:\n{recent_delta}")
-    
-    if task_instruction:
-        context_parts.append(f"\n\nYOUR TASK:\n{task_instruction}")
-    
-    return "".join(context_parts)
