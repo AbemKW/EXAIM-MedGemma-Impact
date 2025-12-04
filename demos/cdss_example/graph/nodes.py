@@ -1,5 +1,6 @@
 """Simplified CDSS graph nodes - orchestrator-driven workflow with specialist reasoning"""
 
+import logging
 from typing import Dict, Any
 from demos.cdss_example.schema.graph_state import CDSSGraphState
 from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent
@@ -8,6 +9,8 @@ from demos.cdss_example.agents.cardiology_agent import CardiologyAgent
 from demos.cdss_example.agents.internal_medicine_agent import InternalMedicineAgent
 from demos.cdss_example.agents.radiology_agent import RadiologyAgent
 
+logger = logging.getLogger(__name__)
+
 # Import send_agent_started for UI card creation
 import sys
 def get_send_agent_started():
@@ -15,6 +18,10 @@ def get_send_agent_started():
     if 'demos.backend.server' in sys.modules:
         server_module = sys.modules['demos.backend.server']
         return server_module.send_agent_started
+    logger.warning(
+        "send_agent_started is not available: 'demos.backend.server' module not loaded. "
+        "Agent started UI notifications will be skipped."
+    )
     return None
 
 
