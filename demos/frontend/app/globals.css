@@ -6,7 +6,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-power-grotesk);
+  --font-sans: var(--font-space-grotesk);
   --font-mono: 'Courier New', 'Monaco', 'Consolas', 'Menlo', 'Liberation Mono', monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -154,7 +154,7 @@
   }
   html, body {
     @apply bg-background text-foreground;
-    font-family: var(--font-power-grotesk), sans-serif;
+    font-family: var(--font-space-grotesk), sans-serif;
     height: 100%;
     margin: 0;
     padding: 0;
@@ -186,25 +186,57 @@
   .console-logs {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 1rem;
+    padding: 1.5rem;
   }
   
   .console-log-entry {
     display: flex;
-    gap: 0.5rem;
-    line-height: 1.6;
+    gap: 0.75rem;
+    line-height: 1.8;
     word-wrap: break-word;
     white-space: pre-wrap;
+    font-size: 0.9375rem; /* 15px */
   }
   
   .console-agent-label {
     font-weight: 600;
     flex-shrink: 0;
     user-select: none;
+    font-size: 0.9375rem; /* 15px */
   }
   
   .console-content {
     flex: 1;
     color: var(--console-text);
+    font-size: 0.9375rem; /* 15px */
+  }
+  
+  /* Custom scrollbar for case input textarea */
+  .case-input-textarea {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.35 0.02 0 / 0.5) transparent;
+  }
+  
+  .case-input-textarea::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .case-input-textarea::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 3px;
+  }
+  
+  .case-input-textarea::-webkit-scrollbar-thumb {
+    background: oklch(0.35 0.02 0 / 0.5);
+    border-radius: 3px;
+  }
+  
+  .case-input-textarea::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.40 0.02 0 / 0.7);
+  }
+  
+  .case-input-textarea:focus::-webkit-scrollbar-thumb {
+    background: oklch(0.38 0.02 0 / 0.6);
   }
 }

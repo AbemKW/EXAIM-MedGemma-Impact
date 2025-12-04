@@ -78,7 +78,7 @@ export default function AgentTracesPanel() {
       {/* Panel Header */}
       <CardHeader className="bg-gradient-to-r from-blue-950/40 to-blue-950/30 border-b border-blue-900/20 py-3 px-5">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-lg font-semibold">Raw Agent Traces</CardTitle>
+          <CardTitle className="text-xl font-bold">Raw Agent Traces</CardTitle>
           <Badge variant="secondary" className="text-sm">
             {uniqueAgentCount} agent{uniqueAgentCount !== 1 ? 's' : ''}
           </Badge>
@@ -93,12 +93,12 @@ export default function AgentTracesPanel() {
         >
           {agents.length === 0 ? (
             <div className="console-empty p-8 text-center">
-              <p className="text-sm" style={{ color: 'var(--console-text)', opacity: 0.6 }}>
+              <p className="text-base" style={{ color: 'var(--console-text)', opacity: 0.6 }}>
                 No traces yet. Process a case to see verbose reasoning traces.
               </p>
             </div>
           ) : (
-            <div className="console-logs p-4">
+            <div className="console-logs">
               {agents.map((agent) => {
                 const agentColor = agentColors.get(agent.agentName) || '#60a5fa';
                 return (

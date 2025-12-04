@@ -77,15 +77,15 @@ function SummaryCard({ summary }: SummaryCardProps) {
       }`}>
         <AccordionItem value={summary.id} className="border-0">
           {/* Header - Always Visible */}
-          <CardHeader className="cursor-pointer hover:bg-teal-950/15 transition-colors py-3 px-4">
+          <CardHeader className="cursor-pointer hover:bg-teal-950/15 transition-colors py-4 px-5">
             <AccordionTrigger className="hover:no-underline py-0">
               <div className="flex-1 pr-4 text-left">
-                <CardTitle className="text-sm line-clamp-2 font-semibold">
+                <CardTitle className="text-base line-clamp-2 font-semibold">
                   {summary.data.status_action}
                 </CardTitle>
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
-                <span className="text-xs text-muted-foreground font-medium">
+                <span className="text-sm text-muted-foreground font-medium">
                   {formatTime(summary.timestamp)}
                 </span>
               </div>
@@ -94,23 +94,23 @@ function SummaryCard({ summary }: SummaryCardProps) {
 
           {/* Content - Expandable */}
           <AccordionContent>
-            <CardContent className="pt-0 pb-4 px-4 space-y-3">
+            <CardContent className="pt-0 pb-5 px-5 space-y-4">
               {fields.map((field, index) => (
                 <div 
                   key={index} 
-                  className="summary-field-group rounded-md p-3 transition-colors"
+                  className="summary-field-group rounded-md p-4 transition-colors"
                   style={{
                     borderLeft: `2px solid ${field.color}`,
                     backgroundColor: field.bgColor,
                   }}
                 >
                   <div 
-                    className="text-xs font-semibold uppercase tracking-wide mb-2"
+                    className="text-sm font-semibold uppercase tracking-wide mb-3"
                     style={{ color: field.color }}
                   >
                     {field.label}
                   </div>
-                  <div className="text-sm text-foreground leading-relaxed">{field.value}</div>
+                  <div className="text-base text-foreground leading-relaxed">{field.value}</div>
                 </div>
               ))}
             </CardContent>

@@ -1,24 +1,11 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import localFont from "next/font/local";
+import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
-  variable: "--font-inter",
-  weight: ["400", "500", "600", "700"],
-});
-
-const powerGrotesk = localFont({
-  src: [
-    {
-      path: "./fonts/PowerGrotesk-Regular.ttf",
-      weight: "400",
-      style: "normal",
-    },
-  ],
-  variable: "--font-power-grotesk",
-  fallback: ["system-ui", "sans-serif"],
+  variable: "--font-space-grotesk",
+  weight: ["300", "400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -32,10 +19,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" style={{ fontFamily: 'var(--font-power-grotesk)' }}>
+    <html lang="en" className="dark" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
       <body
-        className={`${inter.variable} ${powerGrotesk.variable} antialiased`}
-        style={{ fontFamily: 'var(--font-power-grotesk), sans-serif' }}
+        className={`${spaceGrotesk.variable} antialiased`}
+        style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
       >
         {children}
         {/* Portal container for modal */}
