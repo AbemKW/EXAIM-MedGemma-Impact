@@ -15,7 +15,7 @@ export default function CaseInput() {
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      const newHeight = Math.min(textareaRef.current.scrollHeight, 200);
+      const newHeight = Math.min(textareaRef.current.scrollHeight, 120);
       textareaRef.current.style.height = `${newHeight}px`;
     }
   }, [caseText]);
@@ -56,7 +56,7 @@ export default function CaseInput() {
   };
 
   return (
-    <div className="bg-card rounded-lg shadow-sm border border-border p-4">
+    <div className="bg-card rounded-lg shadow-sm border border-border p-4 flex-shrink-0">
       <form onSubmit={handleSubmit} className="flex gap-3">
         <div className="flex-1">
           <Textarea
@@ -66,8 +66,8 @@ export default function CaseInput() {
             placeholder="Enter patient case description..."
             rows={1}
             disabled={isProcessing}
-            className="resize-none"
-            style={{ maxHeight: '200px' }}
+            className="resize-none text-base"
+            style={{ maxHeight: '120px' }}
           />
         </div>
         <Button

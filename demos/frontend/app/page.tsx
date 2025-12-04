@@ -21,20 +21,22 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="max-w-[1800px] mx-auto px-6 py-6 flex flex-col gap-6 min-h-screen">
-      {/* Header */}
-      <Header />
+    <div className="h-screen flex flex-col overflow-hidden">
+      <div className="max-w-[1800px] mx-auto px-6 py-4 flex flex-col gap-4 flex-1 min-h-0 w-full">
+        {/* Header */}
+        <Header />
 
-      {/* Chat Input Section */}
-      <CaseInput />
+        {/* Chat Input Section */}
+        <CaseInput />
 
-      {/* Main Panels Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
-        {/* Raw Agent Traces Panel */}
-        <AgentTracesPanel />
+        {/* Main Panels Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
+          {/* Raw Agent Traces Panel */}
+          <AgentTracesPanel />
 
-        {/* EXAID Summaries Panel */}
-        <SummariesPanel />
+          {/* EXAID Summaries Panel */}
+          <SummariesPanel />
+        </div>
       </div>
 
       {/* Modal */}
