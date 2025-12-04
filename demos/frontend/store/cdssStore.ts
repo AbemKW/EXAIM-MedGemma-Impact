@@ -85,8 +85,33 @@ export const useCDSSStore = create<CDSSState>()(
       const cardIndex = state.agents.findIndex(a => a.agentName === agentId);
       
       if (cardIndex === -1) {
-        // No card exists - this shouldn't happen if agent_started was sent first
-        console.warn(`Token received for ${agentId} before agent_started message`);
+        // No card exists for this agent. This may indicate a missing agent_started message or a race condition.
+        console.warn(`No active card found for agent '${agentId}'. This may indicate a missing agent_started message or a race condition. Auto-creating card to prevent token loss.`);
+        get().startNewAgent(agentId);
+        // Try to find the card again after creating it
+        const updatedState = get();
+        const updatedCardIndex = updatedState.agents.findIndex(a => a.agentName === agentId);
+        if (updatedCardIndex === -1) {
+          // Still not found, abort
+          console.error(`Failed to auto-create card for agent '${agentId}'. Token will be lost.`);
+          return;
+        }
+        // Use the newly created card
+        const card = updatedState.agents[updatedCardIndex];
+        if (!tokenBuffer.has(card.id)) {
+          tokenBuffer.set(card.id, []);
+        }
+        tokenBuffer.get(card.id)!.push(token);
+        // Start flush interval if not already running
+        if (!flushInterval) {
+          flushInterval = setInterval(() => {
+            const store = get();
+            // Only flush if there are tokens in the buffer
+            if (tokenBuffer.size > 0) {
+              store.flushTokens();
+            }
+          }, TOKEN_BATCH_INTERVAL_MS);
+        }
         return;
       }
       
