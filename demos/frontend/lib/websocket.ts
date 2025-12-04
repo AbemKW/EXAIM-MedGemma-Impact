@@ -3,28 +3,25 @@ import type { WebSocketMessage, SummaryData } from '@/lib/types';
 
 // WebSocket URL validation - must be ws:// or wss://
 function validateWebSocketUrl(url: string | undefined): string {
-  if (!url) {
-    throw new Error(
-      'WebSocket URL not configured. Set NEXT_PUBLIC_WS_URL environment variable.'
-    );
-  }
+  // Use default if not provided
+  const wsUrl = url || 'ws://localhost:8000/ws';
   
-  if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+  if (!wsUrl.startsWith('ws://') && !wsUrl.startsWith('wss://')) {
     throw new Error(
-      `Invalid WebSocket URL: "${url}". URL must start with ws:// or wss://`
+      `Invalid WebSocket URL: "${wsUrl}". URL must start with ws:// or wss://`
     );
   }
   
   // Validate URL format
   try {
-    new URL(url);
+    new URL(wsUrl);
   } catch {
     throw new Error(
-      `Invalid WebSocket URL format: "${url}". Please provide a valid URL.`
+      `Invalid WebSocket URL format: "${wsUrl}". Please provide a valid URL.`
     );
   }
   
-  return url;
+  return wsUrl;
 }
 
 // Constants
@@ -46,6 +43,7 @@ class WebSocketService {
   constructor() {
     // Attempt to validate URL on construction for early feedback
     // But don't throw - store the error for connect() to handle
+    // Uses default ws://localhost:8000/ws if NEXT_PUBLIC_WS_URL is not set
     try {
       this.wsUrl = validateWebSocketUrl(process.env.NEXT_PUBLIC_WS_URL);
     } catch (error) {
@@ -181,8 +179,6 @@ class WebSocketService {
 
       case 'processing_complete':
         store.setProcessing(false);
-        // Flush any remaining tokens
-        store.flushTokens();
         break;
 
       case 'error':
@@ -238,3 +234,4 @@ export function getWebSocketService(): WebSocketService {
   }
   return wsService;
 }
+

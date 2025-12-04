@@ -4,17 +4,18 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { useCDSSStore } from '@/store/cdssStore';
 import type { Summary } from '@/lib/types';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import {
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 
 interface SummaryCardProps {
   summary: Summary;
 }
 
 function SummaryCard({ summary }: SummaryCardProps) {
-  const toggleSummary = useCDSSStore((state) => state.toggleSummary);
-
-  const handleToggle = () => {
-    toggleSummary(summary.id);
-  };
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('en-US', {
@@ -38,60 +39,48 @@ function SummaryCard({ summary }: SummaryCardProps) {
       layout
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`bg-white rounded-lg shadow-sm border overflow-hidden transition-colors ${
-        summary.isExpanded
-          ? 'border-blue-300 bg-blue-50'
-          : 'border-gray-200'
-      }`}
     >
-      {/* Header - Always Visible */}
-      <div
-        onClick={handleToggle}
-        className="px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors flex justify-between items-center"
-      >
-        <div className="flex-1 pr-4">
-          <div className="font-semibold text-gray-800 text-sm line-clamp-2">
-            {summary.data.status_action}
-          </div>
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <span className="text-xs text-gray-500 font-medium">
-            {formatTime(summary.timestamp)}
-          </span>
-          <motion.span
-            animate={{ rotate: summary.isExpanded ? 180 : 0 }}
-            transition={{ duration: 0.3 }}
-            className="text-gray-600"
-          >
-            ▼
-          </motion.span>
-        </div>
-      </div>
-
-      {/* Content - Expandable */}
-      <motion.div
-        initial={false}
-        animate={{
-          height: summary.isExpanded ? 'auto' : 0,
-          opacity: summary.isExpanded ? 1 : 0,
-        }}
-        transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className="overflow-hidden"
-      >
-        <div className="px-4 py-4 border-t border-gray-200 space-y-3 bg-white">
-          {fields.map((field, index) => (
-            <div key={index} className="space-y-1">
-              <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                {field.label}
+      <Card className={`overflow-hidden transition-colors ${
+        summary.isExpanded
+          ? 'border-primary/50 bg-primary/5'
+          : ''
+      }`}>
+        <AccordionItem value={summary.id} className="border-0">
+          {/* Header - Always Visible */}
+          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+            <AccordionTrigger className="hover:no-underline">
+              <div className="flex-1 pr-4 text-left">
+                <CardTitle className="text-sm line-clamp-2">
+                  {summary.data.status_action}
+                </CardTitle>
               </div>
-              <div className="text-sm text-gray-800">{field.value}</div>
-            </div>
-          ))}
-        </div>
-      </motion.div>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <span className="text-xs text-muted-foreground font-medium">
+                  {formatTime(summary.timestamp)}
+                </span>
+              </div>
+            </AccordionTrigger>
+          </CardHeader>
+
+          {/* Content - Expandable */}
+          <AccordionContent>
+            <CardContent className="pt-0 space-y-3">
+              {fields.map((field, index) => (
+                <div key={index} className="space-y-1">
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    {field.label}
+                  </div>
+                  <div className="text-sm text-foreground">{field.value}</div>
+                </div>
+              ))}
+            </CardContent>
+          </AccordionContent>
+        </AccordionItem>
+      </Card>
     </motion.div>
   );
 }
 
 // Memoize to prevent unnecessary re-renders
 export default React.memo(SummaryCard);
+
