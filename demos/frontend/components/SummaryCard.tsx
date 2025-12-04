@@ -40,14 +40,14 @@ function SummaryCard({ summary }: SummaryCardProps) {
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <Card className={`overflow-hidden transition-colors ${
+      <Card className={`overflow-hidden transition-colors border-teal-900/10 ${
         summary.isExpanded
-          ? 'border-primary/50 bg-primary/5'
+          ? 'border-teal-800/30 bg-teal-950/10'
           : ''
       }`}>
         <AccordionItem value={summary.id} className="border-0">
           {/* Header - Always Visible */}
-          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3 px-4">
+          <CardHeader className="cursor-pointer hover:bg-teal-950/15 transition-colors py-3 px-4">
             <AccordionTrigger className="hover:no-underline py-0">
               <div className="flex-1 pr-4 text-left">
                 <CardTitle className="text-sm line-clamp-2 font-semibold">

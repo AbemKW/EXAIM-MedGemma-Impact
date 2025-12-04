@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  weight: ["400", "500", "600", "700"],
+});
 
 const powerGrotesk = localFont({
   src: [
@@ -27,7 +34,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" style={{ fontFamily: 'var(--font-power-grotesk)' }}>
       <body
-        className={`${powerGrotesk.variable} antialiased`}
+        className={`${inter.variable} ${powerGrotesk.variable} antialiased`}
         style={{ fontFamily: 'var(--font-power-grotesk), sans-serif' }}
       >
         {children}
