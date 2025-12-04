@@ -1,9 +1,12 @@
+import logging
 from typing import AsyncIterator
 from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from exaid_core.llm import mas_llm
 from exaid_core.exaid import EXAID
 from demos.cdss_example.callbacks.agent_streaming_callback import AgentStreamingCallback
+
+logger = logging.getLogger(__name__)
 
 
 class LaboratoryAgent(DemoBaseAgent):
@@ -29,7 +32,7 @@ class LaboratoryAgent(DemoBaseAgent):
             "infection vs inflammation vs stress responses).\n"
             "- Mapping constellations of lab abnormalities to plausible differential diagnoses and disease severity.\n\n"
             "APPROACH:\n"
-            "Use Chain of Thought reasoning. Show your analytical process and be VERBOSE.:\n"
+            "Use Chain of Thought reasoning. Show your analytical process and be verbose.\n"
             "1. Review laboratory values in context of the case and prior findings\n"
             "2. Identify abnormalities and their clinical significance\n"
             "3. Look for patterns suggesting specific diagnoses\n"
@@ -86,7 +89,7 @@ class LaboratoryAgent(DemoBaseAgent):
                     yield token
         except ValueError as e:
             if "No generation chunks were returned" in str(e):
-                print(f"[WARNING] Streaming failed for {self.agent_id}, falling back to non-streaming mode")
+                logger.warning(f"Streaming failed for {self.agent_id}, falling back to non-streaming mode")
                 # Fallback: use ainvoke
                 response = await chain.ainvoke({})
                 for char in response.content:
@@ -100,6 +103,6 @@ class LaboratoryAgent(DemoBaseAgent):
             try:
                 await self.exaid.received_streamed_tokens(self.agent_id, token_generator())
             except Exception as e:
-                print(f"[ERROR] EXAID streaming failed for {self.agent_id}: {e}")
+                logger.error(f"EXAID streaming failed for {self.agent_id}: {e}")
                 # Continue execution - don't break workflow due to EXAID errors
 

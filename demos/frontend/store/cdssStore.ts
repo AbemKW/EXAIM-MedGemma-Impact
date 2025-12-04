@@ -44,6 +44,32 @@ interface CDSSState {
 const tokenBuffer = new Map<string, string[]>();
 let flushInterval: NodeJS.Timeout | null = null;
 
+/**
+ * Helper function to add token to buffer and start flush interval if needed.
+ * Extracts duplicated logic used for both existing cards and auto-created cards.
+ */
+function addTokenToBufferAndStartInterval(
+  cardId: string,
+  token: string,
+  get: () => CDSSState
+): void {
+  if (!tokenBuffer.has(cardId)) {
+    tokenBuffer.set(cardId, []);
+  }
+  tokenBuffer.get(cardId)!.push(token);
+  
+  // Start flush interval if not already running
+  if (!flushInterval) {
+    flushInterval = setInterval(() => {
+      const store = get();
+      // Only flush if there are tokens in the buffer
+      if (tokenBuffer.size > 0) {
+        store.flushTokens();
+      }
+    }, TOKEN_BATCH_INTERVAL_MS);
+  }
+}
+
 export const useCDSSStore = create<CDSSState>()(
   subscribeWithSelector((set, get) => ({
     // Initial state
@@ -88,7 +114,7 @@ export const useCDSSStore = create<CDSSState>()(
         // No card exists for this agent. This may indicate a missing agent_started message or a race condition.
         console.warn(`No active card found for agent '${agentId}'. This may indicate a missing agent_started message or a race condition. Auto-creating card to prevent token loss.`);
         get().startNewAgent(agentId);
-        // Try to find the card again after creating it
+        // After creating, retrieve the most recent card for this agent
         const updatedState = get();
         const updatedCardIndex = updatedState.agents.findIndex(a => a.agentName === agentId);
         if (updatedCardIndex === -1) {
@@ -96,43 +122,13 @@ export const useCDSSStore = create<CDSSState>()(
           console.error(`Failed to auto-create card for agent '${agentId}'. Token will be lost.`);
           return;
         }
-        // Use the newly created card
         const card = updatedState.agents[updatedCardIndex];
-        if (!tokenBuffer.has(card.id)) {
-          tokenBuffer.set(card.id, []);
-        }
-        tokenBuffer.get(card.id)!.push(token);
-        // Start flush interval if not already running
-        if (!flushInterval) {
-          flushInterval = setInterval(() => {
-            const store = get();
-            // Only flush if there are tokens in the buffer
-            if (tokenBuffer.size > 0) {
-              store.flushTokens();
-            }
-          }, TOKEN_BATCH_INTERVAL_MS);
-        }
+        addTokenToBufferAndStartInterval(card.id, token, get);
         return;
       }
       
       const card = state.agents[cardIndex];
-      
-      // Add token to external buffer using card ID
-      if (!tokenBuffer.has(card.id)) {
-        tokenBuffer.set(card.id, []);
-      }
-      tokenBuffer.get(card.id)!.push(token);
-      
-      // Start flush interval if not already running
-      if (!flushInterval) {
-        flushInterval = setInterval(() => {
-          const store = get();
-          // Only flush if there are tokens in the buffer
-          if (tokenBuffer.size > 0) {
-            store.flushTokens();
-          }
-        }, TOKEN_BATCH_INTERVAL_MS);
-      }
+      addTokenToBufferAndStartInterval(card.id, token, get);
     },
     
     // Flush all buffered tokens to agents

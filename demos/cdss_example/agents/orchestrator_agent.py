@@ -1,9 +1,12 @@
+import logging
 from typing import AsyncIterator
 from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from exaid_core.llm import mas_llm
 from exaid_core.exaid import EXAID
 from demos.cdss_example.callbacks.agent_streaming_callback import AgentStreamingCallback
+
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorAgent(DemoBaseAgent):
@@ -94,7 +97,7 @@ class OrchestratorAgent(DemoBaseAgent):
                     yield token
         except ValueError as e:
             if "No generation chunks were returned" in str(e):
-                print(f"[WARNING] Streaming failed for {self.agent_id}, falling back to non-streaming mode")
+                logger.warning(f"Streaming failed for {self.agent_id}, falling back to non-streaming mode")
                 # Fallback: use ainvoke instead
                 response = await chain.ainvoke({})
                 for char in response.content:
@@ -108,6 +111,6 @@ class OrchestratorAgent(DemoBaseAgent):
             try:
                 await self.exaid.received_streamed_tokens(self.agent_id, token_generator())
             except Exception as e:
-                print(f"[ERROR] EXAID streaming failed for {self.agent_id}: {e}")
+                logger.error(f"EXAID streaming failed for {self.agent_id}: {e}")
 
 

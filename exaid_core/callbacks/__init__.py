@@ -1,5 +1,12 @@
 """Callbacks Module - LangChain callback handlers for streaming"""
 
-# Callbacks for EXAID core functionality
-# Note: AgentStreamingCallback has been moved to demos/cdss_example/callbacks/
-# for better separation of core vs demo-specific code
+import warnings
+
+# Issue deprecation warning when this module is imported
+warnings.warn(
+    "The 'exaid_core.callbacks' module is deprecated and contains no functionality. "
+    "AgentStreamingCallback has been moved to 'demos/cdss_example/callbacks/'. "
+    "Please update your imports accordingly.",
+    DeprecationWarning,
+    stacklevel=2
+)
