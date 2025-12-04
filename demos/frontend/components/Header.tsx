@@ -2,6 +2,7 @@
 
 import { useWsStatus, useCDSSStore } from '@/store/cdssStore';
 import { Badge } from '@/components/ui/badge';
+import Mascot from './Mascot';
 
 export default function Header() {
   const wsStatus = useWsStatus();
@@ -43,10 +44,13 @@ export default function Header() {
   return (
     <header className="flex justify-between items-center py-4 border-b border-border flex-shrink-0">
       <div className="flex items-center gap-4">
-        <h1 className="text-5xl font-bold text-primary tracking-tight" style={{ fontFamily: 'var(--font-inter), sans-serif' }}>EXAID</h1>
-        <p className="text-base text-muted-foreground font-medium" style={{ fontFamily: 'var(--font-inter), sans-serif' }}>
-          Clinical Decision Support System
-        </p>
+        <Mascot className="hidden md:block" />
+        <div className="flex flex-col">
+          <h1 className="text-5xl font-bold text-primary tracking-tight" style={{ fontFamily: 'var(--font-inter), sans-serif' }}>EXAID</h1>
+          <p className="text-base text-muted-foreground font-medium" style={{ fontFamily: 'var(--font-inter), sans-serif' }}>
+            Clinical Decision Support System
+          </p>
+        </div>
       </div>
       <div className="flex items-center">
         <Badge

@@ -11,13 +11,15 @@ interface ConsoleLogEntryProps {
 function ConsoleLogEntry({ agentName, content, agentColor }: ConsoleLogEntryProps) {
   return (
     <div className="console-log-entry">
-      <span 
-        className="console-agent-label"
+      <div 
+        className="console-agent-label-sticky"
         style={{ color: agentColor }}
       >
         [{agentName}]
-      </span>
-      <span className="console-content">{content}</span>
+      </div>
+      <div className="console-content-wrapper">
+        <span className="console-content">{content}</span>
+      </div>
     </div>
   );
 }

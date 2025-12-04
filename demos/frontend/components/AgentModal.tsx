@@ -44,7 +44,7 @@ export default function AgentModal() {
         <DialogHeader>
           <DialogTitle className="text-lg">{modal.agentId} - Full Output</DialogTitle>
         </DialogHeader>
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
           <pre className="text-base leading-relaxed text-foreground whitespace-pre-wrap break-words">
             {modal.content}
           </pre>
