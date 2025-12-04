@@ -13,3 +13,14 @@ class DemoBaseAgent:
     def __init__(self, agent_id: str, exaid: EXAID):
         self.agent_id = agent_id
         self.exaid = exaid
+    
+    @staticmethod
+    def _extract_token(chunk):
+        """Universal token extractor for LangChain streaming chunks"""
+        if hasattr(chunk, "text") and chunk.text:
+            return chunk.text
+        if hasattr(chunk, "content") and chunk.content:
+            return chunk.content
+        if isinstance(chunk, str) and chunk:
+            return chunk
+        return None
