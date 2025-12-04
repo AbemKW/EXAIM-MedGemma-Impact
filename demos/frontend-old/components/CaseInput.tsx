@@ -3,8 +3,6 @@
 import { useState, FormEvent, useRef, useEffect } from 'react';
 import { useIsProcessing } from '@/store/cdssStore';
 import type { CaseRequest } from '@/lib/types';
-import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
 
 export default function CaseInput() {
   const [caseText, setCaseText] = useState('');
@@ -56,29 +54,28 @@ export default function CaseInput() {
   };
 
   return (
-    <div className="bg-card rounded-lg shadow-sm border border-border p-4">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
       <form onSubmit={handleSubmit} className="flex gap-3">
         <div className="flex-1">
-          <Textarea
+          <textarea
             ref={textareaRef}
             value={caseText}
             onChange={(e) => setCaseText(e.target.value)}
             placeholder="Enter patient case description..."
             rows={1}
             disabled={isProcessing}
-            className="resize-none"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
             style={{ maxHeight: '200px' }}
           />
         </div>
-        <Button
+        <button
           type="submit"
           disabled={isProcessing}
-          className="min-w-[60px]"
+          className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center min-w-[60px]"
         >
           <span className="text-xl">{isProcessing ? '⏳' : '→'}</span>
-        </Button>
+        </button>
       </form>
     </div>
   );
 }
-

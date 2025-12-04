@@ -1,35 +1,61 @@
 'use client';
 
-import { useSummaries } from '@/store/cdssStore';
+import { useSummaries, useCDSSStore } from '@/store/cdssStore';
 import SummaryCard from './SummaryCard';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Accordion } from '@/components/ui/accordion';
 
 export default function SummariesPanel() {
   const summaries = useSummaries();
+  const toggleSummary = useCDSSStore((state) => state.toggleSummary);
+  const expandedSummary = summaries.find(s => s.isExpanded);
+
+  const handleValueChange = (value: string) => {
+    if (value) {
+      // Expanding a summary - toggle it (which will collapse others)
+      toggleSummary(value);
+    } else {
+      // Collapsing - find the currently expanded one and toggle it
+      if (expandedSummary) {
+        toggleSummary(expandedSummary.id);
+      }
+    }
+  };
 
   return (
-    <div className="flex flex-col bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden h-full">
+    <Card className="flex flex-col overflow-hidden h-full">
       {/* Panel Header */}
-      <div className="px-6 py-4 bg-gradient-to-r from-teal-50 to-teal-100 border-b border-gray-200">
+      <CardHeader className="bg-gradient-to-r from-zinc-800 to-zinc-900 border-b border-border">
         <div className="flex justify-between items-center">
-          <h2 className="text-xl font-bold text-gray-800">EXAID Summaries</h2>
-          <span className="px-3 py-1 bg-teal-600 text-white text-sm font-semibold rounded-full">
+          <CardTitle className="text-xl">EXAID Summaries</CardTitle>
+          <Badge variant="secondary">
             {summaries.length} summar{summaries.length !== 1 ? 'ies' : 'y'}
-          </span>
+          </Badge>
         </div>
-      </div>
+      </CardHeader>
 
       {/* Panel Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      <CardContent className="flex-1 overflow-y-auto p-4">
         {summaries.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">
+          <p className="text-muted-foreground text-center py-8">
             No summaries yet. Summaries will appear here as EXAID processes agent traces.
           </p>
         ) : (
-          summaries.map((summary) => (
-            <SummaryCard key={summary.id} summary={summary} />
-          ))
+          <Accordion
+            type="single"
+            collapsible
+            value={expandedSummary?.id}
+            onValueChange={handleValueChange}
+            className="space-y-2"
+          >
+            {summaries.map((summary) => (
+              <SummaryCard key={summary.id} summary={summary} />
+            ))}
+          </Accordion>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
+

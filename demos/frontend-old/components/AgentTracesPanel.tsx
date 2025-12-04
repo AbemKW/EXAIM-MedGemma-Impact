@@ -2,29 +2,27 @@
 
 import { useAllAgents } from '@/store/cdssStore';
 import AgentWindow from './AgentWindow';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 
 export default function AgentTracesPanel() {
   // Subscribe to agents array directly
   const agents = useAllAgents();
 
   return (
-    <Card className="flex flex-col overflow-hidden h-full">
+    <div className="flex flex-col bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden h-full">
       {/* Panel Header */}
-      <CardHeader className="bg-gradient-to-r from-zinc-800 to-zinc-900 border-b border-border">
+      <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-blue-100 border-b border-gray-200">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-xl">Raw Agent Traces</CardTitle>
-          <Badge variant="secondary">
+          <h2 className="text-xl font-bold text-gray-800">Raw Agent Traces</h2>
+          <span className="px-3 py-1 bg-blue-600 text-white text-sm font-semibold rounded-full">
             {agents.length} trace{agents.length !== 1 ? 's' : ''}
-          </Badge>
+          </span>
         </div>
-      </CardHeader>
+      </div>
 
       {/* Panel Content */}
-      <CardContent className="flex-1 overflow-y-auto p-4 space-y-2">
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {agents.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">
+          <p className="text-gray-500 text-center py-8">
             No traces yet. Process a case to see verbose reasoning traces.
           </p>
         ) : (
@@ -32,8 +30,7 @@ export default function AgentTracesPanel() {
             <AgentWindow key={agent.id} cardId={agent.id} />
           ))
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
-

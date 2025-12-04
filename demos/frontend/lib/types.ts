@@ -79,3 +79,4 @@ export type WebSocketMessage =
   | ProcessingStartedMessage 
   | ProcessingCompleteMessage 
   | ErrorMessage;
+
