@@ -82,10 +82,10 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
                 f"Provide only the updated summary."
             )
         
-        # Send agent_started UI event before streaming (with sub-task identifier)
+        # Send agent_started UI event before streaming
         send_fn = get_send_agent_started()
         if send_fn:
-            await send_fn(f"{agent.agent_id}_Compression")
+            await send_fn(agent.agent_id)
         
         # Stream compression - agent.stream() handles EXAID internally
         collected_tokens = []
@@ -117,10 +117,10 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
         f"Respond with ONLY ONE WORD: the specialist name or 'synthesis'"
     )
     
-    # Send agent_started UI event before streaming (with sub-task identifier)
+    # Send agent_started UI event before streaming
     send_fn = get_send_agent_started()
     if send_fn:
-        await send_fn(f"{agent.agent_id}_Decision")
+        await send_fn(agent.agent_id)
     
     # Stream decision - agent.stream() handles EXAID internally
     collected_decision = []
@@ -156,10 +156,10 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
             f"Keep it concise (2-4 sentences) and actionable."
         )
         
-        # Send agent_started UI event before streaming (with sub-task identifier)
+        # Send agent_started UI event before streaming
         send_fn = get_send_agent_started()
         if send_fn:
-            await send_fn(f"{agent.agent_id}_TaskGen")
+            await send_fn(agent.agent_id)
         
         # Stream task generation - agent.stream() handles EXAID internally
         collected_task = []
