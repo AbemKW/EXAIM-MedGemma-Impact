@@ -48,61 +48,42 @@ class LaboratoryAgent(DemoBaseAgent):
         )
     
     async def stream(self, input: str) -> AsyncIterator[str]:
-        """Unified streaming method that handles LLM streaming, UI callbacks, and EXAID token delivery
-        
-        Ephemeral prompt building for single turn - no conversation history.
-        
-        This method:
-        1. Attaches AgentStreamingCallback for UI token delivery via message_queue
-        2. Streams tokens from LLM
-        3. Collects tokens while yielding them to the caller
-        4. Sends collected tokens to EXAID for summarization pipeline
-        
-        Args:
-            input: Context string containing case, running_summary, recent_delta, and task
-            
-        Yields:
-            Tokens as strings as they are generated
-        """
-        # Build prompt for this turn only (no history)
+        """Stream LLM output while sending tokens live to EXAID and UI."""
+
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.system_prompt),
             ("user", input)
         ])
-        
+
         chain = prompt | self.llm
         callback = AgentStreamingCallback(agent_id=self.agent_id)
-        
-        # Collect tokens for EXAID while yielding to caller
-        collected_tokens = []
-        
-        async def token_generator():
-            """Internal generator that yields collected tokens to EXAID"""
-            for token in collected_tokens:
-                yield token
-        
+
         try:
+            # LIVE token streaming loop
             async for chunk in chain.astream({}, callbacks=[callback]):
                 token = self._extract_token(chunk)
-                if token:
-                    collected_tokens.append(token)
-                    yield token
+                if not token:
+                    continue
+
+                # 1. Send to EXAID in real-time
+                if self.exaid:
+                    await self.exaid.on_new_token(self.agent_id, token)
+
+                # 2. Yield token to MAS graph
+                yield token
+
         except ValueError as e:
+            # Handle fallback (rare, but needed)
             if "No generation chunks were returned" in str(e):
-                logger.warning(f"Streaming failed for {self.agent_id}, falling back to non-streaming mode")
-                # Fallback: use ainvoke
                 response = await chain.ainvoke({})
                 for char in response.content:
-                    collected_tokens.append(char)
+                    if self.exaid:
+                        await self.exaid.on_new_token(self.agent_id, char)
                     yield char
             else:
                 raise
-        
-        # Send collected tokens to EXAID for summarization pipeline (with error handling)
-        if self.exaid and collected_tokens:
-            try:
-                await self.exaid.received_streamed_tokens(self.agent_id, token_generator())
-            except Exception as e:
-                logger.error(f"EXAID streaming failed for {self.agent_id}: {e}")
-                # Continue execution - don't break workflow due to EXAID errors
+
+        # 3. After stream ends: flush final chunk from TokenGate
+        if self.exaid:
+            await self.exaid.flush_agent(self.agent_id)
 
