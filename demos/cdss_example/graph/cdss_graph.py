@@ -50,12 +50,12 @@ def build_cdss_graph(exaid: EXAID):
     workflow = StateGraph(CDSSGraphState)
     
     # Add nodes with agent instances passed via partial functions (preserves async)
-    workflow.add_node("orchestrator", partial(orchestrator_node, orchestrator=orchestrator))
+    workflow.add_node("orchestrator", partial(orchestrator_node, agent=orchestrator))
     workflow.add_node("laboratory", partial(laboratory_node, agent=laboratory))
     workflow.add_node("cardiology", partial(cardiology_node, agent=cardiology))
     workflow.add_node("internal_medicine", partial(internal_medicine_node, agent=internal_medicine))
     workflow.add_node("radiology", partial(radiology_node, agent=radiology))
-    workflow.add_node("synthesis", partial(synthesis_node, orchestrator=orchestrator))
+    workflow.add_node("synthesis", partial(synthesis_node, agent=orchestrator))
     
     # Set entry point
     workflow.set_entry_point("orchestrator")

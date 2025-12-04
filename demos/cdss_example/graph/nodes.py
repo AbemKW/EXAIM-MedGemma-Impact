@@ -1,6 +1,7 @@
 """Simplified CDSS graph nodes - orchestrator-driven workflow with specialist reasoning"""
 
 import logging
+import re
 from typing import Dict, Any
 from demos.cdss_example.schema.graph_state import CDSSGraphState
 from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent
@@ -11,21 +12,21 @@ from demos.cdss_example.agents.radiology_agent import RadiologyAgent
 
 logger = logging.getLogger(__name__)
 
-# Import send_agent_started for UI card creation
-import sys
+
 def get_send_agent_started():
-    """Dynamically import send_agent_started to avoid circular imports"""
-    if 'demos.backend.server' in sys.modules:
-        server_module = sys.modules['demos.backend.server']
-        return server_module.send_agent_started
-    logger.warning(
-        "send_agent_started is not available: 'demos.backend.server' module not loaded. "
-        "Agent started UI notifications will be skipped."
-    )
-    return None
+    """Safely import send_agent_started to avoid circular imports"""
+    try:
+        from demos.backend.server import send_agent_started
+        return send_agent_started
+    except ImportError:
+        logger.warning(
+            "send_agent_started is not available: could not import from 'demos.backend.server'. "
+            "Agent started UI notifications will be skipped."
+        )
+        return None
 
 
-async def orchestrator_node(state: CDSSGraphState, orchestrator: OrchestratorAgent) -> Dict[str, Any]:
+async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> Dict[str, Any]:
     """Orchestrator node: compresses context, decides next specialist, generates task instruction
     
     Agent instance is injected via closure from graph builder.
@@ -42,6 +43,17 @@ async def orchestrator_node(state: CDSSGraphState, orchestrator: OrchestratorAge
     recent_agent = state.get("recent_agent", "none")
     specialists_called = state.get("specialists_called", [])
     iteration_count = state.get("iteration_count", 0)
+    max_iterations = state.get("max_iterations", 20)
+    
+    # Check for max iterations to prevent infinite loops
+    if iteration_count >= max_iterations:
+        logger.warning(f"Max iterations ({max_iterations}) reached. Forcing synthesis.")
+        return {
+            "running_summary": running_summary,
+            "next_specialist_to_call": "synthesis",
+            "task_instruction": "",
+            "iteration_count": iteration_count + 1
+        }
     
     # Step 1: Compress recent specialist output into running_summary (if exists)
     if recent_delta and recent_agent != "none":
@@ -70,14 +82,14 @@ async def orchestrator_node(state: CDSSGraphState, orchestrator: OrchestratorAge
                 f"Provide only the updated summary."
             )
         
-        # Send agent_started UI event before streaming
+        # Send agent_started UI event before streaming (with sub-task identifier)
         send_fn = get_send_agent_started()
         if send_fn:
-            await send_fn(orchestrator.agent_id)
+            await send_fn(f"{agent.agent_id}_Compression")
         
         # Stream compression - agent.stream() handles EXAID internally
         collected_tokens = []
-        async for token in orchestrator.stream(compression_input):
+        async for token in agent.stream(compression_input):
             collected_tokens.append(token)
         
         running_summary = "".join(collected_tokens)
@@ -105,27 +117,30 @@ async def orchestrator_node(state: CDSSGraphState, orchestrator: OrchestratorAge
         f"Respond with ONLY ONE WORD: the specialist name or 'synthesis'"
     )
     
-    # Send agent_started UI event before streaming
+    # Send agent_started UI event before streaming (with sub-task identifier)
     send_fn = get_send_agent_started()
     if send_fn:
-        await send_fn(orchestrator.agent_id)
+        await send_fn(f"{agent.agent_id}_Decision")
     
     # Stream decision - agent.stream() handles EXAID internally
     collected_decision = []
-    async for token in orchestrator.stream(decision_input):
+    async for token in agent.stream(decision_input):
         collected_decision.append(token)
     
     # Extract and validate decision
     next_specialist = "".join(collected_decision).strip().lower()
     valid_options = available_specialists + ['synthesis']
     if next_specialist not in valid_options:
-        # Try to extract valid option from response
+        # Try to extract valid option as a standalone word using regex
+        found = False
         for option in valid_options:
-            if option in next_specialist:
+            pattern = r"\b" + re.escape(option) + r"\b"
+            if re.search(pattern, next_specialist):
                 next_specialist = option
+                found = True
                 break
-        else:
-            # Default to synthesis if unclear
+        if not found:
+            logger.warning(f"Invalid specialist response '{next_specialist}'. Defaulting to 'synthesis'.")
             next_specialist = 'synthesis'
     
     # Step 3: Generate task instruction if not synthesis
@@ -144,14 +159,14 @@ async def orchestrator_node(state: CDSSGraphState, orchestrator: OrchestratorAge
             f"Keep it concise (2-4 sentences) and actionable."
         )
         
-        # Send agent_started UI event before streaming
+        # Send agent_started UI event before streaming (with sub-task identifier)
         send_fn = get_send_agent_started()
         if send_fn:
-            await send_fn(orchestrator.agent_id)
+            await send_fn(f"{agent.agent_id}_TaskGen")
         
         # Stream task generation - agent.stream() handles EXAID internally
         collected_task = []
-        async for token in orchestrator.stream(task_input):
+        async for token in agent.stream(task_input):
             collected_task.append(token)
         
         task_instruction = "".join(collected_task)
@@ -296,7 +311,7 @@ async def radiology_node(state: CDSSGraphState, agent: RadiologyAgent) -> Dict[s
     }
 
 
-async def synthesis_node(state: CDSSGraphState, orchestrator: OrchestratorAgent) -> Dict[str, Any]:
+async def synthesis_node(state: CDSSGraphState, agent: OrchestratorAgent) -> Dict[str, Any]:
     """Synthesis node: orchestrator generates final clinical recommendations
     
     Agent instance is injected via closure from graph builder.
@@ -320,11 +335,11 @@ async def synthesis_node(state: CDSSGraphState, orchestrator: OrchestratorAgent)
     # Send agent_started UI event before streaming
     send_fn = get_send_agent_started()
     if send_fn:
-        await send_fn(orchestrator.agent_id)
+        await send_fn(agent.agent_id)
     
     # Stream synthesis - agent.stream() handles EXAID internally
     collected_tokens = []
-    async for token in orchestrator.stream(synthesis_prompt):
+    async for token in agent.stream(synthesis_prompt):
         collected_tokens.append(token)
     
     # Collect final synthesis

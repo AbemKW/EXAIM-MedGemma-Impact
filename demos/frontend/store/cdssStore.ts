@@ -40,7 +40,7 @@ interface CDSSState {
 }
 
 // Token buffer outside Zustand state to prevent triggering updates
-// Now keyed by cardId instead of agentId
+// Still a Map structure, now keyed by cardId instead of agentId
 const tokenBuffer = new Map<string, string[]>();
 let flushInterval: NodeJS.Timeout | null = null;
 

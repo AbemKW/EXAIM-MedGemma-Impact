@@ -7,7 +7,7 @@ class CDSSGraphState(TypedDict):
     The orchestrator maintains running_summary (compressed context) and routes to specialists.
     Specialists receive: case + running_summary + recent_delta + recent_agent + task_instruction.
     
-    NOTE: EXAID is no longer in state - agents receive EXAID reference via constructor injection.
+    NOTE: Unlike previous versions, EXAID is no longer passed through state. Agents receive EXAID via constructor injection instead.
     """
     
     case_text: str

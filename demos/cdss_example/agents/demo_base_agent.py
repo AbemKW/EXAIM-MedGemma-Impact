@@ -1,5 +1,6 @@
 """Minimal base class for CDSS agents - provides agent_id consistency only"""
 
+from typing import Optional
 from exaid_core.exaid import EXAID
 
 
@@ -8,9 +9,18 @@ class DemoBaseAgent:
     
     Provides agent_id and EXAID reference storage.
     No conversation history, no abstract methods, no complexity.
+    
+    Note: EXAID is required for full agent functionality (token streaming to UI).
+    If exaid is None, agent will function but EXAID integration will be disabled.
     """
     
-    def __init__(self, agent_id: str, exaid: EXAID):
+    def __init__(self, agent_id: str, exaid: Optional[EXAID] = None):
+        if exaid is None:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"EXAID instance is None for agent '{agent_id}'. "
+                "Agent will function but EXAID integration (token streaming) will be disabled."
+            )
         self.agent_id = agent_id
         self.exaid = exaid
     
