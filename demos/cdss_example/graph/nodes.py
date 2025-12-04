@@ -131,15 +131,12 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
     next_specialist = "".join(collected_decision).strip().lower()
     valid_options = available_specialists + ['synthesis']
     if next_specialist not in valid_options:
-        # Try to extract valid option as a standalone word using regex
-        found = False
-        for option in valid_options:
-            pattern = r"\b" + re.escape(option) + r"\b"
-            if re.search(pattern, next_specialist):
-                next_specialist = option
-                found = True
-                break
-        if not found:
+        # Try to extract valid option as a standalone word using regex (single alternation pattern)
+        combined_pattern = r"\b(" + "|".join(re.escape(opt) for opt in valid_options) + r")\b"
+        match = re.search(combined_pattern, next_specialist)
+        if match:
+            next_specialist = match.group(1)
+        else:
             logger.warning(f"Invalid specialist response '{next_specialist}'. Defaulting to 'synthesis'.")
             next_specialist = 'synthesis'
     

@@ -1,7 +1,10 @@
 """Minimal base class for CDSS agents - provides agent_id consistency only"""
 
+import logging
 from typing import Optional
 from exaid_core.exaid import EXAID
+
+logger = logging.getLogger(__name__)
 
 
 class DemoBaseAgent:
@@ -16,8 +19,7 @@ class DemoBaseAgent:
     
     def __init__(self, agent_id: str, exaid: Optional[EXAID] = None):
         if exaid is None:
-            import logging
-            logging.getLogger(__name__).warning(
+            logger.warning(
                 f"EXAID instance is None for agent '{agent_id}'. "
                 "Agent will function but EXAID integration (token streaming) will be disabled."
             )
