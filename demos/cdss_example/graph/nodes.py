@@ -1,6 +1,6 @@
 """Simplified CDSS graph nodes - orchestrator-driven workflow with specialist reasoning"""
 
-from typing import Dict, Any, AsyncIterator
+from typing import Dict, Any
 from demos.cdss_example.schema.graph_state import CDSSGraphState
 from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent
 from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
@@ -17,25 +17,11 @@ def get_send_agent_started():
         return server_module.send_agent_started
     return None
 
-async def stream_with_card_creation(agent_id: str, exaid, token_generator: AsyncIterator[str]):
-    """Helper to send agent_started message before streaming tokens to EXAID
-    
-    Args:
-        agent_id: The agent identifier
-        exaid: EXAID instance
-        token_generator: Async generator of tokens
-    """
-    # Send agent_started message to create new card in UI
-    send_fn = get_send_agent_started()
-    if send_fn:
-        await send_fn(agent_id)
-    
-    # Stream tokens to EXAID
-    await exaid.received_streamed_tokens(agent_id, token_generator)
 
-
-async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
+async def orchestrator_node(state: CDSSGraphState, orchestrator: OrchestratorAgent) -> Dict[str, Any]:
     """Orchestrator node: compresses context, decides next specialist, generates task instruction
+    
+    Agent instance is injected via closure from graph builder.
     
     Workflow:
     1. If recent_delta exists, compress it into running_summary (streams to UI)
@@ -43,8 +29,6 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     3. If not synthesis, generate task instruction for next specialist (streams to UI)
     4. Update state and return
     """
-    orchestrator = OrchestratorAgent()
-    exaid = state["exaid"]
     case_text = state["case_text"]
     running_summary = state.get("running_summary", "")
     recent_delta = state.get("recent_delta", "")
@@ -79,18 +63,16 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
                 f"Provide only the updated summary."
             )
         
-        # Stream compression to EXAID with new card creation
-        collected_tokens = []
-        async def compression_stream():
-            async for token in orchestrator.act_stream(compression_input):
-                collected_tokens.append(token)
-                yield token
+        # Send agent_started UI event before streaming
+        send_fn = get_send_agent_started()
+        if send_fn:
+            await send_fn(orchestrator.agent_id)
         
-        await stream_with_card_creation(
-            orchestrator.agent_id,
-            exaid,
-            compression_stream()
-        )
+        # Stream compression - agent.stream() handles EXAID internally
+        collected_tokens = []
+        async for token in orchestrator.stream(compression_input):
+            collected_tokens.append(token)
+        
         running_summary = "".join(collected_tokens)
     
     # Step 2: Decide next specialist or synthesis
@@ -116,18 +98,15 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
         f"Respond with ONLY ONE WORD: the specialist name or 'synthesis'"
     )
     
-    # Stream decision to EXAID with new card creation
-    collected_decision = []
-    async def decision_stream():
-        async for token in orchestrator.act_stream(decision_input):
-            collected_decision.append(token)
-            yield token
+    # Send agent_started UI event before streaming
+    send_fn = get_send_agent_started()
+    if send_fn:
+        await send_fn(orchestrator.agent_id)
     
-    await stream_with_card_creation(
-        orchestrator.agent_id,
-        exaid,
-        decision_stream()
-    )
+    # Stream decision - agent.stream() handles EXAID internally
+    collected_decision = []
+    async for token in orchestrator.stream(decision_input):
+        collected_decision.append(token)
     
     # Extract and validate decision
     next_specialist = "".join(collected_decision).strip().lower()
@@ -158,18 +137,16 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
             f"Keep it concise (2-4 sentences) and actionable."
         )
         
-        # Stream task generation to EXAID with new card creation
-        collected_task = []
-        async def task_stream():
-            async for token in orchestrator.act_stream(task_input):
-                collected_task.append(token)
-                yield token
+        # Send agent_started UI event before streaming
+        send_fn = get_send_agent_started()
+        if send_fn:
+            await send_fn(orchestrator.agent_id)
         
-        await stream_with_card_creation(
-            orchestrator.agent_id,
-            exaid,
-            task_stream()
-        )
+        # Stream task generation - agent.stream() handles EXAID internally
+        collected_task = []
+        async for token in orchestrator.stream(task_input):
+            collected_task.append(token)
+        
         task_instruction = "".join(collected_task)
     
     return {
@@ -180,24 +157,23 @@ async def orchestrator_node(state: CDSSGraphState) -> Dict[str, Any]:
     }
 
 
-async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Laboratory specialist node: analyze labs and provide domain reasoning"""
-    agent = LaboratoryAgent()
-    exaid = state["exaid"]
+async def laboratory_node(state: CDSSGraphState, agent: LaboratoryAgent) -> Dict[str, Any]:
+    """Laboratory specialist node: analyze labs and provide domain reasoning
     
+    Agent instance is injected via closure from graph builder.
+    """
     # Build context for specialist
     context = _build_specialist_context(state, "laboratory")
     
-    # Stream specialist reasoning
-    # The AgentStreamingCallback in agent.act_stream handles message bus streaming
-    collected_tokens = []
-    async def token_stream():
-        async for token in agent.act_stream(context):
-            collected_tokens.append(token)
-            yield token
+    # Send agent_started UI event before streaming
+    send_fn = get_send_agent_started()
+    if send_fn:
+        await send_fn(agent.agent_id)
     
-    # Stream to EXAID with new card creation
-    await stream_with_card_creation(agent.agent_id, exaid, token_stream())
+    # Stream specialist reasoning - agent.stream() handles EXAID internally
+    collected_tokens = []
+    async for token in agent.stream(context):
+        collected_tokens.append(token)
     
     # Collect raw output as recent_delta
     recent_delta = "".join(collected_tokens)
@@ -214,24 +190,23 @@ async def laboratory_node(state: CDSSGraphState) -> Dict[str, Any]:
     }
 
 
-async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Cardiology specialist node: assess cardiovascular findings and provide domain reasoning"""
-    agent = CardiologyAgent()
-    exaid = state["exaid"]
+async def cardiology_node(state: CDSSGraphState, agent: CardiologyAgent) -> Dict[str, Any]:
+    """Cardiology specialist node: assess cardiovascular findings and provide domain reasoning
     
+    Agent instance is injected via closure from graph builder.
+    """
     # Build context for specialist
     context = _build_specialist_context(state, "cardiology")
     
-    # Stream specialist reasoning
-    # The AgentStreamingCallback in agent.act_stream handles message bus streaming
-    collected_tokens = []
-    async def token_stream():
-        async for token in agent.act_stream(context):
-            collected_tokens.append(token)
-            yield token
+    # Send agent_started UI event before streaming
+    send_fn = get_send_agent_started()
+    if send_fn:
+        await send_fn(agent.agent_id)
     
-    # Stream to EXAID with new card creation
-    await stream_with_card_creation(agent.agent_id, exaid, token_stream())
+    # Stream specialist reasoning - agent.stream() handles EXAID internally
+    collected_tokens = []
+    async for token in agent.stream(context):
+        collected_tokens.append(token)
     
     # Collect raw output as recent_delta
     recent_delta = "".join(collected_tokens)
@@ -248,24 +223,23 @@ async def cardiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     }
 
 
-async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Internal Medicine specialist node: comprehensive clinical assessment"""
-    agent = InternalMedicineAgent()
-    exaid = state["exaid"]
+async def internal_medicine_node(state: CDSSGraphState, agent: InternalMedicineAgent) -> Dict[str, Any]:
+    """Internal Medicine specialist node: comprehensive clinical assessment
     
+    Agent instance is injected via closure from graph builder.
+    """
     # Build context for specialist
     context = _build_specialist_context(state, "internal_medicine")
     
-    # Stream specialist reasoning
-    # The AgentStreamingCallback in agent.act_stream handles message bus streaming
-    collected_tokens = []
-    async def token_stream():
-        async for token in agent.act_stream(context):
-            collected_tokens.append(token)
-            yield token
+    # Send agent_started UI event before streaming
+    send_fn = get_send_agent_started()
+    if send_fn:
+        await send_fn(agent.agent_id)
     
-    # Stream to EXAID with new card creation
-    await stream_with_card_creation(agent.agent_id, exaid, token_stream())
+    # Stream specialist reasoning - agent.stream() handles EXAID internally
+    collected_tokens = []
+    async for token in agent.stream(context):
+        collected_tokens.append(token)
     
     # Collect raw output as recent_delta
     recent_delta = "".join(collected_tokens)
@@ -282,24 +256,23 @@ async def internal_medicine_node(state: CDSSGraphState) -> Dict[str, Any]:
     }
 
 
-async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Radiology specialist node: interpret imaging findings and provide domain reasoning"""
-    agent = RadiologyAgent()
-    exaid = state["exaid"]
+async def radiology_node(state: CDSSGraphState, agent: RadiologyAgent) -> Dict[str, Any]:
+    """Radiology specialist node: interpret imaging findings and provide domain reasoning
     
+    Agent instance is injected via closure from graph builder.
+    """
     # Build context for specialist
     context = _build_specialist_context(state, "radiology")
     
-    # Stream specialist reasoning
-    # The AgentStreamingCallback in agent.act_stream handles message bus streaming
-    collected_tokens = []
-    async def token_stream():
-        async for token in agent.act_stream(context):
-            collected_tokens.append(token)
-            yield token
+    # Send agent_started UI event before streaming
+    send_fn = get_send_agent_started()
+    if send_fn:
+        await send_fn(agent.agent_id)
     
-    # Stream to EXAID with new card creation
-    await stream_with_card_creation(agent.agent_id, exaid, token_stream())
+    # Stream specialist reasoning - agent.stream() handles EXAID internally
+    collected_tokens = []
+    async for token in agent.stream(context):
+        collected_tokens.append(token)
     
     # Collect raw output as recent_delta
     recent_delta = "".join(collected_tokens)
@@ -316,10 +289,11 @@ async def radiology_node(state: CDSSGraphState) -> Dict[str, Any]:
     }
 
 
-async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
-    """Synthesis node: orchestrator generates final clinical recommendations"""
-    orchestrator = OrchestratorAgent()
-    exaid = state["exaid"]
+async def synthesis_node(state: CDSSGraphState, orchestrator: OrchestratorAgent) -> Dict[str, Any]:
+    """Synthesis node: orchestrator generates final clinical recommendations
+    
+    Agent instance is injected via closure from graph builder.
+    """
     case_text = state["case_text"]
     running_summary = state.get("running_summary", "")
     
@@ -336,16 +310,15 @@ async def synthesis_node(state: CDSSGraphState) -> Dict[str, Any]:
         f"Provide clear, actionable clinical recommendations."
     )
     
-    # Stream synthesis with new card creation
-    # The AgentStreamingCallback in orchestrator.act_stream handles message bus streaming
-    collected_tokens = []
-    async def token_stream():
-        async for token in orchestrator.act_stream(synthesis_prompt):
-            collected_tokens.append(token)
-            yield token
+    # Send agent_started UI event before streaming
+    send_fn = get_send_agent_started()
+    if send_fn:
+        await send_fn(orchestrator.agent_id)
     
-    # Stream to EXAID with new card creation
-    await stream_with_card_creation(orchestrator.agent_id, exaid, token_stream())
+    # Stream synthesis - agent.stream() handles EXAID internally
+    collected_tokens = []
+    async for token in orchestrator.stream(synthesis_prompt):
+        collected_tokens.append(token)
     
     # Collect final synthesis
     final_synthesis = "".join(collected_tokens)

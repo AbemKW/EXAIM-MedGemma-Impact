@@ -1,5 +1,4 @@
 from typing import TypedDict, Optional, List
-from exaid_core.exaid import EXAID
 
 
 class CDSSGraphState(TypedDict):
@@ -7,7 +6,8 @@ class CDSSGraphState(TypedDict):
     
     The orchestrator maintains running_summary (compressed context) and routes to specialists.
     Specialists receive: case + running_summary + recent_delta + recent_agent + task_instruction.
-    EXAID streams all tokens for UI but does not influence workflow routing.
+    
+    NOTE: EXAID is no longer in state - agents receive EXAID reference via constructor injection.
     """
     
     case_text: str
@@ -30,9 +30,6 @@ class CDSSGraphState(TypedDict):
     
     specialists_called: List[str]
     """List of specialists that have been called in this workflow"""
-    
-    exaid: EXAID
-    """EXAID instance for trace capture and summarization (UI/monitoring only)"""
     
     iteration_count: int
     """Track number of turns to prevent infinite loops"""

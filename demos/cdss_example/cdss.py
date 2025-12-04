@@ -14,7 +14,7 @@ class CDSS:
     def __init__(self):
         """Initialize CDSS with EXAID and simplified graph workflow"""
         self.exaid = EXAID()
-        self.graph = build_cdss_graph()
+        self.graph = build_cdss_graph(self.exaid)
     
     async def process_case(
         self, 
@@ -36,7 +36,7 @@ class CDSS:
         else:
             case_text = str(case)
         
-        # Initialize simplified graph state
+        # Initialize simplified graph state (EXAID injected at agent level, not in state)
         initial_state: CDSSGraphState = {
             "case_text": case_text,
             "running_summary": "",
@@ -45,7 +45,6 @@ class CDSS:
             "next_specialist_to_call": "orchestrator",
             "task_instruction": "",
             "specialists_called": [],
-            "exaid": self.exaid,
             "iteration_count": 0,
             "max_iterations": 20,
             "final_synthesis": None
