@@ -63,7 +63,7 @@ export const useCDSSStore = create<CDSSState>()(
     startNewAgent: (agentId: string) => {
       set((state) => {
         const newCard: AgentTrace = {
-          id: `${agentId}_${Date.now()}`,  // Unique ID for React key
+          id: `${agentId}_${state.agents.length}_${Date.now()}`,  // Unique ID for React key
           agentName: agentId,              // Base name for display
           fullText: '',
           isExpanded: false,
