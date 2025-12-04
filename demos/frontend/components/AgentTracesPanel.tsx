@@ -12,7 +12,7 @@ export default function AgentTracesPanel() {
   return (
     <Card className="flex flex-col overflow-hidden h-full">
       {/* Panel Header */}
-      <CardHeader className="bg-gradient-to-r from-zinc-800 to-zinc-900 border-b border-border py-3 px-5">
+      <CardHeader className="bg-gradient-to-r from-blue-950/40 to-blue-950/30 border-b border-blue-900/20 py-3 px-5">
         <div className="flex justify-between items-center">
           <CardTitle className="text-lg font-semibold">Raw Agent Traces</CardTitle>
           <Badge variant="secondary" className="text-sm">

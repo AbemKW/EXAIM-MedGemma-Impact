@@ -30,11 +30,11 @@ export default function Header() {
   const getStatusDotClass = () => {
     switch (wsStatus) {
       case 'connected':
-        return 'bg-emerald-500 animate-pulse';
+        return 'bg-green-600/70 animate-pulse';
       case 'connecting':
-        return 'bg-yellow-500';
+        return 'bg-amber-600/70';
       case 'disconnected':
-        return 'bg-red-500';
+        return 'bg-red-700/70';
       default:
         return 'bg-zinc-500';
     }
@@ -43,8 +43,8 @@ export default function Header() {
   return (
     <header className="flex justify-between items-center py-4 border-b border-border flex-shrink-0">
       <div className="flex items-center gap-4">
-        <h1 className="text-3xl font-bold text-primary tracking-tight">EXAID</h1>
-        <p className="text-sm text-muted-foreground font-medium">
+        <h1 className="text-5xl font-bold text-primary tracking-tight" style={{ fontFamily: 'var(--font-inter), sans-serif' }}>EXAID</h1>
+        <p className="text-base text-muted-foreground font-medium" style={{ fontFamily: 'var(--font-inter), sans-serif' }}>
           Clinical Decision Support System
         </p>
       </div>

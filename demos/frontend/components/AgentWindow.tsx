@@ -34,16 +34,16 @@ function AgentWindow({ cardId }: AgentWindowProps) {
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden border-blue-900/10">
         {/* Header */}
         <CardHeader
           onClick={handleToggle}
-          className="cursor-pointer hover:bg-muted/50 transition-colors border-b border-border py-3 px-4"
+          className="cursor-pointer hover:bg-blue-950/20 transition-colors border-b border-blue-900/15 py-3 px-4"
         >
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
               <CardTitle className="text-base font-semibold">{agent.agentName}</CardTitle>
-              <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-600 text-sm px-2 py-1">
+              <Badge variant="default" className="bg-green-700/60 hover:bg-green-700/60 text-sm px-2 py-1">
                 Active
               </Badge>
             </div>
