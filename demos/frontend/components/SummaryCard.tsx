@@ -26,12 +26,42 @@ function SummaryCard({ summary }: SummaryCardProps) {
   };
 
   const fields = [
-    { label: 'Status / Action', value: summary.data.status_action },
-    { label: 'Key Findings', value: summary.data.key_findings },
-    { label: 'Differential & Rationale', value: summary.data.differential_rationale },
-    { label: 'Uncertainty / Confidence', value: summary.data.uncertainty_confidence },
-    { label: 'Recommendation / Next Step', value: summary.data.recommendation_next_step },
-    { label: 'Agent Contributions', value: summary.data.agent_contributions },
+    { 
+      label: 'Status / Action', 
+      value: summary.data.status_action,
+      color: 'var(--summary-status-action)',
+      bgColor: 'oklch(0.50 0.08 260 / 0.04)',
+    },
+    { 
+      label: 'Key Findings', 
+      value: summary.data.key_findings,
+      color: 'var(--summary-key-findings)',
+      bgColor: 'oklch(0.55 0.08 150 / 0.04)',
+    },
+    { 
+      label: 'Differential & Rationale', 
+      value: summary.data.differential_rationale,
+      color: 'var(--summary-differential)',
+      bgColor: 'oklch(0.50 0.08 300 / 0.04)',
+    },
+    { 
+      label: 'Uncertainty / Confidence', 
+      value: summary.data.uncertainty_confidence,
+      color: 'var(--summary-uncertainty)',
+      bgColor: 'oklch(0.58 0.08 60 / 0.04)',
+    },
+    { 
+      label: 'Recommendation / Next Step', 
+      value: summary.data.recommendation_next_step,
+      color: 'var(--summary-recommendation)',
+      bgColor: 'oklch(0.50 0.08 180 / 0.04)',
+    },
+    { 
+      label: 'Agent Contributions', 
+      value: summary.data.agent_contributions,
+      color: 'var(--summary-contributions)',
+      bgColor: 'oklch(0.50 0.03 0 / 0.04)',
+    },
   ];
 
   return (
@@ -64,10 +94,20 @@ function SummaryCard({ summary }: SummaryCardProps) {
 
           {/* Content - Expandable */}
           <AccordionContent>
-            <CardContent className="pt-0 pb-4 px-4 space-y-4">
+            <CardContent className="pt-0 pb-4 px-4 space-y-3">
               {fields.map((field, index) => (
-                <div key={index} className="space-y-2">
-                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <div 
+                  key={index} 
+                  className="summary-field-group rounded-md p-3 transition-colors"
+                  style={{
+                    borderLeft: `2px solid ${field.color}`,
+                    backgroundColor: field.bgColor,
+                  }}
+                >
+                  <div 
+                    className="text-xs font-semibold uppercase tracking-wide mb-2"
+                    style={{ color: field.color }}
+                  >
                     {field.label}
                   </div>
                   <div className="text-sm text-foreground leading-relaxed">{field.value}</div>
