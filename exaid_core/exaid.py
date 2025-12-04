@@ -1,4 +1,4 @@
-from typing import Optional, AsyncIterator, Callable, List
+from typing import Optional, Callable, List
 from exaid_core.buffer_agent.buffer_agent import BufferAgent
 from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
 from exaid_core.token_gate.token_gate import TokenGate
@@ -117,65 +117,61 @@ class EXAID:
             
             return summary
         return None
-    
-    async def received_streamed_tokens(self, agent_id: str, token_generator: AsyncIterator[str]) -> Optional[AgentSummary]:
-        last_summary = None
-        
-        async def process_chunk(chunk: str) -> Optional[AgentSummary]:
-            trigger = await self.buffer_agent.addchunk(agent_id, chunk)
-            if trigger:
-                agent_buffer = self.buffer_agent.flush()
-                buffer_str = "\n".join(agent_buffer)
-                all_summaries = self.get_all_summaries()
-                summary_history_strs = self._format_summaries_history(all_summaries[:-1]) if len(all_summaries) > 1 else []
-                latest_summary_str = self._format_summary_for_history(all_summaries[-1]) if all_summaries else "No summaries yet."
-                summary = await self.summarizer_agent.summarize(
-                    summary_history_strs,
-                    latest_summary_str,
-                    buffer_str
-                )
-                if summary is not None:
-                    self.summaries.append(summary)
-                    self._print_summary(summary)
-                
+
+    async def on_new_token(self, agent_id: str, token: str) -> Optional[AgentSummary]:
+        """Process a single token for the given agent."""
+        # Emit trace callbacks
+        for callback in self.trace_callbacks:
+            try:
+                callback(agent_id, token)
+            except Exception as e:
+                print(f"Error in trace callback: {e}")
+
+        # Pass token through TokenGate
+        chunk = await self.token_gate.add_token(agent_id, token)
+
+        # Process chunk if complete
+        if chunk:
+            return await self._process_chunk(agent_id, chunk)
+
+        # Check TokenGate timers
+        timer_chunk = await self.token_gate.check_timers(agent_id)
+        if timer_chunk:
+            return await self._process_chunk(agent_id, timer_chunk)
+
+        return None
+
+    async def _process_chunk(self, agent_id: str, chunk: str) -> Optional[AgentSummary]:
+        """Process a chunk of text for summarization."""
+        trigger = await self.buffer_agent.addchunk(agent_id, chunk)
+        if trigger:
+            agent_buffer = self.buffer_agent.flush()
+            buffer_str = "\n".join(agent_buffer)
+            all_summaries = self.get_all_summaries()
+            summary_history_strs = self._format_summaries_history(all_summaries[:-1]) if len(all_summaries) > 1 else []
+            latest_summary_str = self._format_summary_for_history(all_summaries[-1]) if all_summaries else "No summaries yet."
+            summary = await self.summarizer_agent.summarize(
+                summary_history_strs,
+                latest_summary_str,
+                buffer_str
+            )
+            if summary is not None:
+                self.summaries.append(summary)
+                self._print_summary(summary)
+
                 # Emit summary event to callbacks
                 for callback in self.summary_callbacks:
                     try:
                         callback(summary)
                     except Exception as e:
                         print(f"Error in summary callback: {e}")
-                
-                return summary
-            return None
-        
-        async for token in token_generator:
-            # Emit token event to callbacks
-            for callback in self.trace_callbacks:
-                try:
-                    callback(agent_id, token)
-                except Exception as e:
-                    # Don't let callback errors break trace processing
-                    print(f"Error in trace callback: {e}")
-            
-            
-            chunk = await self.token_gate.add_token(agent_id, token)
-            if chunk:
-                summary = await process_chunk(chunk)
-                if summary:
-                    last_summary = summary
-            timer_chunk = await self.token_gate.check_timers(agent_id)
-            if timer_chunk:
-                summary = await process_chunk(timer_chunk)
-                if summary:
-                    last_summary = summary
-        
+
+            return summary
+        return None
+
+    async def flush_agent(self, agent_id: str) -> Optional[AgentSummary]:
+        """Flush remaining tokens for the given agent."""
         remaining = await self.token_gate.flush(agent_id)
         if remaining:
-            summary = await process_chunk(remaining)
-            if summary:
-                last_summary = summary
-        
-        # Note: Trace completion is handled via token-by-token callbacks above
-        # No separate completion event needed since tokens are streamed in real-time
-        
-        return last_summary
+            return await self._process_chunk(agent_id, remaining)
+        return None
