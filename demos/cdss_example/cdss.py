@@ -42,7 +42,7 @@ class CDSS:
             "running_summary": "",
             "recent_delta": "",
             "recent_agent": "none",
-            "next_specialist_to_call": "orchestrator",
+            "next_specialist_to_call": None,
             "task_instruction": "",
             "specialists_called": [],
             "iteration_count": 0,
