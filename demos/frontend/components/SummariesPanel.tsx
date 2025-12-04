@@ -28,7 +28,7 @@ export default function SummariesPanel() {
       {/* Panel Header */}
       <CardHeader className="bg-gradient-to-r from-teal-950/40 to-teal-950/30 border-b border-teal-900/20 py-3 px-5">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-lg font-semibold">EXAID Summaries</CardTitle>
+          <CardTitle className="text-xl font-bold">EXAID Summaries</CardTitle>
           <Badge variant="secondary" className="text-sm">
             {summaries.length} summar{summaries.length !== 1 ? 'ies' : 'y'}
           </Badge>
@@ -36,9 +36,9 @@ export default function SummariesPanel() {
       </CardHeader>
 
       {/* Panel Content */}
-      <CardContent className="flex-1 overflow-y-auto p-4">
+      <CardContent className="flex-1 overflow-y-auto p-5">
         {summaries.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8 text-sm">
+          <p className="text-muted-foreground text-center py-8 text-base">
             No summaries yet. Summaries will appear here as EXAID processes agent traces.
           </p>
         ) : (
@@ -47,7 +47,7 @@ export default function SummariesPanel() {
             collapsible
             value={expandedSummary?.id}
             onValueChange={handleValueChange}
-            className="space-y-3"
+            className="space-y-4"
           >
             {summaries.map((summary) => (
               <SummaryCard key={summary.id} summary={summary} />
