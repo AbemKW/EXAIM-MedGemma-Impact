@@ -12,17 +12,21 @@ from demos.cdss_example.agents.radiology_agent import RadiologyAgent
 
 logger = logging.getLogger(__name__)
 
+_send_agent_started_import_warned = False
 
 def get_send_agent_started():
     """Safely import send_agent_started to avoid circular imports"""
+    global _send_agent_started_import_warned
     try:
         from demos.backend.server import send_agent_started
         return send_agent_started
     except ImportError:
-        logger.warning(
-            "send_agent_started is not available: could not import from 'demos.backend.server'. "
-            "Agent started UI notifications will be skipped."
-        )
+        if not _send_agent_started_import_warned:
+            logger.warning(
+                "send_agent_started is not available: could not import from 'demos.backend.server'. "
+                "Agent started UI notifications will be skipped."
+            )
+            _send_agent_started_import_warned = True
         return None
 
 
