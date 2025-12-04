@@ -38,12 +38,12 @@ function AgentWindow({ cardId }: AgentWindowProps) {
         {/* Header */}
         <CardHeader
           onClick={handleToggle}
-          className="cursor-pointer hover:bg-muted/50 transition-colors border-b border-border"
+          className="cursor-pointer hover:bg-muted/50 transition-colors border-b border-border py-3 px-4"
         >
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <CardTitle className="text-base">{agent.agentName}</CardTitle>
-              <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-600">
+              <CardTitle className="text-base font-semibold">{agent.agentName}</CardTitle>
+              <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-600 text-sm px-2 py-1">
                 Active
               </Badge>
             </div>
@@ -52,13 +52,14 @@ function AgentWindow({ cardId }: AgentWindowProps) {
                 onClick={handleViewFull}
                 variant="secondary"
                 size="sm"
+                className="h-8 px-3 text-sm"
               >
                 View Full
               </Button>
               <motion.span
                 animate={{ rotate: agent.isExpanded ? 180 : 0 }}
                 transition={{ duration: 0.3 }}
-                className="text-muted-foreground"
+                className="text-muted-foreground text-base"
               >
                 ▼
               </motion.span>
@@ -70,7 +71,7 @@ function AgentWindow({ cardId }: AgentWindowProps) {
         <motion.div
           initial={false}
           animate={{
-            height: agent.isExpanded ? '400px' : '200px',
+            height: agent.isExpanded ? '400px' : '180px',
           }}
           transition={{ duration: 0.3, ease: 'easeInOut' }}
           className="overflow-hidden"

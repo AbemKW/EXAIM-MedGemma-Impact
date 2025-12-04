@@ -41,8 +41,8 @@ export default function Header() {
   };
 
   return (
-    <header className="flex justify-between items-center py-5 border-b border-border">
-      <div className="flex flex-col gap-1">
+    <header className="flex justify-between items-center py-4 border-b border-border flex-shrink-0">
+      <div className="flex items-center gap-4">
         <h1 className="text-3xl font-bold text-primary tracking-tight">EXAID</h1>
         <p className="text-sm text-muted-foreground font-medium">
           Clinical Decision Support System
@@ -51,7 +51,7 @@ export default function Header() {
       <div className="flex items-center">
         <Badge
           variant={getStatusVariant()}
-          className="flex items-center gap-2 uppercase tracking-wide"
+          className="flex items-center gap-2 uppercase tracking-wide text-sm px-3 py-1"
         >
           <span className={`w-2 h-2 rounded-full ${getStatusDotClass()}`} />
           {getStatusText()}

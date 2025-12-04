@@ -12,19 +12,19 @@ export default function AgentTracesPanel() {
   return (
     <Card className="flex flex-col overflow-hidden h-full">
       {/* Panel Header */}
-      <CardHeader className="bg-gradient-to-r from-zinc-800 to-zinc-900 border-b border-border">
+      <CardHeader className="bg-gradient-to-r from-zinc-800 to-zinc-900 border-b border-border py-3 px-5">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-xl">Raw Agent Traces</CardTitle>
-          <Badge variant="secondary">
+          <CardTitle className="text-lg font-semibold">Raw Agent Traces</CardTitle>
+          <Badge variant="secondary" className="text-sm">
             {agents.length} trace{agents.length !== 1 ? 's' : ''}
           </Badge>
         </div>
       </CardHeader>
 
       {/* Panel Content */}
-      <CardContent className="flex-1 overflow-y-auto p-4 space-y-2">
+      <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
         {agents.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">
+          <p className="text-muted-foreground text-center py-8 text-sm">
             No traces yet. Process a case to see verbose reasoning traces.
           </p>
         ) : (

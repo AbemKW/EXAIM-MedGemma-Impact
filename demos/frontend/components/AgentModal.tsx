@@ -42,10 +42,10 @@ export default function AgentModal() {
     <Dialog open={modal.isOpen} onOpenChange={closeModal}>
       <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>{modal.agentId} - Full Output</DialogTitle>
+          <DialogTitle className="text-lg">{modal.agentId} - Full Output</DialogTitle>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto p-6">
-          <pre className="font-mono text-sm text-foreground whitespace-pre-wrap break-words">
+          <pre className="text-base leading-relaxed text-foreground whitespace-pre-wrap break-words">
             {modal.content}
           </pre>
         </div>

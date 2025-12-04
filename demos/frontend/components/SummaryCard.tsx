@@ -47,10 +47,10 @@ function SummaryCard({ summary }: SummaryCardProps) {
       }`}>
         <AccordionItem value={summary.id} className="border-0">
           {/* Header - Always Visible */}
-          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-            <AccordionTrigger className="hover:no-underline">
+          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3 px-4">
+            <AccordionTrigger className="hover:no-underline py-0">
               <div className="flex-1 pr-4 text-left">
-                <CardTitle className="text-sm line-clamp-2">
+                <CardTitle className="text-sm line-clamp-2 font-semibold">
                   {summary.data.status_action}
                 </CardTitle>
               </div>
@@ -64,13 +64,13 @@ function SummaryCard({ summary }: SummaryCardProps) {
 
           {/* Content - Expandable */}
           <AccordionContent>
-            <CardContent className="pt-0 space-y-3">
+            <CardContent className="pt-0 pb-4 px-4 space-y-4">
               {fields.map((field, index) => (
-                <div key={index} className="space-y-1">
+                <div key={index} className="space-y-2">
                   <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     {field.label}
                   </div>
-                  <div className="text-sm text-foreground">{field.value}</div>
+                  <div className="text-sm text-foreground leading-relaxed">{field.value}</div>
                 </div>
               ))}
             </CardContent>
