@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { forwardRef } from 'react';
 import { motion } from 'framer-motion';
 import { useCDSSStore } from '@/store/cdssStore';
 import type { Summary } from '@/lib/types';
@@ -13,9 +13,10 @@ import {
 
 interface SummaryCardProps {
   summary: Summary;
+  showComparison?: boolean;
 }
 
-function SummaryCard({ summary }: SummaryCardProps) {
+const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({ summary, showComparison = false }, ref) => {
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('en-US', {
@@ -66,9 +67,11 @@ function SummaryCard({ summary }: SummaryCardProps) {
 
   return (
     <motion.div
+      ref={ref}
       layout
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
+      data-summary-id={summary.id}
     >
       <Card className={`overflow-hidden transition-all duration-500 border-white/10 backdrop-blur-md ${
         summary.isExpanded
@@ -107,12 +110,16 @@ function SummaryCard({ summary }: SummaryCardProps) {
                     }}
                   >
                     <div 
-                      className="text-xs font-semibold uppercase tracking-wide mb-2 leading-tight"
-                      style={{ color: field.color }}
+                      className="text-xs font-extrabold uppercase tracking-wider mb-2 leading-tight"
+                      style={{ 
+                        color: field.color,
+                        fontWeight: 800,
+                        letterSpacing: '0.05em'
+                      }}
                     >
                       {field.label}
                     </div>
-                    <div className="text-sm text-foreground leading-relaxed">{field.value}</div>
+                    <div className="text-sm text-foreground leading-relaxed font-normal" style={{ fontWeight: 400 }}>{field.value}</div>
                   </div>
                 ))}
               </div>
@@ -122,7 +129,9 @@ function SummaryCard({ summary }: SummaryCardProps) {
       </Card>
     </motion.div>
   );
-}
+});
+
+SummaryCard.displayName = 'SummaryCard';
 
 // Memoize to prevent unnecessary re-renders
 export default React.memo(SummaryCard);
