@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import subprocess
+import sys
+import os
 from pathlib import Path
 from typing import List
 from datetime import datetime
@@ -75,6 +78,9 @@ async def remove_connection(websocket: WebSocket):
 # when multiple requests arrive simultaneously.
 cdss_instance: CDSS = None
 cdss_lock = asyncio.Lock()
+cdss_process_task: asyncio.Task = None
+should_stop = False
+cancellation_event = asyncio.Event()
 
 # Maximum allowed length for case text to prevent resource abuse
 MAX_CASE_LENGTH = 100000
@@ -384,11 +390,15 @@ async def process_case(request: CaseRequest):
     Input validation (empty check, length limit) is handled by Pydantic validator
     and will return 422 Unprocessable Entity for invalid input.
     """
-    global cdss_instance
+    global cdss_instance, cdss_process_task, should_stop, cancellation_event
     
     # Acquire lock to ensure only one request processes at a time
     async with cdss_lock:
         try:
+            # Reset stop flag and cancellation event
+            should_stop = False
+            cancellation_event.clear()
+            
             # Create a new CDSS instance for this request
             cdss_instance = CDSS()
             
@@ -408,7 +418,47 @@ async def process_case(request: CaseRequest):
             
             # Process the case (this will stream traces via callbacks)
             # request.case is already validated and trimmed by Pydantic validator
-            await cdss_instance.process_case(request.case)
+            # Wrap in a cancellable task
+            async def process_with_cancellation():
+                try:
+                    return await cdss_instance.process_case(request.case)
+                except asyncio.CancelledError:
+                    logger.info("Case processing was cancelled during execution")
+                    raise
+                except Exception as e:
+                    # Check if cancellation was requested
+                    if cancellation_event.is_set() or should_stop:
+                        logger.info("Case processing was stopped due to cancellation request")
+                        raise asyncio.CancelledError("Processing stopped by user")
+                    raise
+            
+            cdss_process_task = asyncio.create_task(process_with_cancellation())
+            
+            try:
+                await cdss_process_task
+            except asyncio.CancelledError:
+                logger.info("Case processing was cancelled")
+                # Send stop message
+                await broadcast_message({
+                    "type": "processing_stopped",
+                    "timestamp": datetime.now().isoformat()
+                })
+                return {
+                    "status": "stopped",
+                    "message": "Case processing was stopped"
+                }
+            
+            # Check if stop was requested
+            if should_stop or cancellation_event.is_set():
+                logger.info("Case processing was stopped")
+                await broadcast_message({
+                    "type": "processing_stopped",
+                    "timestamp": datetime.now().isoformat()
+                })
+                return {
+                    "status": "stopped",
+                    "message": "Case processing was stopped"
+                }
             
             # Send completion message
             await broadcast_message({
@@ -432,6 +482,108 @@ async def process_case(request: CaseRequest):
             })
             
             raise HTTPException(status_code=500, detail=error_msg)
+        finally:
+            cdss_process_task = None
+            cancellation_event.clear()
+
+
+@app.post("/api/stop-case")
+async def stop_case():
+    """Stop the currently running case processing and restart servers.
+    
+    This will kill both backend and frontend processes and restart them.
+    """
+    global cdss_instance, cdss_process_task, should_stop, cancellation_event
+    
+    # Clear all state before restarting
+    should_stop = True
+    cancellation_event.set()
+    
+    # Cancel and clear the current task
+    async with cdss_lock:
+        if cdss_process_task and not cdss_process_task.done():
+            cdss_process_task.cancel()
+            try:
+                await asyncio.wait_for(cdss_process_task, timeout=0.5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            cdss_process_task = None
+        
+        # Reset CDSS instance
+        if cdss_instance:
+            try:
+                cdss_instance.reset()
+            except Exception as e:
+                logger.warning(f"Error resetting CDSS instance: {e}")
+            cdss_instance = None
+    
+    # Send stop message to frontend before restarting
+    try:
+        await broadcast_message({
+            "type": "processing_stopped",
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.warning(f"Error sending stop message: {e}")
+    
+    # Get project root directory (parent of demos/)
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent  # Go up from server.py -> backend -> demos -> project root
+    restart_script = project_root / "restart_servers.ps1"
+    
+    if not restart_script.exists():
+        logger.error(f"Restart script not found at {restart_script}")
+        return {
+            "status": "error",
+            "message": f"Restart script not found at {restart_script}"
+        }
+    
+    # Execute restart script in background
+    # Use subprocess.Popen to run in background without blocking
+    try:
+        if sys.platform == "win32":
+            # Windows: Use PowerShell to run the script
+            subprocess.Popen(
+                ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(restart_script)],
+                cwd=str(project_root),
+                creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            logger.info("Restart script executed - servers will restart shortly")
+        else:
+            # Unix/Mac: Use bash
+            bash_script = project_root / "restart_servers.sh"
+            if bash_script.exists():
+                # Make script executable
+                os.chmod(str(bash_script), 0o755)
+                subprocess.Popen(
+                    ["bash", str(bash_script)],
+                    cwd=str(project_root),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                logger.info("Restart script executed - servers will restart shortly")
+            else:
+                logger.error(f"Restart script not found at {bash_script}")
+                return {
+                    "status": "error",
+                    "message": f"Restart script not found at {bash_script}"
+                }
+        
+        # Give a moment for the script to start, then this process will be killed
+        await asyncio.sleep(1)
+        
+        return {
+            "status": "success",
+            "message": "Servers are being restarted"
+        }
+    except Exception as e:
+        logger.error(f"Error executing restart script: {e}")
+        return {
+            "status": "error",
+            "message": f"Failed to restart servers: {str(e)}"
+        }
 
 
 if __name__ == "__main__":
