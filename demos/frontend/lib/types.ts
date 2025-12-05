@@ -66,6 +66,11 @@ export interface ProcessingCompleteMessage {
   timestamp: string;
 }
 
+export interface ProcessingStoppedMessage {
+  type: 'processing_stopped';
+  timestamp: string;
+}
+
 export interface ErrorMessage {
   type: 'error';
   message: string;
@@ -78,5 +83,6 @@ export type WebSocketMessage =
   | SummaryMessage 
   | ProcessingStartedMessage 
   | ProcessingCompleteMessage 
+  | ProcessingStoppedMessage
   | ErrorMessage;
 
