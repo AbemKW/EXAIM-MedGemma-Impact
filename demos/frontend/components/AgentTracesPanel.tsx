@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useMemo, useCallback, useState } from 'react';
-import { useAllAgents, useTotalWords } from '@/store/cdssStore';
+import { useAllAgents, useTotalWords, useActiveAgents } from '@/store/cdssStore';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ function getAgentColor(agentName: string): string {
 export default function AgentTracesPanel() {
   const agents = useAllAgents();
   const totalWords = useTotalWords();
+  const activeAgents = useActiveAgents();
   const consoleRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
   const [showGoToLatest, setShowGoToLatest] = useState(false);
@@ -222,12 +223,14 @@ export default function AgentTracesPanel() {
             <div className="console-logs">
               {agents.map((agent) => {
                 const agentColor = agentColors.get(agent.agentName) || '#60a5fa';
+                const isActive = activeAgents.has(agent.agentName);
                 return (
                   <ConsoleLogEntry
                     key={agent.id}
                     agentName={agent.agentName}
                     content={agent.fullText}
                     agentColor={agentColor}
+                    isActive={isActive}
                   />
                 );
               })}

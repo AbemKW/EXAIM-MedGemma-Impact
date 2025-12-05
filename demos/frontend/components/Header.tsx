@@ -1,12 +1,15 @@
 'use client';
 
-import { useWsStatus, useCDSSStore } from '@/store/cdssStore';
+import { useWsStatus, useCDSSStore, useActiveAgents } from '@/store/cdssStore';
 import { Badge } from '@/components/ui/badge';
 import Mascot from './Mascot';
+import TypingIndicator from './TypingIndicator';
 
 export default function Header() {
   const wsStatus = useWsStatus();
   const reconnectAttempts = useCDSSStore((state) => state.reconnectAttempts);
+  const activeAgents = useActiveAgents();
+  const activeAgentCount = activeAgents.size;
 
   const getStatusVariant = () => {
     switch (wsStatus) {
@@ -46,13 +49,24 @@ export default function Header() {
       <div className="flex items-center gap-4">
         <Mascot className="hidden md:block" />
         <div className="flex flex-col">
-          <h1 className="text-5xl font-bold text-primary tracking-tight" style={{ fontFamily: 'var(--font-inter), sans-serif' }}>EXAID</h1>
+          <h1 className="text-5xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-inter), sans-serif', color: 'oklch(0.75 0.15 260)' }}>EXAID</h1>
           <p className="text-base text-muted-foreground font-medium" style={{ fontFamily: 'var(--font-inter), sans-serif' }}>
             Clinical Decision Support System
           </p>
         </div>
       </div>
-      <div className="flex items-center">
+      <div className="flex items-center gap-3">
+        {activeAgentCount > 0 && (
+          <Badge
+            variant="secondary"
+            className="flex items-center gap-2 text-sm px-3 py-1 active-agents-badge"
+          >
+            <TypingIndicator />
+            <span className="font-medium">
+              {activeAgentCount} Agent{activeAgentCount !== 1 ? 's' : ''} Active
+            </span>
+          </Badge>
+        )}
         <Badge
           variant={getStatusVariant()}
           className="flex items-center gap-2 uppercase tracking-wide text-sm px-3 py-1"

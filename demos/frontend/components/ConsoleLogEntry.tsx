@@ -6,14 +6,20 @@ interface ConsoleLogEntryProps {
   agentName: string;
   content: string;
   agentColor: string;
+  isActive?: boolean;
 }
 
-function ConsoleLogEntry({ agentName, content, agentColor }: ConsoleLogEntryProps) {
+function ConsoleLogEntry({ agentName, content, agentColor, isActive = false }: ConsoleLogEntryProps) {
   return (
-    <div className="console-log-entry">
+    <div className={`console-log-entry ${isActive ? 'agent-active-glow' : ''}`}>
       <div 
         className="console-agent-label-sticky"
-        style={{ color: agentColor }}
+        style={{ 
+          color: agentColor,
+          ...(isActive && {
+            boxShadow: `0 0 12px ${agentColor}40, 0 0 24px ${agentColor}20`,
+          }),
+        }}
       >
         [{agentName}]
       </div>
