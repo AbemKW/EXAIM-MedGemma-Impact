@@ -19,6 +19,10 @@ interface CDSSState {
   
   // Word counting
   totalWords: number;
+  totalSummaryWords: number;
+  
+  // Active agents (currently streaming)
+  activeAgents: Set<string>;
   
   // Modal state
   modal: ModalState;
@@ -38,11 +42,23 @@ interface CDSSState {
 }
 
 // Helper function to count words in a string
+// Only counts actual content words, not labels or formatting
 function countWords(text: string): number {
-  if (!text || text.trim().length === 0) return 0;
-  // Split by whitespace and filter out empty strings
-  return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+  if (!text || typeof text !== 'string') return 0;
+  
+  // Trim whitespace and split by whitespace
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return 0;
+  
+  // Split by whitespace (spaces, tabs, newlines) and filter out empty strings
+  // This counts only the actual content words in the field value
+  const words = trimmed.split(/\s+/).filter(word => word.length > 0);
+  return words.length;
 }
+
+// Timeout map for active agent cleanup (outside Zustand store)
+const activeAgentTimeouts = new Map<string, NodeJS.Timeout>();
+const ACTIVE_AGENT_TIMEOUT_MS = 2000; // 2 seconds
 
 export const useCDSSStore = create<CDSSState>()(
   subscribeWithSelector((set, get) => ({
@@ -54,6 +70,8 @@ export const useCDSSStore = create<CDSSState>()(
     reconnectAttempts: 0,
     isProcessing: false,
     totalWords: 0,
+    totalSummaryWords: 0,
+    activeAgents: new Set<string>(),
     modal: {
       isOpen: false,
       agentId: null,
@@ -106,9 +124,33 @@ export const useCDSSStore = create<CDSSState>()(
             lastUpdate: new Date(),
           };
           const wordsInToken = countWords(token);
+          
+          // Track active agent
+          const newActiveAgents = new Set(currentState.activeAgents);
+          newActiveAgents.add(agentId);
+          
+          // Clear existing timeout for this agent
+          const existingTimeout = activeAgentTimeouts.get(agentId);
+          if (existingTimeout) {
+            clearTimeout(existingTimeout);
+          }
+          
+          // Set new timeout to remove agent from active set
+          const timeoutId = setTimeout(() => {
+            set((state) => {
+              const updatedActiveAgents = new Set(state.activeAgents);
+              updatedActiveAgents.delete(agentId);
+              activeAgentTimeouts.delete(agentId);
+              return { activeAgents: updatedActiveAgents };
+            });
+          }, ACTIVE_AGENT_TIMEOUT_MS);
+          
+          activeAgentTimeouts.set(agentId, timeoutId);
+          
           return { 
             agents: newAgents,
             totalWords: currentState.totalWords + wordsInToken,
+            activeAgents: newActiveAgents,
           };
         });
         return;
@@ -123,9 +165,33 @@ export const useCDSSStore = create<CDSSState>()(
           lastUpdate: new Date(),
         };
         const wordsInToken = countWords(token);
+        
+        // Track active agent
+        const newActiveAgents = new Set(currentState.activeAgents);
+        newActiveAgents.add(agentId);
+        
+        // Clear existing timeout for this agent
+        const existingTimeout = activeAgentTimeouts.get(agentId);
+        if (existingTimeout) {
+          clearTimeout(existingTimeout);
+        }
+        
+        // Set new timeout to remove agent from active set
+        const timeoutId = setTimeout(() => {
+          set((state) => {
+            const updatedActiveAgents = new Set(state.activeAgents);
+            updatedActiveAgents.delete(agentId);
+            activeAgentTimeouts.delete(agentId);
+            return { activeAgents: updatedActiveAgents };
+          });
+        }, ACTIVE_AGENT_TIMEOUT_MS);
+        
+        activeAgentTimeouts.set(agentId, timeoutId);
+        
         return { 
           agents: newAgents,
           totalWords: currentState.totalWords + wordsInToken,
+          activeAgents: newActiveAgents,
         };
       });
     },
@@ -140,6 +206,22 @@ export const useCDSSStore = create<CDSSState>()(
           isExpanded: true,
         };
         
+        // Calculate words in the new summary
+        // Only count words in the field values themselves, not labels or formatting
+        // Field values are plain strings containing only the content
+        const summaryFields = [
+          data.status_action,
+          data.key_findings,
+          data.differential_rationale,
+          data.uncertainty_confidence,
+          data.recommendation_next_step,
+          data.agent_contributions,
+        ];
+        const wordsInSummary = summaryFields.reduce((sum, field) => {
+          // countWords only counts actual content words in the field value string
+          return sum + countWords(field);
+        }, 0);
+        
         // Collapse all existing summaries
         const updatedSummaries = state.summaries.map(s => ({
           ...s,
@@ -150,6 +232,7 @@ export const useCDSSStore = create<CDSSState>()(
         return {
           summaries: [newSummary, ...updatedSummaries],
           summaryIdCounter: state.summaryIdCounter + 1,
+          totalSummaryWords: state.totalSummaryWords + wordsInSummary,
         };
       });
     },
@@ -223,11 +306,17 @@ export const useCDSSStore = create<CDSSState>()(
     
     // Reset state (called on processing_started)
     resetState: () => {
+      // Clear all active agent timeouts
+      activeAgentTimeouts.forEach((timeout) => clearTimeout(timeout));
+      activeAgentTimeouts.clear();
+      
       set({
         agents: [],
         summaries: [],
         summaryIdCounter: 0,
         totalWords: 0,
+        totalSummaryWords: 0,
+        activeAgents: new Set<string>(),
         modal: {
           isOpen: false,
           agentId: null,
@@ -265,5 +354,13 @@ export const useModal = () => {
 
 export const useTotalWords = () => {
   return useCDSSStore((state) => state.totalWords);
+};
+
+export const useTotalSummaryWords = () => {
+  return useCDSSStore((state) => state.totalSummaryWords);
+};
+
+export const useActiveAgents = () => {
+  return useCDSSStore((state) => state.activeAgents);
 };
 
