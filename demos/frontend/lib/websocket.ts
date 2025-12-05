@@ -124,19 +124,54 @@ class WebSocketService {
     };
 
     this.ws.onclose = (event) => {
-      console.log('WebSocket closed:', event.code, event.reason);
+      // Normal closure codes: 1000 (normal), 1001 (going away), 1006 (abnormal - no close frame)
+      const isNormalClose = event.code === 1000 || event.code === 1001;
+      const isAbnormalClose = event.code === 1006; // Common during server restarts
+      
+      if (isNormalClose) {
+        console.log('WebSocket closed normally');
+      } else if (isAbnormalClose) {
+        console.log('WebSocket closed abnormally (server may have restarted)');
+      } else {
+        console.log('WebSocket closed:', event.code, event.reason || 'No reason provided');
+      }
+      
       const store = useCDSSStore.getState();
       store.setWsStatus('disconnected');
       
+      // Clean up the WebSocket reference
+      this.ws = null;
+      
+      // Always attempt reconnection unless intentionally closed
+      // This handles server restarts gracefully
       if (!this.intentionalClose) {
         this.scheduleReconnect();
       }
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      // WebSocket errors are often not very informative, especially during server restarts
+      // Only log if there's actual error information
+      const errorInfo = error instanceof Error ? error.message : 
+                       (error && typeof error === 'object' && Object.keys(error).length > 0) ? error : null;
+      
+      if (errorInfo) {
+        console.warn('WebSocket error:', errorInfo);
+      } else {
+        // Silent error - likely just connection interruption during server restart
+        console.debug('WebSocket connection interrupted (likely server restart)');
+      }
+      
       const store = useCDSSStore.getState();
-      store.setWsStatus('error');
+      // Don't set error status immediately - let onclose handle reconnection
+      // This prevents showing error state during normal server restarts
+      if (this.ws?.readyState === WebSocket.CLOSED) {
+        store.setWsStatus('disconnected');
+        // Schedule reconnection if not intentional close
+        if (!this.intentionalClose) {
+          this.scheduleReconnect();
+        }
+      }
     };
 
     this.ws.onmessage = (event) => {
@@ -178,6 +213,11 @@ class WebSocketService {
         break;
 
       case 'processing_complete':
+        store.setProcessing(false);
+        break;
+
+      case 'processing_stopped':
+        store.resetState();
         store.setProcessing(false);
         break;
 
