@@ -68,7 +68,7 @@ export default function AgentWindowContent({
       className="flex-1 overflow-y-auto scroll-smooth p-4"
       style={{ scrollBehavior: 'smooth' }}
     >
-      <pre className="text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words">
+      <pre className="text-sm leading-loose font-medium text-foreground whitespace-pre-wrap break-words">
         {fullText || 'Waiting for traces...'}
       </pre>
     </div>
