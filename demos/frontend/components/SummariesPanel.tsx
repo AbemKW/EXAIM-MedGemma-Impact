@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useRef, useCallback, useState } from 'react';
+import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { useSummaries, useCDSSStore, useTotalWords, useTotalSummaryWords } from '@/store/cdssStore';
 import SummaryCard from './SummaryCard';
-import SummaryTimeline from './SummaryTimeline';
 import CompressionStats from './CompressionStats';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +32,17 @@ export default function SummariesPanel() {
     if (value) {
       // Expanding a summary - toggle it (which will collapse others)
       toggleSummary(value);
+      
+      // Scroll to ensure the expanded summary is fully visible
+      // Use multiple timeouts to account for accordion animation and DOM updates
+      setTimeout(() => {
+        scrollToSummary(value, true);
+      }, 400); // Wait for accordion animation to complete
+      
+      // Additional attempt after longer delay to ensure DOM is fully updated
+      setTimeout(() => {
+        scrollToSummary(value, true);
+      }, 600);
     } else {
       // Collapsing - find the currently expanded one and toggle it
       if (expandedSummary) {
@@ -41,55 +51,114 @@ export default function SummariesPanel() {
     }
   };
 
-  const handleTimelineDotClick = useCallback((summaryId: string) => {
-    // Always expand the summary (toggleSummary will expand if collapsed)
-    const isAlreadyExpanded = expandedSummary?.id === summaryId;
+  const scrollToSummary = useCallback((summaryId: string, ensureFullVisibility: boolean = false) => {
+    if (!contentRef.current) return;
     
-    if (!isAlreadyExpanded) {
-      toggleSummary(summaryId);
+    // Try ref first
+    let summaryElement = summaryRefsMap.current.get(summaryId);
+    
+    // Fallback: find by data attribute
+    if (!summaryElement && contentRef.current) {
+      const foundElement = contentRef.current.querySelector(`[data-summary-id="${summaryId}"]`) as HTMLDivElement;
+      if (foundElement) {
+        summaryElement = foundElement;
+      }
     }
     
-    // Function to perform the scroll - try multiple methods
-    const performScroll = () => {
-      if (!contentRef.current) return;
+    if (summaryElement && contentRef.current) {
+      const container = contentRef.current;
       
-      // Try ref first
-      let summaryElement = summaryRefsMap.current.get(summaryId);
-      
-      // Fallback: find by data attribute
-      if (!summaryElement && contentRef.current) {
-        const foundElement = contentRef.current.querySelector(`[data-summary-id="${summaryId}"]`) as HTMLDivElement;
-        if (foundElement) {
-          summaryElement = foundElement;
+      // Use requestAnimationFrame to ensure DOM has updated after accordion animation
+      requestAnimationFrame(() => {
+        if (!container || !summaryElement) return;
+        
+        // Calculate positions using offsetTop for more reliable measurements
+        let elementTop = summaryElement.offsetTop;
+        let currentElement: HTMLElement | null = summaryElement;
+        
+        // Walk up the DOM tree to account for all parent offsets
+        while (currentElement && currentElement !== container) {
+          const parent = currentElement.offsetParent as HTMLElement | null;
+          if (parent && parent !== container) {
+            elementTop += currentElement.offsetTop;
+          }
+          currentElement = parent;
         }
-      }
+        
+        // Account for padding
+        const topOffset = 16; // Padding offset
+        const containerHeight = container.clientHeight;
+        const elementHeight = summaryElement.offsetHeight;
+        const currentScrollTop = container.scrollTop;
+        
+        if (ensureFullVisibility) {
+          // Calculate the visible area
+          const visibleTop = currentScrollTop;
+          const visibleBottom = currentScrollTop + containerHeight;
+          const elementBottom = elementTop + elementHeight;
+          
+          // Check if summary is fully visible
+          const isFullyVisible = 
+            elementTop >= visibleTop + topOffset && 
+            elementBottom <= visibleBottom;
+          
+          if (!isFullyVisible) {
+            // If summary is taller than viewport, scroll to show top
+            if (elementHeight > containerHeight - topOffset) {
+              container.scrollTo({
+                top: Math.max(0, elementTop - topOffset),
+                behavior: 'smooth',
+              });
+            } else {
+              // Summary fits in viewport - ensure it's fully visible
+              // Check if we need to scroll up or down
+              if (elementTop < visibleTop + topOffset) {
+                // Summary starts above visible area - scroll to show top
+                container.scrollTo({
+                  top: Math.max(0, elementTop - topOffset),
+                  behavior: 'smooth',
+                });
+              } else if (elementBottom > visibleBottom) {
+                // Summary extends below visible area - scroll to show bottom
+                const targetScroll = elementBottom - containerHeight;
+                container.scrollTo({
+                  top: Math.max(0, targetScroll),
+                  behavior: 'smooth',
+                });
+              }
+            }
+          }
+        } else {
+          // Simple scroll to top of summary
+          container.scrollTo({
+            top: Math.max(0, elementTop - topOffset),
+            behavior: 'smooth',
+          });
+        }
+      });
+    }
+  }, []);
+
+
+  // Auto-scroll when a summary expands
+  useEffect(() => {
+    if (expandedSummary) {
+      // Wait for accordion animation and DOM updates
+      const timeoutId = setTimeout(() => {
+        scrollToSummary(expandedSummary.id, true);
+      }, 450);
       
-      if (summaryElement && contentRef.current) {
-        // Calculate position relative to scroll container
-        const containerRect = contentRef.current.getBoundingClientRect();
-        const elementRect = summaryElement.getBoundingClientRect();
-        const scrollTop = contentRef.current.scrollTop;
-        const elementTop = elementRect.top - containerRect.top + scrollTop;
-        
-        // Account for timeline and padding
-        const offset = 80; // Timeline height + padding
-        
-        contentRef.current.scrollTo({
-          top: Math.max(0, elementTop - offset),
-          behavior: 'smooth',
-        });
-      }
-    };
-    
-    // Wait for accordion animation to complete
-    // Use longer timeout if we need to expand, shorter if already expanded
-    const timeout = isAlreadyExpanded ? 100 : 500;
-    
-    setTimeout(performScroll, timeout);
-    
-    // Also try after a longer delay as fallback
-    setTimeout(performScroll, timeout + 300);
-  }, [toggleSummary, expandedSummary]);
+      // Additional attempt after longer delay
+      const timeoutId2 = setTimeout(() => {
+        scrollToSummary(expandedSummary.id, true);
+      }, 700);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        clearTimeout(timeoutId2);
+      };
+    }
+  }, [expandedSummary?.id, scrollToSummary]);
 
   return (
     <Card className="flex flex-col overflow-hidden h-full bg-card/30 backdrop-blur-xl border-white/10 glass-card">
@@ -129,12 +198,6 @@ export default function SummariesPanel() {
                 />
               </div>
             )}
-            <SummaryTimeline
-              summaries={summaries}
-              expandedSummaryId={expandedSummary?.id}
-              onDotClick={handleTimelineDotClick}
-              summaryRefs={new Map()} // Not used anymore but kept for compatibility
-            />
             <Accordion
               type="single"
               collapsible

@@ -98,11 +98,11 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({ summary, sho
           {/* Content - Expandable */}
           <AccordionContent>
             <CardContent className="pt-0 pb-4 px-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 items-start">
                 {fields.map((field, index) => (
                   <div 
                     key={index} 
-                    className="summary-field-group rounded-lg p-2.5 transition-all backdrop-blur-md border border-white/10 hover:border-white/20"
+                    className="summary-field-group rounded-lg p-2.5 transition-all backdrop-blur-md border border-white/10 hover:border-white/20 min-h-0"
                     style={{
                       borderLeft: `2px solid ${field.color}`,
                       backgroundColor: field.bgColor,
@@ -119,7 +119,7 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({ summary, sho
                     >
                       {field.label}
                     </div>
-                    <div className="text-sm text-foreground leading-relaxed font-normal" style={{ fontWeight: 400 }}>{field.value}</div>
+                    <div className="text-sm text-foreground leading-loose font-medium break-words" style={{ fontWeight: 500 }}>{field.value}</div>
                   </div>
                 ))}
               </div>
