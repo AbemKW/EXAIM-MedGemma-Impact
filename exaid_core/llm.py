@@ -16,13 +16,18 @@ groq_llm = ChatGroq(
     model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
 )
 
-# MAS LLM (Groq — streaming, Qwen3-32B)
+# MAS LLM (Groq — streaming)
 mas_llm = ChatGroq(
     api_key=os.getenv("GROQ_API_KEY"),
     model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
     streaming=True
 )
-
+# MAS LLM (Groq — streaming)
+# mas_llm = ChatGoogleGenerativeAI(
+#     model=os.getenv("LLM_MODEL_NAME", "gemini-2.5-pro"),
+#     google_api_key=os.getenv("LLM_API_KEY"),
+#     streaming=True
+# )
 # EXAID LLM (Gemini — strong reasoning)
 exaid_llm = ChatGoogleGenerativeAI(
     model=os.getenv("LLM_MODEL_NAME", "gemini-2.5-pro"),

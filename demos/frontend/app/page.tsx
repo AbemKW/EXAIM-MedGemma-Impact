@@ -21,23 +21,32 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden relative liquid-glass-bg">
-      <div className="max-w-[1800px] mx-auto px-6 py-4 flex flex-col gap-3 flex-1 min-h-0 w-full relative z-10">
-        {/* Header */}
-        <Header />
+    <div className="relative liquid-glass-bg">
+      {/* Fixed Header */}
+      <Header />
 
-        {/* Chat Input Section */}
-        <CaseInput />
+      {/* Scroll-Snap Container */}
+      <main className="snap-container h-screen overflow-y-auto">
+        {/* Section 1: Case Input - Full viewport height */}
+        <section className="snap-section h-screen pt-[var(--header-height)] flex items-center justify-center px-6">
+          <div className="w-full max-w-3xl">
+            <CaseInput />
+          </div>
+        </section>
 
-        {/* Main Panels Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
-          {/* Raw Agent Traces Panel */}
-          <AgentTracesPanel />
+        {/* Section 2: Reasoning Panels - Full viewport height */}
+        <section className="snap-section h-screen pt-[calc(var(--header-height)+1rem)] pb-4 px-6">
+          <div className="max-w-[1800px] mx-auto h-full">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+              {/* Raw Agent Traces Panel */}
+              <AgentTracesPanel />
 
-          {/* EXAID Summaries Panel */}
-          <SummariesPanel />
-        </div>
-      </div>
+              {/* EXAID Summaries Panel */}
+              <SummariesPanel />
+            </div>
+          </div>
+        </section>
+      </main>
 
       {/* Modal */}
       <AgentModal />

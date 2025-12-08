@@ -45,6 +45,8 @@
 
 :root {
   --radius: 0.5rem;
+  /* Header height for scroll-snap sections */
+  --header-height: 80px;
   /* Medical theme colors - dark mode with medical blue/teal accents */
   --background: oklch(0.09 0 0);
   --foreground: oklch(0.98 0 0);
@@ -163,10 +165,78 @@
   #__next {
     height: 100%;
   }
+  
+  /* Fixed header styles */
+  .fixed-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    height: var(--header-height);
+    background: oklch(0.09 0 0 / 0.85);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border-bottom: 1px solid oklch(0.24 0 0 / 0.5);
+  }
 }
 
 /* Console Panel Styling */
 @layer components {
+  /* Scroll-Snap Layout */
+  .snap-container {
+    scroll-snap-type: y mandatory;
+    scroll-padding-top: var(--header-height);
+    overscroll-behavior-y: contain;
+    /* Custom scrollbar styling */
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.30 0.08 260 / 0.4) transparent;
+  }
+  
+  .snap-container::-webkit-scrollbar {
+    width: 10px;
+  }
+  
+  .snap-container::-webkit-scrollbar-track {
+    background: oklch(0.12 0 0 / 0.3);
+    border-radius: 5px;
+    margin: 4px 0;
+  }
+  
+  .snap-container::-webkit-scrollbar-thumb {
+    background: linear-gradient(
+      180deg,
+      oklch(0.45 0.10 260 / 0.5),
+      oklch(0.40 0.08 180 / 0.5)
+    );
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  
+  .snap-container::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(
+      180deg,
+      oklch(0.50 0.12 260 / 0.7),
+      oklch(0.45 0.10 180 / 0.7)
+    );
+    background-clip: padding-box;
+  }
+  
+  .snap-container::-webkit-scrollbar-thumb:active {
+    background: linear-gradient(
+      180deg,
+      oklch(0.55 0.14 260 / 0.85),
+      oklch(0.50 0.12 180 / 0.85)
+    );
+    background-clip: padding-box;
+  }
+  
+  .snap-section {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+  
   .console-panel {
     background: var(--console-bg);
   }
@@ -730,6 +800,81 @@
     font-weight: 700;
     font-size: 0.9375rem;
     margin-left: 0.25rem;
+  }
+  
+  /* Spotlight Summary Styles */
+  .spotlight-section {
+    transition: max-height 0.3s ease-in-out, padding 0.3s ease-in-out;
+  }
+  
+  .spotlight-glow {
+    position: relative;
+    box-shadow: 
+      0 8px 32px 0 rgba(0, 0, 0, 0.4),
+      0 0 40px 0 oklch(0.50 0.08 180 / 0.2),
+      inset 0 1px 2px 0 rgba(255, 255, 255, 0.1);
+  }
+  
+  .spotlight-glow::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(
+      135deg,
+      oklch(0.50 0.08 180 / 0.3),
+      oklch(0.50 0.08 260 / 0.3),
+      oklch(0.50 0.08 180 / 0.3)
+    );
+    border-radius: inherit;
+    z-index: -1;
+    opacity: 0.6;
+    filter: blur(8px);
+    animation: spotlight-pulse 3s ease-in-out infinite;
+  }
+  
+  @keyframes spotlight-pulse {
+    0%, 100% {
+      opacity: 0.4;
+      filter: blur(8px);
+    }
+    50% {
+      opacity: 0.7;
+      filter: blur(12px);
+    }
+  }
+  
+  /* Smooth transitions for summary swaps */
+  .summary-swap-enter {
+    animation: summary-fade-in 0.3s ease-in-out;
+  }
+  
+  @keyframes summary-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .summary-swap-exit {
+    animation: summary-fade-out 0.3s ease-in-out;
+  }
+  
+  @keyframes summary-fade-out {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(10px);
+    }
   }
   
 }

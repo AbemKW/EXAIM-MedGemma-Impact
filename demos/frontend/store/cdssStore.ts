@@ -252,14 +252,25 @@ export const useCDSSStore = create<CDSSState>()(
       });
     },
     
-    // Toggle summary expand/collapse (accordion - only one expanded)
+    // Toggle summary expand/collapse (spotlight swap behavior)
     toggleSummary: (id: string) => {
       set((state) => {
+        // Find the currently expanded summary (in spotlight)
+        const currentSpotlight = state.summaries.find(s => s.isExpanded);
+        
+        // Find the summary being clicked
+        const clickedSummary = state.summaries.find(s => s.id === id);
+        
+        // If clicking the current spotlight, do nothing (or could collapse it)
+        if (currentSpotlight?.id === id) {
+          return { summaries: state.summaries };
+        }
+        
+        // Swap: expand clicked summary, collapse all others
         const updatedSummaries = state.summaries.map(summary => {
           if (summary.id === id) {
-            return { ...summary, isExpanded: !summary.isExpanded };
+            return { ...summary, isExpanded: true };
           }
-          // Collapse all others
           return { ...summary, isExpanded: false };
         });
         
