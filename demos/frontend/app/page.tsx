@@ -22,7 +22,7 @@ export default function Home() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden relative liquid-glass-bg">
-      <div className="max-w-[1800px] mx-auto px-6 py-4 flex flex-col gap-4 flex-1 min-h-0 w-full relative z-10">
+      <div className="max-w-[1800px] mx-auto px-6 py-4 flex flex-col gap-3 flex-1 min-h-0 w-full relative z-10">
         {/* Header */}
         <Header />
 
