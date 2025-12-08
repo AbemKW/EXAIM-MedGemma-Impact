@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class CardiologyAgent(DemoBaseAgent):
     """Cardiology specialist agent for cardiovascular assessment and recommendations"""
     
-    def __init__(self, agent_id: str = "CardiologyAgent", exaid: EXAID = None):
+    def __init__(self, agent_id: str = "Cardiology Agent", exaid: EXAID = None):
         super().__init__(agent_id, exaid)
         self.llm = mas_llm
         self.system_prompt = (

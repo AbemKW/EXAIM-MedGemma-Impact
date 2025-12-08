@@ -22,7 +22,7 @@ class OrchestratorAgent(DemoBaseAgent):
     in nodes.py orchestrator_node, which uses this agent's stream() method for LLM interaction.
     """
     
-    def __init__(self, agent_id: str = "OrchestratorAgent", exaid: EXAID = None):
+    def __init__(self, agent_id: str = "Orchestrator Agent", exaid: EXAID = None):
         super().__init__(agent_id, exaid)
         self.llm = mas_llm
         
