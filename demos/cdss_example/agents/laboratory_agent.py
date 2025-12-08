@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class LaboratoryAgent(DemoBaseAgent):
     """Laboratory specialist agent for lab result interpretation and recommendations"""
     
-    def __init__(self, agent_id: str = "LaboratoryAgent", exaid: EXAID = None):
+    def __init__(self, agent_id: str = "Laboratory Agent", exaid: EXAID = None):
         super().__init__(agent_id, exaid)
         self.llm = mas_llm
         self.system_prompt = (
