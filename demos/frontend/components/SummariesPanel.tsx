@@ -1,164 +1,33 @@
 'use client';
 
-import React, { useRef, useCallback, useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useSummaries, useCDSSStore, useTotalWords, useTotalSummaryWords } from '@/store/cdssStore';
 import SummaryCard from './SummaryCard';
 import CompressionStats from './CompressionStats';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Accordion } from '@/components/ui/accordion';
 
 export default function SummariesPanel() {
   const summaries = useSummaries();
   const totalWords = useTotalWords();
   const totalSummaryWords = useTotalSummaryWords();
   const toggleSummary = useCDSSStore((state) => state.toggleSummary);
-  const expandedSummary = summaries.find(s => s.isExpanded);
-  const contentRef = useRef<HTMLDivElement>(null);
   const [comparisonMode, setComparisonMode] = useState(false);
-  // Use a ref callback to maintain stable refs
-  const summaryRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
   
-  const setSummaryRef = useCallback((summaryId: string, element: HTMLDivElement | null) => {
-    if (element) {
-      summaryRefsMap.current.set(summaryId, element);
-    } else {
-      summaryRefsMap.current.delete(summaryId);
-    }
-  }, []);
-
-  const handleValueChange = (value: string) => {
-    if (value) {
-      // Expanding a summary - toggle it (which will collapse others)
-      toggleSummary(value);
-      
-      // Scroll to ensure the expanded summary is fully visible
-      // Use multiple timeouts to account for accordion animation and DOM updates
-      setTimeout(() => {
-        scrollToSummary(value, true);
-      }, 400); // Wait for accordion animation to complete
-      
-      // Additional attempt after longer delay to ensure DOM is fully updated
-      setTimeout(() => {
-        scrollToSummary(value, true);
-      }, 600);
-    } else {
-      // Collapsing - find the currently expanded one and toggle it
-      if (expandedSummary) {
-        toggleSummary(expandedSummary.id);
-      }
-    }
+  // Split summaries into spotlight and list
+  const spotlightSummary = summaries.find(s => s.isExpanded);
+  const listSummaries = summaries.filter(s => !s.isExpanded);
+  
+  // Debug logging
+  console.log('Total summaries:', summaries.length);
+  console.log('Spotlight summary:', spotlightSummary ? 'exists' : 'none');
+  console.log('List summaries count:', listSummaries.length);
+  console.log('All summaries expanded state:', summaries.map(s => ({ id: s.id, isExpanded: s.isExpanded })));
+  
+  const handleSummaryClick = (id: string) => {
+    toggleSummary(id);
   };
-
-  const scrollToSummary = useCallback((summaryId: string, ensureFullVisibility: boolean = false) => {
-    if (!contentRef.current) return;
-    
-    // Try ref first
-    let summaryElement = summaryRefsMap.current.get(summaryId);
-    
-    // Fallback: find by data attribute
-    if (!summaryElement && contentRef.current) {
-      const foundElement = contentRef.current.querySelector(`[data-summary-id="${summaryId}"]`) as HTMLDivElement;
-      if (foundElement) {
-        summaryElement = foundElement;
-      }
-    }
-    
-    if (summaryElement && contentRef.current) {
-      const container = contentRef.current;
-      
-      // Use requestAnimationFrame to ensure DOM has updated after accordion animation
-      requestAnimationFrame(() => {
-        if (!container || !summaryElement) return;
-        
-        // Calculate positions using offsetTop for more reliable measurements
-        let elementTop = summaryElement.offsetTop;
-        let currentElement: HTMLElement | null = summaryElement;
-        
-        // Walk up the DOM tree to account for all parent offsets
-        while (currentElement && currentElement !== container) {
-          const parent = currentElement.offsetParent as HTMLElement | null;
-          if (parent && parent !== container) {
-            elementTop += currentElement.offsetTop;
-          }
-          currentElement = parent;
-        }
-        
-        // Account for padding
-        const topOffset = 16; // Padding offset
-        const containerHeight = container.clientHeight;
-        const elementHeight = summaryElement.offsetHeight;
-        const currentScrollTop = container.scrollTop;
-        
-        if (ensureFullVisibility) {
-          // Calculate the visible area
-          const visibleTop = currentScrollTop;
-          const visibleBottom = currentScrollTop + containerHeight;
-          const elementBottom = elementTop + elementHeight;
-          
-          // Check if summary is fully visible
-          const isFullyVisible = 
-            elementTop >= visibleTop + topOffset && 
-            elementBottom <= visibleBottom;
-          
-          if (!isFullyVisible) {
-            // If summary is taller than viewport, scroll to show top
-            if (elementHeight > containerHeight - topOffset) {
-              container.scrollTo({
-                top: Math.max(0, elementTop - topOffset),
-                behavior: 'smooth',
-              });
-            } else {
-              // Summary fits in viewport - ensure it's fully visible
-              // Check if we need to scroll up or down
-              if (elementTop < visibleTop + topOffset) {
-                // Summary starts above visible area - scroll to show top
-                container.scrollTo({
-                  top: Math.max(0, elementTop - topOffset),
-                  behavior: 'smooth',
-                });
-              } else if (elementBottom > visibleBottom) {
-                // Summary extends below visible area - scroll to show bottom
-                const targetScroll = elementBottom - containerHeight;
-                container.scrollTo({
-                  top: Math.max(0, targetScroll),
-                  behavior: 'smooth',
-                });
-              }
-            }
-          }
-        } else {
-          // Simple scroll to top of summary
-          container.scrollTo({
-            top: Math.max(0, elementTop - topOffset),
-            behavior: 'smooth',
-          });
-        }
-      });
-    }
-  }, []);
-
-
-  // Auto-scroll when a summary expands
-  useEffect(() => {
-    if (expandedSummary) {
-      // Wait for accordion animation and DOM updates
-      const timeoutId = setTimeout(() => {
-        scrollToSummary(expandedSummary.id, true);
-      }, 450);
-      
-      // Additional attempt after longer delay
-      const timeoutId2 = setTimeout(() => {
-        scrollToSummary(expandedSummary.id, true);
-      }, 700);
-      
-      return () => {
-        clearTimeout(timeoutId);
-        clearTimeout(timeoutId2);
-      };
-    }
-  }, [expandedSummary?.id, scrollToSummary]);
 
   return (
     <Card className="flex flex-col overflow-hidden h-full bg-card/30 backdrop-blur-xl border-white/10 glass-card">
@@ -182,43 +51,86 @@ export default function SummariesPanel() {
         </div>
       </CardHeader>
 
-      {/* Panel Content */}
-      <CardContent className="flex-1 overflow-y-auto p-4 custom-scrollbar" ref={contentRef}>
+      {/* Panel Content - Split Layout */}
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0">
         {summaries.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8 text-base">
-            No summaries yet. Summaries will appear here as EXAID processes agent traces.
-          </p>
+          <CardContent className="flex-1 overflow-y-auto px-4 pt-2 pb-4">
+            <p className="text-muted-foreground text-center py-8 text-base">
+              No summaries yet. Summaries will appear here as EXAID processes agent traces.
+            </p>
+          </CardContent>
         ) : (
           <>
-            {comparisonMode && (
-              <div className="mb-4">
-                <CompressionStats
-                  totalWords={totalWords}
-                  summaryWords={totalSummaryWords}
-                />
+            {/* Spotlight Section - Fixed area at top with scrolling */}
+            {spotlightSummary && (
+              <div className="spotlight-section flex-shrink-0 px-4 pt-4 pb-2 overflow-y-auto custom-scrollbar" style={{ 
+                maxHeight: '45vh',
+                transition: 'all 0.3s ease-in-out'
+              }}>
+                {comparisonMode && (
+                  <div className="mb-3">
+                    <CompressionStats
+                      totalWords={totalWords}
+                      summaryWords={totalSummaryWords}
+                    />
+                  </div>
+                )}
+                <div className="mb-2">
+                  <div className="text-xs font-semibold text-teal-400 mb-2 uppercase tracking-wider flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 bg-teal-400 rounded-full animate-pulse"></span>
+                    Latest Summary
+                  </div>
+                  <SummaryCard
+                    key={spotlightSummary.id}
+                    summary={spotlightSummary}
+                    showComparison={comparisonMode}
+                    mode="spotlight"
+                  />
+                </div>
               </div>
             )}
-            <Accordion
-              type="single"
-              collapsible
-              value={expandedSummary?.id || undefined}
-              onValueChange={handleValueChange}
-              className="space-y-2 mt-4"
-            >
-              {summaries.map((summary) => {
-                return (
-                  <SummaryCard
-                    key={summary.id}
-                    ref={(el) => setSummaryRef(summary.id, el)}
-                    summary={summary}
-                    showComparison={comparisonMode}
-                  />
-                );
-              })}
-            </Accordion>
+
+            {/* Divider */}
+            {spotlightSummary && listSummaries.length > 0 && (
+              <div className="border-t border-white/10 mx-4 my-2"></div>
+            )}
+
+            {/* List Section - Scrollable */}
+            {listSummaries.length > 0 && (
+              <div className="flex-1 overflow-y-auto px-4 pt-2 pb-4 custom-scrollbar min-h-0" style={{ minHeight: '100px' }}>
+                <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+                  Previous Summaries ({listSummaries.length})
+                </div>
+                <div className="space-y-1.5">
+                  {listSummaries.map((summary) => (
+                    <SummaryCard
+                      key={summary.id}
+                      summary={summary}
+                      showComparison={comparisonMode}
+                      mode="list"
+                      onClick={() => handleSummaryClick(summary.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* If only spotlight exists, no list section */}
+            {spotlightSummary && listSummaries.length === 0 && (
+              <div className="flex-1 px-4 pb-4 flex items-center justify-center min-h-0">
+                <p className="text-muted-foreground text-center text-sm py-4">
+                  No previous summaries yet.
+                </p>
+              </div>
+            )}
+
+            {/* Debug info - remove this after testing */}
+            <div className="px-4 pb-2 text-xs text-yellow-400">
+              Debug: {summaries.length} total, {spotlightSummary ? '1' : '0'} spotlight, {listSummaries.length} in list
+            </div>
           </>
         )}
-      </CardContent>
+      </div>
     </Card>
   );
 }
