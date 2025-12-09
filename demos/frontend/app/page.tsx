@@ -5,8 +5,10 @@ import Header from '@/components/Header';
 import CaseInput from '@/components/CaseInput';
 import AgentTracesPanel from '@/components/AgentTracesPanel';
 import SummariesPanel from '@/components/SummariesPanel';
+import SummaryHistory from '@/components/SummaryHistory';
 import AgentModal from '@/components/AgentModal';
 import { getWebSocketService } from '@/lib/websocket';
+import { useCDSSStore } from '@/store/cdssStore';
 
 export default function Home() {
   const [currentPage, setCurrentPage] = useState(0);
@@ -14,6 +16,7 @@ export default function Home() {
   const containerRef = useRef<HTMLMainElement>(null);
   const wheelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastWheelTimeRef = useRef<number>(0);
+  const toggleSummary = useCDSSStore((state) => state.toggleSummary);
 
   // Initialize WebSocket connection on mount
   useEffect(() => {
@@ -55,7 +58,7 @@ export default function Home() {
       setIsTransitioning(true);
 
       let nextPage = currentPage;
-      if (delta > 0 && currentPage < 1) {
+      if (delta > 0 && currentPage < 2) {
         nextPage = currentPage + 1;
       } else if (delta < 0 && currentPage > 0) {
         nextPage = currentPage - 1;
@@ -103,7 +106,7 @@ export default function Home() {
           className="carousel-page h-screen flex items-center justify-center px-6"
           style={{ 
             paddingTop: 'var(--header-height)',
-            transform: `translateY(${currentPage === 0 ? '0' : '-100%'})`
+            transform: `translateY(${currentPage === 0 ? '0' : currentPage === 1 ? '-100%' : '-200%'})`
           }}
         >
           <div className="w-full max-w-3xl">
@@ -111,12 +114,12 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Section 2: Reasoning Panels */}
+        {/* Section 2: Live Reasoning Panels */}
         <section 
           className="carousel-page h-screen flex items-center px-6"
           style={{ 
             paddingTop: 'var(--header-height)',
-            transform: `translateY(${currentPage === 1 ? '0' : '100%'})`
+            transform: `translateY(${currentPage === 1 ? '0' : currentPage === 0 ? '100%' : '-100%'})`
           }}
         >
           <div className="max-w-[1800px] mx-auto w-full" style={{ height: 'calc(100vh - var(--header-height))' }}>
@@ -127,6 +130,27 @@ export default function Home() {
               {/* EXAID Summaries Panel */}
               <SummariesPanel />
             </div>
+          </div>
+        </section>
+
+        {/* Section 3: Summary Timeline */}
+        <section 
+          className="carousel-page h-screen flex items-center px-6"
+          style={{ 
+            paddingTop: 'var(--header-height)',
+            transform: `translateY(${currentPage === 2 ? '0' : '100%'})`
+          }}
+        >
+          <div className="max-w-[1800px] mx-auto w-full" style={{ height: 'calc(100vh - var(--header-height))' }}>
+            <SummaryHistory onSummarySelect={(summaryId) => {
+              // Expand the selected summary and navigate to Section 2
+              toggleSummary(summaryId);
+              setIsTransitioning(true);
+              setCurrentPage(1);
+              setTimeout(() => {
+                setIsTransitioning(false);
+              }, 300);
+            }} />
           </div>
         </section>
       </main>

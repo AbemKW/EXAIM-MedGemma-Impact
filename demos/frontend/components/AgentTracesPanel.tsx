@@ -190,6 +190,26 @@ export default function AgentTracesPanel() {
     return new Set(agents.map(a => a.agentName)).size;
   }, [agents]);
 
+  // Show only the latest 3-5 agent traces to fit without scrolling
+  // Prioritize active agents, then most recent
+  const visibleAgents = useMemo(() => {
+    if (agents.length === 0) return [];
+    
+    // Sort: active agents first, then by most recent
+    const sorted = [...agents].sort((a, b) => {
+      const aActive = activeAgents.has(a.agentName);
+      const bActive = activeAgents.has(b.agentName);
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+      return b.lastUpdate.getTime() - a.lastUpdate.getTime();
+    });
+    
+    // Return latest 5 traces max
+    return sorted.slice(0, 5);
+  }, [agents, activeAgents]);
+
+  const hasMoreTraces = agents.length > visibleAgents.length;
+
   return (
     <Card className="flex flex-col overflow-hidden h-full console-panel bg-card/30 backdrop-blur-xl border-white/10 glass-card">
       {/* Panel Header */}
@@ -207,64 +227,44 @@ export default function AgentTracesPanel() {
         </div>
       </CardHeader>
 
-      {/* Console Content */}
+      {/* Console Content - No scrolling, fit content */}
       <CardContent className="flex-1 overflow-hidden p-0 relative">
         <div
           ref={consoleRef}
-          className="console-container h-full overflow-y-auto"
+          className="console-container h-full overflow-hidden"
         >
           {agents.length === 0 ? (
-            <div className="console-empty p-8 text-center">
+            <div className="console-empty p-8 text-center h-full flex items-center justify-center">
               <p className="text-base" style={{ color: 'var(--console-text)', opacity: 0.6 }}>
                 No traces yet. Process a case to see verbose reasoning traces.
               </p>
             </div>
           ) : (
-            <div className="console-logs">
-              {agents.map((agent) => {
+            <div className="console-logs h-full overflow-hidden flex flex-col">
+              {visibleAgents.map((agent) => {
                 const agentColor = agentColors.get(agent.agentName) || '#60a5fa';
                 const isActive = activeAgents.has(agent.agentName);
                 return (
-                  <ConsoleLogEntry
-                    key={agent.id}
-                    agentName={agent.agentName}
-                    content={agent.fullText}
-                    agentColor={agentColor}
-                    isActive={isActive}
-                  />
+                  <div key={agent.id} className="flex-shrink-0">
+                    <ConsoleLogEntry
+                      agentName={agent.agentName}
+                      content={agent.fullText}
+                      agentColor={agentColor}
+                      isActive={isActive}
+                    />
+                  </div>
                 );
               })}
+              {hasMoreTraces && (
+                <div className="flex-shrink-0 p-4 text-center border-t border-white/10">
+                  <p className="text-sm text-muted-foreground">
+                    {agents.length - visibleAgents.length} more trace{agents.length - visibleAgents.length !== 1 ? 's' : ''} available in history
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
-        
-        {/* Go to Latest Button */}
-        {showGoToLatest && (
-          <div className="absolute bottom-4 right-4 z-20 animate-in fade-in slide-in-from-bottom-2 duration-200">
-            <Button
-              onClick={handleGoToLatest}
-              variant="default"
-              size="sm"
-              className="shadow-lg backdrop-blur-md bg-blue-600/90 hover:bg-blue-600 text-white border border-white/20 transition-all hover:scale-105"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 5v14" />
-                <path d="m19 12-7 7-7-7" />
-              </svg>
-              Go to Latest
-            </Button>
-          </div>
-        )}
       </CardContent>
     </Card>
   );
