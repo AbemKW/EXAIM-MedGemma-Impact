@@ -46,7 +46,7 @@
 :root {
   --radius: 0.5rem;
   /* Header height for scroll-snap sections */
-  --header-height: 80px;
+  --header-height: 100px;
   /* Medical theme colors - dark mode with medical blue/teal accents */
   --background: oklch(0.09 0 0);
   --foreground: oklch(0.98 0 0);
@@ -178,6 +178,7 @@
     backdrop-filter: blur(16px) saturate(180%);
     -webkit-backdrop-filter: blur(16px) saturate(180%);
     border-bottom: 1px solid oklch(0.24 0 0 / 0.5);
+    overflow: hidden;
   }
 }
 

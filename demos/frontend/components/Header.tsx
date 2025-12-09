@@ -2,7 +2,6 @@
 
 import { useWsStatus, useCDSSStore, useActiveAgents } from '@/store/cdssStore';
 import { Badge } from '@/components/ui/badge';
-import Mascot from './Mascot';
 import TypingIndicator from './TypingIndicator';
 
 export default function Header() {
@@ -47,14 +46,22 @@ export default function Header() {
   return (
     <header className="fixed-header flex items-center px-6">
       <div className="max-w-[1800px] w-full mx-auto flex justify-between items-center h-full">
-        <div className="flex items-center gap-4">
-          <Mascot className="hidden md:block" />
-          <div className="flex flex-col">
-            <h1 className="text-4xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-inter), sans-serif', color: 'oklch(0.75 0.15 260)' }}>EXAID</h1>
-            <p className="text-sm text-muted-foreground font-medium" style={{ fontFamily: 'var(--font-inter), sans-serif' }}>
-              Clinical Decision Support System
-            </p>
-          </div>
+        <div className="flex items-center gap-3">
+          <img
+            src="/EXAIDLogo.png"
+            alt="EXAID Logo"
+            width={200}
+            height={200}
+            className="object-contain"
+            style={{ display: 'block', flexShrink: 0 }}
+            onError={(e) => {
+              console.error('Failed to load logo:', e);
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+          <p className="text-sm text-muted-foreground font-medium" style={{ fontFamily: 'var(--font-inter), sans-serif', marginTop: '32px' }}>
+            A Real-Time Explainability Middleware
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {activeAgentCount > 0 && (

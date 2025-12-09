@@ -81,7 +81,7 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({
       >
         <Card className="overflow-hidden transition-all duration-300 border-white/20 bg-teal-950/30 backdrop-blur-xl shadow-2xl glass-card spotlight-glow">
           {/* Header */}
-          <CardHeader className="py-3 px-4 border-b border-white/10">
+          <CardHeader className="py-2 px-3 border-b border-white/10">
             <div className="flex justify-between items-center">
               <CardTitle className="text-base font-bold text-teal-100">
                 {summary.data.status_action}
@@ -93,12 +93,12 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({
           </CardHeader>
 
           {/* Full Content - Always Visible */}
-          <CardContent className="pt-3 pb-3 px-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 items-start">
+          <CardContent className="pt-2 pb-2 px-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 items-start">
               {fields.map((field, index) => (
                 <div 
                   key={index} 
-                  className="summary-field-group rounded-lg p-2 transition-all backdrop-blur-md border border-white/10 hover:border-white/20 min-h-0"
+                  className="summary-field-group rounded-lg p-1.5 transition-all backdrop-blur-md border border-white/10 hover:border-white/20 min-h-0"
                   style={{
                     borderLeft: `2px solid ${field.color}`,
                     backgroundColor: field.bgColor,
@@ -106,7 +106,7 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({
                   }}
                 >
                   <div 
-                    className="text-xs font-extrabold uppercase tracking-wider mb-1.5 leading-tight"
+                    className="text-xs font-extrabold uppercase tracking-wider mb-1 leading-tight"
                     style={{ 
                       color: field.color,
                       fontWeight: 800,
