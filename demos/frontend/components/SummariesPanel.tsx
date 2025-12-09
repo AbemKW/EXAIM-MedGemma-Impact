@@ -19,12 +19,6 @@ export default function SummariesPanel() {
   const spotlightSummary = summaries.find(s => s.isExpanded);
   const listSummaries = summaries.filter(s => !s.isExpanded);
   
-  // Debug logging
-  console.log('Total summaries:', summaries.length);
-  console.log('Spotlight summary:', spotlightSummary ? 'exists' : 'none');
-  console.log('List summaries count:', listSummaries.length);
-  console.log('All summaries expanded state:', summaries.map(s => ({ id: s.id, isExpanded: s.isExpanded })));
-  
   const handleSummaryClick = (id: string) => {
     toggleSummary(id);
   };
@@ -61,12 +55,9 @@ export default function SummariesPanel() {
           </CardContent>
         ) : (
           <>
-            {/* Spotlight Section - Fixed area at top with scrolling */}
+            {/* Spotlight Section - Takes available space, scrollable if needed */}
             {spotlightSummary && (
-              <div className="spotlight-section flex-shrink-0 px-4 pt-4 pb-2 overflow-y-auto custom-scrollbar" style={{ 
-                maxHeight: '45vh',
-                transition: 'all 0.3s ease-in-out'
-              }}>
+              <div className="spotlight-section flex-1 overflow-y-auto px-4 pt-4 pb-2 custom-scrollbar min-h-0">
                 {comparisonMode && (
                   <div className="mb-3">
                     <CompressionStats
@@ -92,12 +83,12 @@ export default function SummariesPanel() {
 
             {/* Divider */}
             {spotlightSummary && listSummaries.length > 0 && (
-              <div className="border-t border-white/10 mx-4 my-2"></div>
+              <div className="border-t border-white/10 mx-4 my-2 flex-shrink-0"></div>
             )}
 
-            {/* List Section - Scrollable */}
+            {/* List Section - Scrollable, only if there are previous summaries */}
             {listSummaries.length > 0 && (
-              <div className="flex-1 overflow-y-auto px-4 pt-2 pb-4 custom-scrollbar min-h-0" style={{ minHeight: '100px' }}>
+              <div className="flex-1 overflow-y-auto px-4 pt-2 pb-4 custom-scrollbar min-h-0" style={{ maxHeight: '40%' }}>
                 <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
                   Previous Summaries ({listSummaries.length})
                 </div>
@@ -117,17 +108,12 @@ export default function SummariesPanel() {
 
             {/* If only spotlight exists, no list section */}
             {spotlightSummary && listSummaries.length === 0 && (
-              <div className="flex-1 px-4 pb-4 flex items-center justify-center min-h-0">
+              <div className="flex-shrink-0 px-4 pb-4">
                 <p className="text-muted-foreground text-center text-sm py-4">
                   No previous summaries yet.
                 </p>
               </div>
             )}
-
-            {/* Debug info - remove this after testing */}
-            <div className="px-4 pb-2 text-xs text-yellow-400">
-              Debug: {summaries.length} total, {spotlightSummary ? '1' : '0'} spotlight, {listSummaries.length} in list
-            </div>
           </>
         )}
       </div>
