@@ -132,24 +132,31 @@ class EXAID:
 
         # Process chunk if complete
         if chunk:
-            return await self._process_chunk(agent_id, chunk)
+            summaries = self.get_all_summaries()
+            previous_summaries = self._format_summaries_history(summaries)
+            return await self._process_chunk(agent_id, chunk, previous_summaries, summaries)
 
         # Check TokenGate timers
         timer_chunk = await self.token_gate.check_timers(agent_id)
         if timer_chunk:
-            return await self._process_chunk(agent_id, timer_chunk)
+            summaries = self.get_all_summaries()
+            previous_summaries = self._format_summaries_history(summaries)
+            return await self._process_chunk(agent_id, timer_chunk, previous_summaries, summaries)
 
         return None
 
-    async def _process_chunk(self, agent_id: str, chunk: str) -> Optional[AgentSummary]:
+    async def _process_chunk(self, agent_id: str, chunk: str, previous_summaries: list[str], summaries: list[AgentSummary]) -> Optional[AgentSummary]:
         """Process a chunk of text for summarization."""
-        trigger = await self.buffer_agent.addchunk(agent_id, chunk)
+        trigger = await self.buffer_agent.addchunk(
+            agent_id,
+            chunk,
+            previous_summaries
+        )
         if trigger:
             agent_buffer = self.buffer_agent.flush()
             buffer_str = "\n".join(agent_buffer)
-            all_summaries = self.get_all_summaries()
-            summary_history_strs = self._format_summaries_history(all_summaries[:-1]) if len(all_summaries) > 1 else []
-            latest_summary_str = self._format_summary_for_history(all_summaries[-1]) if all_summaries else "No summaries yet."
+            summary_history_strs = self._format_summaries_history(summaries[:-1]) if len(summaries) > 1 else []
+            latest_summary_str = self._format_summary_for_history(summaries[-1]) if summaries else "No summaries yet."
             summary = await self.summarizer_agent.summarize(
                 summary_history_strs,
                 latest_summary_str,
@@ -173,5 +180,7 @@ class EXAID:
         """Flush remaining tokens for the given agent."""
         remaining = await self.token_gate.flush(agent_id)
         if remaining:
-            return await self._process_chunk(agent_id, remaining)
+            summaries = self.get_all_summaries()
+            previous_summaries = self._format_summaries_history(summaries)
+            return await self._process_chunk(agent_id, remaining, previous_summaries, summaries)
         return None
