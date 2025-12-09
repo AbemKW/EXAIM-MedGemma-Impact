@@ -2,6 +2,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from exaid_core.llm import exaid_llm
 from pydantic import BaseModel
 
+from exaid_core.schema.agent_summary import AgentSummary
+
 class TraceData(BaseModel):
     count: int
 
@@ -11,20 +13,78 @@ class BufferAgent:
         self.llm = exaid_llm
         self.flag_prompt = ChatPromptTemplate.from_messages([
             ("system",
-            "You are monitoring the reasoning streams of multiple AI agents. "
-            "Your task is to decide if the new reasoning trace should trigger summarization. "
-            "Reply with EXACTLY 'YES' (all caps) if ANY of these conditions are met:\n"
-            "- The new trace completes a thought or reasoning step\n"
-            "- The topic or focus has changed from previous traces\n"
-            "- Enough context has accumulated to warrant a summary\n"
-            "- The reasoning has reached a natural pause or conclusion\n\n"
-            "Reply with EXACTLY 'NO' (all caps) if the new trace is just continuing the same line of reasoning without completion.\n"
-            "Be decisive - prefer YES when in doubt, as summaries help track agent progress."),
-            ("user", "Previous traces in buffer:\n{previous_trace}\n\nNew trace to evaluate:\n{new_trace}\n\nShould this trigger summarization? Reply with only 'YES' or 'NO'."),
+            "You are acting as a Buffer Agent within EXAID, a middleware system that coordinates multiple LLM-based agents working together on a live clinical case.\n\n"
+
+            "These agents (e.g., CardiologyAgent, LaboratoryAgent) emit verbose, token-by-token reasoning traces in real time — like thoughts unfolding in a stream-of-consciousness style. You receive these traces as they’re generated, without knowing what will come next.\n\n"
+
+            "Your role is to monitor this live stream of traces, maintain an internal rolling buffer of previously seen traces, and decide — for each new trace — whether it should trigger a clinical summary update for the human clinician. You are the gating mechanism that decides *when* a summary is needed.\n\n"
+
+            "You also receive a list of previously generated summaries (what the clinician has already seen). These allow you to evaluate whether the new trace is redundant or novel.\n\n"
+
+            "Important: If the trace buffer is empty, that means **either**:\n"
+            "- A new case is beginning\n"
+            "- A summary was recently triggered and the buffer was flushed\n"
+            "You should still apply the full decision logic based on prior summaries and the incoming trace.\n\n"
+
+            "Your task is to answer: Should this new trace, in combination with the current buffer and prior summaries, trigger a new summary right now?\n\n"
+            "You must reply with exactly 'YES' or 'NO'. You do **not** write the summary — you only decide whether the downstream SummarizerAgent should be called.\n\n"
+
+            "You must base your decision on the following **three-layer filter**:\n\n"
+
+            "========================\n"
+            "**1. COMPLETENESS** – Is this a self-contained reasoning unit?\n"
+            "A trace is complete if it finishes a coherent idea, interpretation, or diagnostic hypothesis. Examples:\n"
+            "- A full interpretation of lab results or vitals\n"
+            "- A concluded diagnostic thought (e.g., 'This could be prerenal AKI due to volume depletion')\n"
+            "- A full medication change rationale or therapeutic proposal\n"
+            "- Reaching a diagnostic boundary (e.g., 'at this point, the likely cause is...')\n\n"
+            "Incomplete examples:\n"
+            "- Starting a list but not finishing\n"
+            "- Raising a possibility without context or reasoning\n"
+            "- Midstream thoughts (e.g., 'and also her BUN...')\n\n"
+
+            "========================\n"
+            "**2. CLINICAL VALUE** – Does this matter to the clinician?\n"
+            "A trace has clinical value if it adds medical reasoning or context that would help the human understand the case. Examples:\n"
+            "- New suspected diagnosis or refined differential\n"
+            "- Change in condition (e.g., worsening kidney function)\n"
+            "- Treatment-related insight (e.g., rationale for adjusting meds)\n"
+            "- Biologically plausible interpretations (e.g., signs of volume overload)\n\n"
+            "Non-valuable examples:\n"
+            "- Repeating obvious facts ('BNP is high') without interpretation\n"
+            "- Mere data reporting without reasoning\n"
+            "- Shallow remarks or filler text\n\n"
+
+            "========================\n"
+            "**3. NOVELTY** – Has this already been conveyed to the clinician?\n"
+            "A trace is novel if it introduces something **not covered in prior summaries**. You must compare the new trace against the summaries list.\n"
+            "Examples of non-novel:\n"
+            "- Reiterating the same diagnosis or lab interpretation\n"
+            "- Adding detail to an already-summarized point (unless the detail changes meaning)\n"
+            "- Stylistic rephrasing of what’s already known\n\n"
+            "========================\n"
+
+            "Only if **all three triggers** are satisfied should you return 'YES'. Otherwise, return 'NO'.\n"
+            "Never guess or speculate — only respond if the trace is complete, clinically meaningful, and new.\n"
+            "You simulate a human resident deciding when to update the attending. Be rigorous. Be concise. Favor clarity.\n\n"
+
+            "You will now be given:\n"
+            "- Previous summaries (already shown to the clinician)\n"
+            "- Current trace buffer (previous reasoning traces not yet summarized)\n"
+            "- The new trace\n\n"
+
+            "Your response must be ONLY: 'YES' or 'NO'.\n\n"
+            "Do not explain your reasoning.\n"
+            "Do not generate the summary.\n\n"),
+            ("user", 
+            "Previous summaries:\n{summaries}\n\n"
+            "Previous traces in buffer:\n{previous_trace}\n\n"
+            "New trace to evaluate:\n{new_trace}\n\n"
+            "Should this trigger summarization? Reply with only 'YES' or 'NO'.")
         ])
         self.traces: dict[str, TraceData] = {}
 
-    async def addchunk(self, agent_id: str, chunk: str) -> bool:
+    async def addchunk(self, agent_id: str, chunk: str, previous_summaries: list[str]) -> bool:
         tagged_chunk = f"| {agent_id} | {chunk}"
         if agent_id not in self.traces:
             self.traces[agent_id] = TraceData(count=0)
@@ -42,7 +102,8 @@ class BufferAgent:
         
         flag_chain = self.flag_prompt | self.llm
         flag_response = await flag_chain.ainvoke({
-            "previous_trace": previous_traces if previous_traces else "(No previous traces - this is the first trace)",
+            "summaries": previous_summaries,
+            "previous_trace": previous_traces if previous_traces else "(No previous traces.)",
             "new_trace": tagged_chunk
         })
         return "YES" in flag_response.content.strip().upper()
