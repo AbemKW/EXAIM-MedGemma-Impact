@@ -79,26 +79,26 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({
         transition={{ duration: 0.3 }}
         data-summary-id={summary.id}
       >
-        <Card className="overflow-hidden transition-all duration-300 border-white/20 bg-teal-950/30 backdrop-blur-xl shadow-2xl glass-card spotlight-glow">
+        <Card className="overflow-hidden transition-all duration-300 border-white/20 bg-teal-950/30 backdrop-blur-xl shadow-2xl glass-card spotlight-glow h-full flex flex-col">
           {/* Header */}
-          <CardHeader className="py-2 px-3 border-b border-white/10">
+          <CardHeader className="py-1.5 px-2 border-b border-white/10 flex-shrink-0">
             <div className="flex justify-between items-center">
-              <CardTitle className="text-base font-bold text-teal-100">
+              <CardTitle className="text-sm font-bold text-teal-100 leading-tight">
                 {summary.data.status_action}
               </CardTitle>
-              <span className="text-xs text-muted-foreground font-medium">
+              <span className="text-xs text-muted-foreground font-medium flex-shrink-0 ml-2">
                 {formatTime(summary.timestamp)}
               </span>
             </div>
           </CardHeader>
 
           {/* Full Content - Always Visible */}
-          <CardContent className="pt-2 pb-2 px-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 items-start">
+          <CardContent className="pt-0.5 pb-1 px-2 flex-1 overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1 items-start h-full">
               {fields.map((field, index) => (
                 <div 
                   key={index} 
-                  className="summary-field-group rounded-lg p-1.5 transition-all backdrop-blur-md border border-white/10 hover:border-white/20 min-h-0"
+                  className="summary-field-group rounded-lg p-1 transition-all backdrop-blur-md border border-white/10 hover:border-white/20 min-h-0"
                   style={{
                     borderLeft: `2px solid ${field.color}`,
                     backgroundColor: field.bgColor,
@@ -106,7 +106,7 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({
                   }}
                 >
                   <div 
-                    className="text-xs font-extrabold uppercase tracking-wider mb-1 leading-tight"
+                    className="text-xs font-extrabold uppercase tracking-wider mb-0.5 leading-tight"
                     style={{ 
                       color: field.color,
                       fontWeight: 800,

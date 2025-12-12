@@ -21,7 +21,7 @@ function ConsoleLogEntry({ agentName, content, agentColor, isActive = false }: C
           }),
         }}
       >
-        [{agentName}]
+        {agentName}
       </div>
       <div className="console-content-wrapper">
         <span className="console-content">{content}</span>

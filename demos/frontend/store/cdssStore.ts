@@ -28,8 +28,8 @@ interface CDSSState {
   modal: ModalState;
   
   // Actions
-  startNewAgent: (agentId: string) => void;
-  addToken: (agentId: string, token: string) => void;
+  startNewAgent: (agentId: string, runId: string) => void;
+  addToken: (agentId: string, runId: string | null, token: string) => void;
   addSummary: (data: SummaryData, timestamp: Date) => void;
   toggleAgent: (cardId: string) => void;
   toggleSummary: (id: string) => void;
@@ -79,11 +79,12 @@ export const useCDSSStore = create<CDSSState>()(
     },
     
     // Start a new agent invocation (creates new card)
-    startNewAgent: (agentId: string) => {
+    startNewAgent: (agentId: string, runId: string) => {
       set((state) => {
         const newCard: AgentTrace = {
           id: `${agentId}_${state.agents.length}_${Date.now()}`,  // Unique ID for React key
           agentName: agentId,              // Base name for display
+          runId: runId,                    // Unique run ID for this invocation
           fullText: '',
           isExpanded: false,
           lastUpdate: new Date(),
@@ -97,19 +98,30 @@ export const useCDSSStore = create<CDSSState>()(
     },
     
     // Add token immediately - no batching, streams token-by-token
-    addToken: (agentId: string, token: string) => {
+    addToken: (agentId: string, runId: string | null, token: string) => {
       const state = get();
       
-      // Find the most recent card for this agent (first match in array)
-      const cardIndex = state.agents.findIndex(a => a.agentName === agentId);
+      // Find the card matching both agent name and run_id
+      // If runId is provided, match by it; otherwise fall back to most recent card for this agent
+      let cardIndex = -1;
+      if (runId) {
+        cardIndex = state.agents.findIndex(a => a.agentName === agentId && a.runId === runId);
+      }
+      
+      // Fallback: if no runId match or runId is null, use most recent card for this agent
+      if (cardIndex === -1) {
+        cardIndex = state.agents.findLastIndex(a => a.agentName === agentId);
+      }
       
       if (cardIndex === -1) {
         // No card exists for this agent. This may indicate a missing agent_started message or a race condition.
-        console.warn(`No active card found for agent '${agentId}'. This may indicate a missing agent_started message or a race condition. Auto-creating card to prevent token loss.`);
-        get().startNewAgent(agentId);
-        // After creating, retrieve the most recent card for this agent
+        console.warn(`No active card found for agent '${agentId}'${runId ? ` with run_id '${runId}'` : ''}. This may indicate a missing agent_started message or a race condition. Auto-creating card to prevent token loss.`);
+        // Generate a run_id if not provided
+        const newRunId = runId || `${agentId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        get().startNewAgent(agentId, newRunId);
+        // After creating, retrieve the card we just created
         const updatedState = get();
-        const updatedCardIndex = updatedState.agents.findIndex(a => a.agentName === agentId);
+        const updatedCardIndex = updatedState.agents.findIndex(a => a.agentName === agentId && a.runId === newRunId);
         if (updatedCardIndex === -1) {
           // Still not found, abort
           console.error(`Failed to auto-create card for agent '${agentId}'. Token will be lost.`);

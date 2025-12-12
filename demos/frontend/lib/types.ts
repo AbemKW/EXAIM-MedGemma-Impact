@@ -3,6 +3,7 @@
 export interface AgentTrace {
   id: string;  // Unique ID for React key
   agentName: string;  // Base agent name for display
+  runId: string | null;  // Unique run ID for this agent invocation
   fullText: string;
   isExpanded: boolean;
   lastUpdate: Date;
@@ -40,12 +41,14 @@ export interface CaseRequest {
 export interface AgentStartedMessage {
   type: 'agent_started';
   agent_id: string;
+  run_id: string;  // Unique run ID for this agent invocation
   timestamp: string;
 }
 
 export interface TokenMessage {
   type: 'token';
   agent_id: string;
+  run_id: string | null;  // Run ID to match token to correct card
   token: string;
   timestamp: string;
 }
