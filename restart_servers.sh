@@ -34,12 +34,17 @@ echo "🚀 Starting EXAID servers..."
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$SCRIPT_DIR"
 
+# Create logs directory if it doesn't exist
+LOGS_DIR="$PROJECT_ROOT/logs"
+mkdir -p "$LOGS_DIR"
+
 # Start backend in background
 echo "Starting backend server..."
 cd "$PROJECT_ROOT"
-python3 "demos/backend/server.py" > /dev/null 2>&1 &
+python3 "demos/backend/server.py" > "$LOGS_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo "Backend started (PID: $BACKEND_PID)"
+echo "Backend logs: $LOGS_DIR/backend.log"
 
 # Wait a moment for backend to start
 sleep 3
@@ -47,11 +52,16 @@ sleep 3
 # Start frontend in background
 echo "Starting frontend server..."
 cd "$PROJECT_ROOT/demos/frontend"
-npm run dev > /dev/null 2>&1 &
+npm run dev > "$LOGS_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo "Frontend started (PID: $FRONTEND_PID)"
+echo "Frontend logs: $LOGS_DIR/frontend.log"
 
 echo "✅ Servers restarted!"
 echo "Backend: http://localhost:8000"
 echo "Frontend: http://localhost:3000"
+echo ""
+echo "View logs:"
+echo "  Backend:  tail -f $LOGS_DIR/backend.log"
+echo "  Frontend: tail -f $LOGS_DIR/frontend.log"
 
