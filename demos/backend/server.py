@@ -3,8 +3,9 @@ import logging
 import subprocess
 import sys
 import os
+import uuid
 from pathlib import Path
-from typing import List
+from typing import List, Dict
 from datetime import datetime
 from contextlib import asynccontextmanager
 
@@ -52,6 +53,11 @@ app.add_middleware(
 active_connections: List[WebSocket] = []
 # Lock for synchronizing access to active_connections
 connections_lock = asyncio.Lock()
+
+# Track active run IDs per agent (agent_id -> run_id)
+# This allows us to associate tokens with the correct agent invocation
+active_run_ids: Dict[str, str] = {}
+run_ids_lock = asyncio.Lock()
 
 
 async def get_active_connections() -> List[WebSocket]:
@@ -104,14 +110,26 @@ async def send_token_direct(agent_id: str, token: str):
     """Send token directly to WebSocket clients without queuing.
     
     This bypasses the message queue for immediate token-by-token delivery.
+    Includes the active run_id for this agent to ensure tokens are routed
+    to the correct agent invocation card.
     """
     connections = await get_active_connections()
     if not connections:
         return
     
+    # Look up the active run_id for this agent
+    async with run_ids_lock:
+        run_id = active_run_ids.get(agent_id)
+    
+    # If no run_id found, log warning but still send token
+    # (frontend will handle gracefully)
+    if not run_id:
+        logger.warning(f"No active run_id found for agent '{agent_id}'. Token may be routed incorrectly.")
+    
     message = {
         "type": "token",
         "agent_id": agent_id,
+        "run_id": run_id,  # Include run_id to match tokens to correct card
         "token": token,
         "timestamp": datetime.now().isoformat()
     }
@@ -172,7 +190,8 @@ async def send_agent_started(agent_id: str):
     """Send agent_started message to create a new card in the UI.
     
     This should be called before each agent invocation to signal that
-    a new reasoning session is beginning.
+    a new reasoning session is beginning. Generates a unique run_id
+    for this invocation to track tokens correctly.
     
     Args:
         agent_id: The base agent identifier (e.g., 'OrchestratorAgent')
@@ -181,9 +200,17 @@ async def send_agent_started(agent_id: str):
     if not connections:
         return
     
+    # Generate a unique run_id for this agent invocation
+    run_id = str(uuid.uuid4())
+    
+    # Store the active run_id for this agent
+    async with run_ids_lock:
+        active_run_ids[agent_id] = run_id
+    
     message = {
         "type": "agent_started",
         "agent_id": agent_id,
+        "run_id": run_id,
         "timestamp": datetime.now().isoformat()
     }
     
@@ -235,9 +262,17 @@ def trace_callback(agent_id: str, token: str):
     except RuntimeError:
         # No running event loop - unexpected but log warning and fallback to queue
         logger.warning(f"No running event loop in trace_callback for agent {agent_id} - using queue fallback")
+        # Look up the active run_id for this agent (synchronous access for fallback)
+        run_id = None
+        try:
+            # Try to get run_id synchronously (may not be perfect but better than nothing)
+            run_id = active_run_ids.get(agent_id)
+        except:
+            pass
         message = {
             "type": "token",
             "agent_id": agent_id,
+            "run_id": run_id,  # Include run_id to match tokens to correct card
             "token": token,
             "timestamp": datetime.now().isoformat()
         }
@@ -245,9 +280,17 @@ def trace_callback(agent_id: str, token: str):
     except Exception as e:
         # Fallback to queue if direct send fails
         logger.warning(f"Error sending token directly, falling back to queue: {e}")
+        # Look up the active run_id for this agent (synchronous access for fallback)
+        run_id = None
+        try:
+            # Try to get run_id synchronously (may not be perfect but better than nothing)
+            run_id = active_run_ids.get(agent_id)
+        except:
+            pass
         message = {
             "type": "token",
             "agent_id": agent_id,
+            "run_id": run_id,  # Include run_id to match tokens to correct card
             "token": token,
             "timestamp": datetime.now().isoformat()
         }
@@ -409,6 +452,10 @@ async def process_case(request: CaseRequest):
             # Register summary callback with EXAID
             cdss_instance.exaid.register_summary_callback(summary_callback)
             logger.debug(f"Summary callback registered. Callbacks: {len(cdss_instance.exaid.summary_callbacks)}")
+            
+            # Clear active run IDs when starting a new case
+            async with run_ids_lock:
+                active_run_ids.clear()
             
             # Send start message
             await broadcast_message({

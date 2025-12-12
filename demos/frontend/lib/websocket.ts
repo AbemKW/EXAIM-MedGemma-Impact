@@ -192,19 +192,22 @@ class WebSocketService {
 
     switch (message.type) {
       case 'agent_started':
-        // Create a new card for this agent invocation
-        store.startNewAgent(message.agent_id);
+        // Create a new card for this agent invocation with the provided run_id
+        store.startNewAgent(message.agent_id, message.run_id);
         break;
 
       case 'token':
-        store.addToken(message.agent_id, message.token);
+        // Add token to the card matching the run_id
+        store.addToken(message.agent_id, message.run_id, message.token);
         break;
 
       case 'summary':
+        console.log('WebSocket: Received summary message', message);
         store.addSummary(
           message.summary_data as SummaryData,
           new Date(message.timestamp)
         );
+        console.log('WebSocket: Summary added to store');
         break;
 
       case 'processing_started':

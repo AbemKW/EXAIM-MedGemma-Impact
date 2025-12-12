@@ -15,12 +15,19 @@ export default function SummariesPanel() {
   const [comparisonMode, setComparisonMode] = useState(false);
   
   // Get only the spotlight summary (latest/expanded)
-  const spotlightSummary = summaries.find(s => s.isExpanded) || summaries[0];
+  // Prioritize expanded summary, otherwise use the first (newest) summary
+  const spotlightSummary = React.useMemo(() => {
+    const expanded = summaries.find(s => s.isExpanded);
+    if (expanded) return expanded;
+    // If no expanded summary, use the first one (newest, since they're added at the beginning)
+    return summaries.length > 0 ? summaries[0] : null;
+  }, [summaries]);
   
   // Debug: Log summaries state
   React.useEffect(() => {
-    console.log('SummariesPanel - summaries:', summaries.length);
-    console.log('SummariesPanel - spotlightSummary:', spotlightSummary?.id);
+    console.log('SummariesPanel - Total summaries:', summaries.length);
+    console.log('SummariesPanel - Summaries:', summaries.map(s => ({ id: s.id, isExpanded: s.isExpanded })));
+    console.log('SummariesPanel - Spotlight summary:', spotlightSummary?.id);
   }, [summaries, spotlightSummary]);
 
   return (
@@ -54,22 +61,22 @@ export default function SummariesPanel() {
             </p>
           </CardContent>
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden px-4 pt-2 pb-2">
+          <div className="flex-1 flex flex-col overflow-hidden px-3 pt-1 pb-1">
             {comparisonMode && (
-              <div className="mb-2 flex-shrink-0">
+              <div className="mb-1 flex-shrink-0">
                 <CompressionStats
                   totalWords={totalWords}
                   summaryWords={totalSummaryWords}
                 />
               </div>
             )}
-            <div className="mb-1 flex-shrink-0">
+            <div className="mb-0.5 flex-shrink-0">
               <div className="text-xs font-semibold text-teal-400 uppercase tracking-wider flex items-center gap-2">
                 <span className="inline-block w-2 h-2 bg-teal-400 rounded-full animate-pulse"></span>
                 Latest Summary
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+            <div className="flex-1 overflow-hidden min-h-0">
               <SummaryCard
                 key={spotlightSummary.id}
                 summary={spotlightSummary}

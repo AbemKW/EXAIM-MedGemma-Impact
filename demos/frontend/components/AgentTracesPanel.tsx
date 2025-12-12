@@ -29,7 +29,6 @@ export default function AgentTracesPanel() {
   const consoleRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
   const [showGoToLatest, setShowGoToLatest] = useState(false);
-  const userScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Create a map of agent colors for consistency
   const agentColors = useMemo(() => {
@@ -43,7 +42,7 @@ export default function AgentTracesPanel() {
   }, [agents]);
 
   // Check if user is at the bottom of the scroll container
-  const isAtBottom = useCallback((element: HTMLDivElement, threshold = 150): boolean => {
+  const isAtBottom = useCallback((element: HTMLDivElement, threshold = 50): boolean => {
     const { scrollTop, scrollHeight, clientHeight } = element;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     return distanceFromBottom <= threshold;
@@ -76,7 +75,6 @@ export default function AgentTracesPanel() {
     const container = consoleRef.current;
     if (!container) return;
 
-    let isUserScrolling = false;
     let scrollCheckTimeout: NodeJS.Timeout | null = null;
 
     const handleScroll = () => {
@@ -91,9 +89,8 @@ export default function AgentTracesPanel() {
       // Check if user is at bottom
       const atBottom = isAtBottom(container);
       
-      // If user scrolls away from bottom, disable auto-scroll
+      // If user scrolls away from bottom, disable auto-scroll and show button
       if (!atBottom) {
-        isUserScrolling = true;
         shouldAutoScrollRef.current = false;
         setShowGoToLatest(true);
       } else {
@@ -102,9 +99,8 @@ export default function AgentTracesPanel() {
           if (container && isAtBottom(container)) {
             shouldAutoScrollRef.current = true;
             setShowGoToLatest(false);
-            isUserScrolling = false;
           }
-        }, 300);
+        }, 200);
       }
     };
 
@@ -133,12 +129,13 @@ export default function AgentTracesPanel() {
     let timeoutId: NodeJS.Timeout | null = null;
     
     const observer = new MutationObserver(() => {
-      // Clear any pending scrolls
-      if (rafId) cancelAnimationFrame(rafId);
-      if (timeoutId) clearTimeout(timeoutId);
-      
-      // Only scroll to bottom if auto-scroll is enabled
-      if (shouldAutoScrollRef.current) {
+      // Only scroll if auto-scroll is enabled and user is at bottom
+      if (shouldAutoScrollRef.current && isAtBottom(container)) {
+        // Clear any pending scrolls
+        if (rafId) cancelAnimationFrame(rafId);
+        if (timeoutId) clearTimeout(timeoutId);
+        
+        // Use double RAF to ensure DOM has updated
         rafId = requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             scrollToBottom();
@@ -150,7 +147,7 @@ export default function AgentTracesPanel() {
         timeoutId = setTimeout(() => {
           scrollToBottom();
           timeoutId = null;
-        }, 50);
+        }, 10);
       }
     });
 
@@ -165,50 +162,61 @@ export default function AgentTracesPanel() {
       if (rafId) cancelAnimationFrame(rafId);
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [scrollToBottom]);
+  }, [scrollToBottom, isAtBottom]);
 
   // Trigger scroll when content actually changes - only if auto-scroll is enabled
   useEffect(() => {
+    const container = consoleRef.current;
+    if (!container) return;
+    
     if (agents.length > 0 && shouldAutoScrollRef.current) {
-      // Multiple timing strategies to ensure DOM has updated
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollToBottom();
-        });
-      });
+      // Check if we're already at bottom before scrolling
+      const atBottom = isAtBottom(container);
       
+      if (atBottom) {
+        // Multiple timing strategies to ensure DOM has updated
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            scrollToBottom();
+          });
+        });
+        
+        const timeoutId = setTimeout(() => {
+          scrollToBottom();
+        }, 10);
+        
+        return () => clearTimeout(timeoutId);
+      }
+    }
+  }, [agentsContentKey, scrollToBottom, isAtBottom]);
+
+  // Initial scroll to bottom when first agents appear
+  useEffect(() => {
+    if (agents.length > 0 && shouldAutoScrollRef.current) {
+      // Small delay to ensure DOM is ready
       const timeoutId = setTimeout(() => {
         scrollToBottom();
-      }, 50);
+      }, 100);
       
       return () => clearTimeout(timeoutId);
     }
-  }, [agentsContentKey, scrollToBottom]);
+  }, [agents.length, scrollToBottom]);
 
   // Count unique agents
   const uniqueAgentCount = useMemo(() => {
     return new Set(agents.map(a => a.agentName)).size;
   }, [agents]);
 
-  // Show only the latest 3-5 agent traces to fit without scrolling
-  // Prioritize active agents, then most recent
-  const visibleAgents = useMemo(() => {
+  // Show all agents, sorted chronologically (oldest first, newest at bottom)
+  const sortedAgents = useMemo(() => {
     if (agents.length === 0) return [];
     
-    // Sort: active agents first, then by most recent
-    const sorted = [...agents].sort((a, b) => {
-      const aActive = activeAgents.has(a.agentName);
-      const bActive = activeAgents.has(b.agentName);
-      if (aActive && !bActive) return -1;
-      if (!aActive && bActive) return 1;
-      return b.lastUpdate.getTime() - a.lastUpdate.getTime();
+    // Sort by creation time (oldest first) so new ones appear at bottom
+    return [...agents].sort((a, b) => {
+      // Use the timestamp from the ID or lastUpdate
+      return a.lastUpdate.getTime() - b.lastUpdate.getTime();
     });
-    
-    // Return latest 5 traces max
-    return sorted.slice(0, 5);
-  }, [agents, activeAgents]);
-
-  const hasMoreTraces = agents.length > visibleAgents.length;
+  }, [agents]);
 
   return (
     <Card className="flex flex-col overflow-hidden h-full console-panel bg-card/30 backdrop-blur-xl border-white/10 glass-card">
@@ -227,11 +235,11 @@ export default function AgentTracesPanel() {
         </div>
       </CardHeader>
 
-      {/* Console Content - No scrolling, fit content */}
+      {/* Console Content - Scrollable */}
       <CardContent className="flex-1 overflow-hidden p-0 relative">
         <div
           ref={consoleRef}
-          className="console-container h-full overflow-hidden"
+          className="console-container h-full overflow-y-auto custom-scrollbar"
         >
           {agents.length === 0 ? (
             <div className="console-empty p-8 text-center h-full flex items-center justify-center">
@@ -240,8 +248,8 @@ export default function AgentTracesPanel() {
               </p>
             </div>
           ) : (
-            <div className="console-logs h-full overflow-hidden flex flex-col">
-              {visibleAgents.map((agent) => {
+            <div className="console-logs flex flex-col">
+              {sortedAgents.map((agent) => {
                 const agentColor = agentColors.get(agent.agentName) || '#60a5fa';
                 const isActive = activeAgents.has(agent.agentName);
                 return (
@@ -255,16 +263,24 @@ export default function AgentTracesPanel() {
                   </div>
                 );
               })}
-              {hasMoreTraces && (
-                <div className="flex-shrink-0 p-4 text-center border-t border-white/10">
-                  <p className="text-sm text-muted-foreground">
-                    {agents.length - visibleAgents.length} more trace{agents.length - visibleAgents.length !== 1 ? 's' : ''} available in history
-                  </p>
-                </div>
-              )}
             </div>
           )}
         </div>
+        
+        {/* "Go to Latest" button - positioned at bottom right */}
+        {showGoToLatest && (
+          <div className="absolute bottom-4 right-4 z-20 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <Button
+              onClick={handleGoToLatest}
+              variant="default"
+              size="sm"
+              className="shadow-2xl backdrop-blur-md bg-primary hover:bg-primary/90 text-primary-foreground border-2 border-primary/30 font-semibold px-4 py-2.5 min-w-[140px] ring-2 ring-primary/20 hover:ring-primary/40 transition-all"
+            >
+              <span className="mr-2">↓</span>
+              Go to Latest
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
