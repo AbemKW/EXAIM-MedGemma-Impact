@@ -2,8 +2,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from exaid_core.llm import exaid_llm
 from pydantic import BaseModel
 
-from exaid_core.schema.agent_summary import AgentSummary
-
 class TraceData(BaseModel):
     count: int
 
@@ -11,6 +9,10 @@ class BufferAgent:
     def __init__(self):
         self.buffer: list[str] = []
         self.llm = exaid_llm
+        # NOTE: This prompt is comprehensive (~65 lines) to improve decision quality
+        # Performance impact: This LLM call happens frequently in the streaming pipeline
+        # Consider: 1) Testing a more concise prompt, 2) Prompt caching if provider supports it,
+        # or 3) Using a smaller/faster model specifically for buffering decisions
         self.flag_prompt = ChatPromptTemplate.from_messages([
             ("system",
             "You are acting as a Buffer Agent within EXAID, a middleware system that coordinates multiple LLM-based agents working together on a live clinical case.\n\n"

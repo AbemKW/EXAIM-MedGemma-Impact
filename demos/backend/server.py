@@ -267,7 +267,9 @@ def trace_callback(agent_id: str, token: str):
         try:
             # Try to get run_id synchronously (may not be perfect but better than nothing)
             run_id = active_run_ids.get(agent_id)
-        except:
+        except Exception:
+            # Silently ignore any errors accessing active_run_ids dictionary
+            # This can occur during cleanup or if the dictionary is being modified concurrently
             pass
         message = {
             "type": "token",
@@ -285,7 +287,9 @@ def trace_callback(agent_id: str, token: str):
         try:
             # Try to get run_id synchronously (may not be perfect but better than nothing)
             run_id = active_run_ids.get(agent_id)
-        except:
+        except Exception:
+            # Silently ignore any errors accessing active_run_ids dictionary
+            # This can occur during cleanup or if the dictionary is being modified concurrently
             pass
         message = {
             "type": "token",

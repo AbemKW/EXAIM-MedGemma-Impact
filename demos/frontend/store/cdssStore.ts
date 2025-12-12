@@ -116,8 +116,8 @@ export const useCDSSStore = create<CDSSState>()(
       if (cardIndex === -1) {
         // No card exists for this agent. This may indicate a missing agent_started message or a race condition.
         console.warn(`No active card found for agent '${agentId}'${runId ? ` with run_id '${runId}'` : ''}. This may indicate a missing agent_started message or a race condition. Auto-creating card to prevent token loss.`);
-        // Generate a run_id if not provided
-        const newRunId = runId || `${agentId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Generate a run_id if not provided using crypto.randomUUID() for better uniqueness guarantees
+        const newRunId = runId || `${agentId}_${Date.now()}_${crypto.randomUUID()}`;
         get().startNewAgent(agentId, newRunId);
         // After creating, retrieve the card we just created
         const updatedState = get();
@@ -269,9 +269,6 @@ export const useCDSSStore = create<CDSSState>()(
       set((state) => {
         // Find the currently expanded summary (in spotlight)
         const currentSpotlight = state.summaries.find(s => s.isExpanded);
-        
-        // Find the summary being clicked
-        const clickedSummary = state.summaries.find(s => s.id === id);
         
         // If clicking the current spotlight, do nothing (or could collapse it)
         if (currentSpotlight?.id === id) {

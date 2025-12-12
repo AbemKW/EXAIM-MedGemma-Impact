@@ -150,16 +150,16 @@ class WebSocketService {
     };
 
     this.ws.onerror = (error) => {
-      // WebSocket errors are often not very informative, especially during server restarts
-      // Only log if there's actual error information
+      // Always log WebSocket errors at warning level for visibility
+      // This helps with debugging connection issues during development and production
       const errorInfo = error instanceof Error ? error.message : 
                        (error && typeof error === 'object' && Object.keys(error).length > 0) ? error : null;
       
       if (errorInfo) {
         console.warn('WebSocket error:', errorInfo);
       } else {
-        // Silent error - likely just connection interruption during server restart
-        console.debug('WebSocket connection interrupted (likely server restart)');
+        // Even without specific error details, log at warning level for visibility
+        console.warn('WebSocket connection error (no specific error information provided - likely connection interruption)');
       }
       
       const store = useCDSSStore.getState();
