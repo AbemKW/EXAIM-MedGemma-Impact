@@ -553,7 +553,7 @@ async def stop_case():
             try:
                 await asyncio.wait_for(cdss_process_task, timeout=0.5)
             except (asyncio.CancelledError, asyncio.TimeoutError):
-                pass
+                pass  # Expected if task was cancelled or timed out during shutdown
             cdss_process_task = None
         
         # Reset CDSS instance
