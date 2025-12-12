@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useMemo, createRef } from 'react';
+import React, { useState, useMemo, createRef } from 'react';
 import { useSummaries, useCDSSStore } from '@/store/cdssStore';
 import SummaryCard from './SummaryCard';
 import SummaryTimeline from './SummaryTimeline';
