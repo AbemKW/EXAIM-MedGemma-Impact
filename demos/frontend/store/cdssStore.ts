@@ -68,7 +68,7 @@ function updateCardWithToken(
   agentId: string,
   token: string,
   set: (partial: Partial<CDSSState> | ((state: CDSSState) => Partial<CDSSState>)) => void
-): void {
+): Partial<CDSSState> {
   const newAgents = [...state.agents];
   newAgents[cardIndex] = {
     ...newAgents[cardIndex],
@@ -103,7 +103,7 @@ function updateCardWithToken(
     agents: newAgents,
     totalWords: state.totalWords + wordsInToken,
     activeAgents: newActiveAgents,
-  } as any;
+  };
 }
 
 export const useCDSSStore = create<CDSSState>()(
