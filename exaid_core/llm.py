@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
@@ -16,13 +17,22 @@ groq_llm = ChatGroq(
     model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
 )
 
+# # MAS LLM (Groq — streaming)
+# mas_llm = ChatGroq(
+#     api_key=os.getenv("GROQ_API_KEY"),
+#     model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+#     streaming=True
+# )
 # MAS LLM (Groq — streaming)
-mas_llm = ChatGroq(
-    api_key=os.getenv("GROQ_API_KEY"),
-    model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+mas_llm = ChatOpenAI(
+    base_url="https://1920108036bc.ngrok-free.app/v1",
+    model="qwen/qwen3-4b-thinking-2507",
+    api_key="NONE",
     streaming=True
 )
+
 # MAS LLM (Groq — streaming)
+
 # mas_llm = ChatGoogleGenerativeAI(
 #     model=os.getenv("LLM_MODEL_NAME", "gemini-2.5-pro"),
 #     google_api_key=os.getenv("LLM_API_KEY"),
