@@ -75,10 +75,11 @@ llm = _create_llm_instance(
     streaming=True
 )
 
-# Groq LLM for specific use cases requiring Groq
+# Groq LLM for specific use cases requiring Groq (no streaming)
 groq_llm = ChatGroq(
     api_key=os.getenv("GROQ_API_KEY"),
     model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+    streaming=False
 )
 
 # MAS LLM (Multi-Agent System) - configurable provider
