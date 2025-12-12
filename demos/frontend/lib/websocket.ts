@@ -139,14 +139,16 @@ class WebSocketService {
       const store = useCDSSStore.getState();
       store.setWsStatus('disconnected');
       
-      // Clean up the WebSocket reference
-      this.ws = null;
-      
       // Always attempt reconnection unless intentionally closed
       // This handles server restarts gracefully
       if (!this.intentionalClose) {
         this.scheduleReconnect();
       }
+      
+      // Clean up the WebSocket reference after checking intentionalClose
+      // This prevents a race condition where connect() might be called during
+      // the reconnection delay and create duplicate connections
+      this.ws = null;
     };
 
     this.ws.onerror = (error) => {
