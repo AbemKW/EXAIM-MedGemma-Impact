@@ -60,6 +60,52 @@ function countWords(text: string): number {
 const activeAgentTimeouts = new Map<string, NodeJS.Timeout>();
 const ACTIVE_AGENT_TIMEOUT_MS = 2000; // 2 seconds
 
+// Helper function to update card text and track active agents
+// Extracted to reduce code duplication between auto-creation path and normal update path
+function updateCardWithToken(
+  state: CDSSState,
+  cardIndex: number,
+  agentId: string,
+  token: string,
+  set: (partial: Partial<CDSSState> | ((state: CDSSState) => Partial<CDSSState>)) => void
+): void {
+  const newAgents = [...state.agents];
+  newAgents[cardIndex] = {
+    ...newAgents[cardIndex],
+    fullText: newAgents[cardIndex].fullText + token,
+    lastUpdate: new Date(),
+  };
+  const wordsInToken = countWords(token);
+  
+  // Track active agent
+  const newActiveAgents = new Set(state.activeAgents);
+  newActiveAgents.add(agentId);
+  
+  // Clear existing timeout for this agent
+  const existingTimeout = activeAgentTimeouts.get(agentId);
+  if (existingTimeout) {
+    clearTimeout(existingTimeout);
+  }
+  
+  // Set new timeout to remove agent from active set
+  const timeoutId = setTimeout(() => {
+    set((state) => {
+      const updatedActiveAgents = new Set(state.activeAgents);
+      updatedActiveAgents.delete(agentId);
+      activeAgentTimeouts.delete(agentId);
+      return { activeAgents: updatedActiveAgents };
+    });
+  }, ACTIVE_AGENT_TIMEOUT_MS);
+  
+  activeAgentTimeouts.set(agentId, timeoutId);
+  
+  return {
+    agents: newAgents,
+    totalWords: state.totalWords + wordsInToken,
+    activeAgents: newActiveAgents,
+  } as any;
+}
+
 export const useCDSSStore = create<CDSSState>()(
   subscribeWithSelector((set, get) => ({
     // Initial state
@@ -128,84 +174,12 @@ export const useCDSSStore = create<CDSSState>()(
           return;
         }
         // Update the newly created card immediately with the token
-        set((currentState) => {
-          const newAgents = [...currentState.agents];
-          newAgents[updatedCardIndex] = {
-            ...newAgents[updatedCardIndex],
-            fullText: newAgents[updatedCardIndex].fullText + token,
-            lastUpdate: new Date(),
-          };
-          const wordsInToken = countWords(token);
-          
-          // Track active agent
-          const newActiveAgents = new Set(currentState.activeAgents);
-          newActiveAgents.add(agentId);
-          
-          // Clear existing timeout for this agent
-          const existingTimeout = activeAgentTimeouts.get(agentId);
-          if (existingTimeout) {
-            clearTimeout(existingTimeout);
-          }
-          
-          // Set new timeout to remove agent from active set
-          const timeoutId = setTimeout(() => {
-            set((state) => {
-              const updatedActiveAgents = new Set(state.activeAgents);
-              updatedActiveAgents.delete(agentId);
-              activeAgentTimeouts.delete(agentId);
-              return { activeAgents: updatedActiveAgents };
-            });
-          }, ACTIVE_AGENT_TIMEOUT_MS);
-          
-          activeAgentTimeouts.set(agentId, timeoutId);
-          
-          return { 
-            agents: newAgents,
-            totalWords: currentState.totalWords + wordsInToken,
-            activeAgents: newActiveAgents,
-          };
-        });
+        set((currentState) => updateCardWithToken(currentState, updatedCardIndex, agentId, token, set));
         return;
       }
       
       // Update the card immediately with the token
-      set((currentState) => {
-        const newAgents = [...currentState.agents];
-        newAgents[cardIndex] = {
-          ...newAgents[cardIndex],
-          fullText: newAgents[cardIndex].fullText + token,
-          lastUpdate: new Date(),
-        };
-        const wordsInToken = countWords(token);
-        
-        // Track active agent
-        const newActiveAgents = new Set(currentState.activeAgents);
-        newActiveAgents.add(agentId);
-        
-        // Clear existing timeout for this agent
-        const existingTimeout = activeAgentTimeouts.get(agentId);
-        if (existingTimeout) {
-          clearTimeout(existingTimeout);
-        }
-        
-        // Set new timeout to remove agent from active set
-        const timeoutId = setTimeout(() => {
-          set((state) => {
-            const updatedActiveAgents = new Set(state.activeAgents);
-            updatedActiveAgents.delete(agentId);
-            activeAgentTimeouts.delete(agentId);
-            return { activeAgents: updatedActiveAgents };
-          });
-        }, ACTIVE_AGENT_TIMEOUT_MS);
-        
-        activeAgentTimeouts.set(agentId, timeoutId);
-        
-        return { 
-          agents: newAgents,
-          totalWords: currentState.totalWords + wordsInToken,
-          activeAgents: newActiveAgents,
-        };
-      });
+      set((currentState) => updateCardWithToken(currentState, cardIndex, agentId, token, set));
     },
     
     // Add new summary
