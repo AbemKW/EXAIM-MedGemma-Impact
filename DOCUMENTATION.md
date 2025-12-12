@@ -471,10 +471,10 @@ Check if timers have expired and flush if needed. Should be called periodically 
 The module provides a factory function `_create_llm_instance()` that creates LLM instances based on provider type, allowing seamless switching between Google Gemini, Groq, and OpenAI (or OpenAI-compatible) providers without code changes.
 
 **LLM Instances**:
-- `llm`: Default LLM for general use (Gemini Flash - fast and cost-effective)
-- `groq_llm`: Groq-specific LLM instance
-- `mas_llm`: Multi-Agent System LLM (configurable, defaults to Groq)
-- `exaid_llm`: EXAID LLM for strong reasoning (configurable, defaults to Gemini Pro)
+- `llm`: Default LLM for general use (configurable, defaults to Gemini Flash)
+- `groq_llm`: Groq-specific LLM instance without streaming (for compatibility)
+- `mas_llm`: Multi-Agent System LLM (configurable, defaults to Groq with streaming)
+- `exaid_llm`: EXAID LLM for strong reasoning (configurable, defaults to Gemini Pro with streaming)
 
 **Configuration**:
 - Provider selection via environment variables
