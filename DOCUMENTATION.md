@@ -465,39 +465,50 @@ Check if timers have expired and flush if needed. Should be called periodically 
 
 ### `llm.py` - LLM Client Configuration
 
-**Purpose**: Centralized configuration for the LLM client used throughout EXAID.
+**Purpose**: Centralized configuration for the LLM client used throughout EXAID. Supports multiple LLM providers through environment variable-based configuration.
 
-**Code**:
-```python
-import os
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+**Architecture**:
+The module provides a factory function `_create_llm_instance()` that creates LLM instances based on provider type, allowing seamless switching between Google Gemini, Groq, and OpenAI (or OpenAI-compatible) providers without code changes.
 
-load_dotenv()
-
-llm = ChatOpenAI(
-    model=os.getenv("LLM_MODEL", "gemini-2.5-flash"),
-    base_url=os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
-    api_key=os.getenv("LLM_API_KEY")
-)
-```
+**LLM Instances**:
+- `llm`: Default LLM for general use (Gemini Flash - fast and cost-effective)
+- `groq_llm`: Groq-specific LLM instance
+- `mas_llm`: Multi-Agent System LLM (configurable, defaults to Groq)
+- `exaid_llm`: EXAID LLM for strong reasoning (configurable, defaults to Gemini Pro)
 
 **Configuration**:
-- Uses LangChain's `ChatOpenAI` for OpenAI-compatible API endpoints
-- Supports environment variables for configuration (`.env` file)
-- Default configuration uses Google Gemini API endpoint
-- Can be easily modified to use OpenAI, Anthropic, or other providers
+- Provider selection via environment variables
+- No commented code alternatives
+- Clean, maintainable configuration
+- Each LLM instance can use a different provider
 
 **Environment Variables**:
-- `LLM_MODEL`: Model name (default: "gemini-2.5-flash")
-- `LLM_BASE_URL`: API endpoint URL
-- `LLM_API_KEY`: API key for authentication
+
+*Provider Selection:*
+- `LLM_PROVIDER`: Default provider (default: "google")
+- `MAS_LLM_PROVIDER`: Provider for MAS LLM (default: "groq")
+- `EXAID_LLM_PROVIDER`: Provider for EXAID LLM (default: "google")
+
+*Google Gemini Configuration:*
+- `LLM_MODEL_NAME`: Model name (default: "gemini-2.5-flash-lite")
+- `LLM_API_KEY` or `GOOGLE_API_KEY`: Google API key
+- `EXAID_LLM_MODEL`: Model for EXAID LLM (default: "gemini-2.5-pro")
+
+*Groq Configuration:*
+- `GROQ_API_KEY`: Groq API key
+- `GROQ_MODEL`: Model name (default: "llama-3.3-70b-versatile")
+
+*OpenAI Configuration:*
+- `OPENAI_API_KEY`: API key
+- `OPENAI_BASE_URL`: Base URL for API (optional, for OpenAI-compatible endpoints)
+- `OPENAI_MODEL`: Model name (optional)
 
 **Usage**: Imported by:
-- `BufferAgent` for trigger decisions
-- `SummarizerAgent` for summary generation
+- `BufferAgent` uses `exaid_llm` for trigger decisions
+- `SummarizerAgent` uses `exaid_llm` for summary generation
+- Demo agents use `mas_llm` for multi-agent reasoning
 
-**Note**: For production use, use environment variables for sensitive information. Create a `.env` file in the project root.
+**Note**: For production use, always use environment variables for sensitive information. Create a `.env` file in the project root.
 
 ---
 
@@ -842,38 +853,68 @@ Generate a structured summary from buffered traces.
 
 ### LLM Configuration
 
-Configure the LLM client using environment variables (recommended):
+EXAID supports multiple LLM providers (Google Gemini, Groq, OpenAI, and OpenAI-compatible endpoints) through environment variable-based configuration. This allows switching between providers without code changes.
+
+**Provider Selection**:
 
 Create a `.env` file in the project root:
 
 ```bash
-LLM_MODEL=your-model-name
-LLM_BASE_URL=https://your-api-endpoint.com/v1
-LLM_API_KEY=your-api-key
+# Provider selection (google, groq, or openai)
+LLM_PROVIDER=google
+MAS_LLM_PROVIDER=groq
+EXAID_LLM_PROVIDER=google
+
+# Google Gemini configuration
+LLM_MODEL_NAME=gemini-2.5-flash-lite
+LLM_API_KEY=your-google-api-key
+EXAID_LLM_MODEL=gemini-2.5-pro
+
+# Groq configuration (for fast multi-agent reasoning)
+GROQ_API_KEY=your-groq-api-key
+GROQ_MODEL=llama-3.3-70b-versatile
+
+# OpenAI configuration (or OpenAI-compatible endpoints)
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_BASE_URL=https://api.openai.com/v1  # Optional
+OPENAI_MODEL=gpt-4  # Optional
 ```
 
-Alternatively, configure directly in `llm.py`:
+**Default Configuration**:
+- `llm`: Google Gemini Flash (fast, cost-effective)
+- `mas_llm`: Groq (optimized for multi-agent speed)
+- `exaid_llm`: Google Gemini Pro (strong reasoning)
 
-```python
-import os
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+**Example Configurations**:
 
-load_dotenv()
+*All Google Gemini:*
+```bash
+LLM_PROVIDER=google
+MAS_LLM_PROVIDER=google
+EXAID_LLM_PROVIDER=google
+LLM_API_KEY=your-google-api-key
+```
 
-llm = ChatOpenAI(
-    model=os.getenv("LLM_MODEL", "your-model-name"),
-    base_url=os.getenv("LLM_BASE_URL", "https://your-api-endpoint.com/v1"),
-    api_key=os.getenv("LLM_API_KEY")
-)
+*All Groq:*
+```bash
+LLM_PROVIDER=groq
+MAS_LLM_PROVIDER=groq
+EXAID_LLM_PROVIDER=groq
+GROQ_API_KEY=your-groq-api-key
+```
+
+*Custom OpenAI-compatible endpoint:*
+```bash
+MAS_LLM_PROVIDER=openai
+OPENAI_BASE_URL=https://your-endpoint.com/v1
+OPENAI_MODEL=your-model-name
+OPENAI_API_KEY=your-api-key
 ```
 
 **Supported Providers**:
-- OpenAI (via `base_url="https://api.openai.com/v1"`)
-- Google Gemini (via `base_url="https://generativelanguage.googleapis.com/v1beta/openai/"`)
-- Anthropic (via `ChatAnthropic` from `langchain_anthropic`)
-- Custom OpenAI-compatible endpoints
-- Local models via compatible APIs
+- **google**: Google Gemini models via LangChain's `ChatGoogleGenerativeAI`
+- **groq**: Groq models via LangChain's `ChatGroq`
+- **openai**: OpenAI or OpenAI-compatible endpoints via LangChain's `ChatOpenAI`
 
 
 ---
