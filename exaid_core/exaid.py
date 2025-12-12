@@ -182,5 +182,32 @@ class EXAID:
         if remaining:
             summaries = self.get_all_summaries()
             previous_summaries = self._format_summaries_history(summaries)
-            return await self._process_chunk(agent_id, remaining, previous_summaries, summaries)
+            summary = await self._process_chunk(agent_id, remaining, previous_summaries, summaries)
+            
+            # If no summary was triggered but buffer has content, force a summary
+            if summary is None and self.buffer_agent.buffer:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Forcing final summary for {agent_id} with remaining buffer content")
+                agent_buffer = self.buffer_agent.flush()
+                buffer_str = "\n".join(agent_buffer)
+                summary_history_strs = self._format_summaries_history(summaries[:-1]) if len(summaries) > 1 else []
+                latest_summary_str = self._format_summary_for_history(summaries[-1]) if summaries else "No summaries yet."
+                summary = await self.summarizer_agent.summarize(
+                    summary_history_strs,
+                    latest_summary_str,
+                    buffer_str
+                )
+                if summary is not None:
+                    self.summaries.append(summary)
+                    self._print_summary(summary)
+                    
+                    # Emit summary event to callbacks
+                    for callback in self.summary_callbacks:
+                        try:
+                            callback(summary)
+                        except Exception as e:
+                            print(f"Error in summary callback: {e}")
+            
+            return summary
         return None

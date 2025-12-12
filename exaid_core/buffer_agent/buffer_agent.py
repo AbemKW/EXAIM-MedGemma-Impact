@@ -106,7 +106,16 @@ class BufferAgent:
             "previous_trace": previous_traces if previous_traces else "(No previous traces.)",
             "new_trace": tagged_chunk
         })
-        return "YES" in flag_response.content.strip().upper()
+        decision = "YES" in flag_response.content.strip().upper()
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"BufferAgent decision for {agent_id}: {decision} (response: {flag_response.content.strip()[:100]})")
+        if decision:
+            logger.info(f"BufferAgent triggered summarization for {agent_id}")
+        
+        return decision
     
     def flush(self) -> list[str]:
         flushed = self.buffer.copy()
