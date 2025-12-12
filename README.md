@@ -21,18 +21,31 @@ EXAID is an experimental Python project for capturing short, live traces from mu
    pip install -r requirements.txt
    ```
 
-3. **Configure the LLM client** in `llm.py` with your API credentials and endpoint.
-
-4. **Configure environment variables** (optional but recommended):
+3. **Configure environment variables**:
    
-   Create a `.env` file in the project root:
+   Create a `.env` file in the project root with your LLM provider settings:
    ```bash
-   LLM_MODEL=your-model-name
-   LLM_BASE_URL=https://your-api-endpoint.com/v1
-   LLM_API_KEY=your-api-key
+   # Choose your provider (google, groq, or openai)
+   LLM_PROVIDER=google
+   MAS_LLM_PROVIDER=groq
+   EXAID_LLM_PROVIDER=google
+   
+   # Google Gemini configuration
+   LLM_API_KEY=your-google-api-key
+   LLM_MODEL_NAME=gemini-2.5-flash-lite
+   EXAID_LLM_MODEL=gemini-2.5-pro
+   
+   # Groq configuration (for multi-agent reasoning)
+   GROQ_API_KEY=your-groq-api-key
+   GROQ_MODEL=llama-3.3-70b-versatile
+   
+   # OpenAI configuration (optional, if using OpenAI provider)
+   OPENAI_API_KEY=your-openai-api-key
+   OPENAI_BASE_URL=https://api.openai.com/v1
+   OPENAI_MODEL=gpt-4
    ```
    
-   Alternatively, configure the LLM client directly in `llm.py`.
+   EXAID supports multiple LLM providers through environment variable configuration. See DOCUMENTATION.md for more details.
 
 5. **Run the CDSS demo:**
 
@@ -103,9 +116,10 @@ The system is organized around a few small modules:
   - Key method: `act(input: str) -> str` — Abstract method that agents must implement.
 
 - `llm.py` — LLM client configuration
-  - Purpose: Holds the LLM client instance used for summarization and trigger decisions. Uses environment variables for configuration.
-  - Currently configured for OpenAI-compatible API (using LangChain's `ChatOpenAI`).
-  - Supports environment variables: `LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY`
+  - Purpose: Holds LLM client instances used for summarization and trigger decisions. Uses environment variables for provider selection.
+  - Supports multiple providers: Google Gemini, Groq, OpenAI, and OpenAI-compatible endpoints.
+  - Provider selection via environment variables: `LLM_PROVIDER`, `MAS_LLM_PROVIDER`, `EXAID_LLM_PROVIDER`
+  - Provides different LLM instances optimized for different use cases (speed vs. reasoning quality)
 
 - `cdss_demo/` — Clinical Decision Support System demo
   - Purpose: Complete demonstration of EXAID integrated with a multi-agent clinical decision support system using LangGraph.
@@ -139,7 +153,8 @@ The system is organized around a few small modules:
 ## Development Notes and Suggestions
 
 - The project is a prototype. Expect to iterate on the summarization prompt and LLM configuration.
-- Configure LLM settings via environment variables (`.env` file) or directly in `llm.py`. The current configuration uses an OpenAI-compatible API endpoint.
+- Configure LLM settings via environment variables (`.env` file). EXAID supports Google Gemini, Groq, and OpenAI providers.
+- Switch between providers by changing environment variables—no code changes needed.
 - The system uses async/await patterns throughout, so ensure you're running within an async context when calling methods.
 - For streaming scenarios, use `received_streamed_tokens()` which leverages `TokenGate` for intelligent chunking.
 - The CDSS demo showcases integration with LangGraph for complex multi-agent workflows.
