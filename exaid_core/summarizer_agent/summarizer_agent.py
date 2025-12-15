@@ -1,12 +1,12 @@
 from langchain_core.prompts import ChatPromptTemplate
 from exaid_core.schema.agent_summary import AgentSummary
 from typing import List
-from exaid_core.llm import exaid_llm
+from infra import get_llm, LLMRole
 
 class SummarizerAgent:
     def __init__(self):
-        self.base_llm = exaid_llm
-        self.llm = exaid_llm.with_structured_output(schema=AgentSummary)
+        self.base_llm = get_llm(LLMRole.SUMMARIZER)
+        self.llm = self.base_llm.with_structured_output(schema=AgentSummary)
         self.summarize_prompt = ChatPromptTemplate.from_messages([    
             ("system", """You are an expert clinical summarizer for EXAID, a medical multi-agent reasoning system. 
 Your role is to produce structured summaries that align with SBAR (Situation-Background-Assessment-Recommendation) 

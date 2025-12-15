@@ -1,0 +1,31 @@
+# LLM Model Configuration for EXAID
+# This file documents which models are used for each component role.
+# Environment variables can override these defaults.
+
+# MAS (Multi-Agent System) - Trace Generation
+# Used by: CDSS demo agents (cardiology, internal_medicine, laboratory, orchestrator, radiology)
+# Purpose: Generate reasoning traces from specialized agents
+mas:
+  provider: groq  # Default: groq (fast, cost-effective)
+  model: llama-3.3-70b-versatile  # Default model
+  streaming: true
+  # Override with: MAS_LLM_PROVIDER, MAS_LLM_MODEL env vars
+
+# Summarizer - Clinical Summary Generation
+# Used by: SummarizerAgent
+# Purpose: Generate structured clinical summaries from agent traces
+summarizer:
+  provider: google  # Default: google (strong reasoning)
+  model: gemini-2.5-pro  # Default model
+  streaming: true
+  # Override with: SUMMARIZER_LLM_PROVIDER, SUMMARIZER_LLM_MODEL env vars
+
+# Buffer Agent - Trace Trigger Decision
+# Used by: BufferAgent
+# Purpose: Decide when to trigger summarization based on trace completeness and novelty
+buffer_agent:
+  provider: google  # Default: google (strong reasoning)
+  model: gemini-2.5-pro  # Default model
+  streaming: true
+  # Override with: BUFFER_AGENT_LLM_PROVIDER, BUFFER_AGENT_LLM_MODEL env vars
+

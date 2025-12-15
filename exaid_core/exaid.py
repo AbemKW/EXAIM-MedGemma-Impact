@@ -92,7 +92,7 @@ class EXAID:
             except Exception as e:
                 print(f"Error in trace callback: {e}")
         
-        trigger = await self.buffer_agent.addchunk(id, text)
+        trigger = await self.buffer_agent.addsegment(id, text)
         if trigger:
             agent_buffer = self.buffer_agent.flush()
             buffer_str = "\n".join(agent_buffer)
@@ -147,7 +147,7 @@ class EXAID:
 
     async def _process_chunk(self, agent_id: str, chunk: str, previous_summaries: list[str], summaries: list[AgentSummary]) -> Optional[AgentSummary]:
         """Process a chunk of text for summarization."""
-        trigger = await self.buffer_agent.addchunk(
+        trigger = await self.buffer_agent.addsegment(
             agent_id,
             chunk,
             previous_summaries
