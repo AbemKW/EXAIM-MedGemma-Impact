@@ -2,7 +2,7 @@ import logging
 from typing import AsyncIterator
 from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
-from exaid_core.llm import mas_llm
+from infra import get_llm, LLMRole
 from exaid_core.exaid import EXAID
 from demos.cdss_example.callbacks.agent_streaming_callback import AgentStreamingCallback
 
@@ -24,7 +24,7 @@ class OrchestratorAgent(DemoBaseAgent):
     
     def __init__(self, agent_id: str = "Orchestrator Agent", exaid: EXAID = None):
         super().__init__(agent_id, exaid)
-        self.llm = mas_llm
+        self.llm = get_llm(LLMRole.MAS)
         
         # System prompt for orchestrator (used in all tasks)
         self.system_prompt = (
