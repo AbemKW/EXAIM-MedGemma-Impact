@@ -82,27 +82,27 @@ class BufferAgent:
         ])
         self.traces: dict[str, TraceData] = {}
 
-    async def addchunk(self, agent_id: str, chunk: str, previous_summaries: list[str]) -> bool:
-        tagged_chunk = f"| {agent_id} | {chunk}"
+    async def addsegment(self, agent_id: str, segment: str, previous_summaries: list[str]) -> bool:
+        tagged_segment = f"| {agent_id} | {segment}"
         if agent_id not in self.traces:
             self.traces[agent_id] = TraceData(count=0)
         self.traces[agent_id].count += 1
         
-        # Check if buffer was empty before adding this chunk
+        # Check if buffer was empty before adding this segment
         was_empty = not self.buffer
         
-        # Always add the chunk to buffer
-        self.buffer.append(tagged_chunk)
+        # Always add the segment to buffer
+        self.buffer.append(tagged_segment)
         
         # Always call the LLM to decide if summarization should be triggered
-        # Use empty string for previous_trace if buffer was empty before adding this chunk
+        # Use empty string for previous_trace if buffer was empty before adding this segment
         previous_traces = "\n".join(self.buffer[:-1]) if not was_empty else ""
         
         flag_chain = self.flag_prompt | self.llm
         flag_response = await flag_chain.ainvoke({
             "summaries": previous_summaries,
             "previous_trace": previous_traces if previous_traces else "(No previous traces.)",
-            "new_trace": tagged_chunk
+            "new_trace": tagged_segment
         })
         decision = "YES" in flag_response.content.strip().upper()
         

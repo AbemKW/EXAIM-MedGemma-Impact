@@ -110,7 +110,7 @@ class EXAID:
 
 The main entry point for processing agent traces. This method:
 
-1. Adds the trace to the buffer via `BufferAgent.addchunk()`
+1. Adds the trace to the buffer via `BufferAgent.addsegment()`
 2. If summarization is triggered:
    - Retrieves previous summaries for context
    - Generates summary using `SummarizerAgent`
@@ -122,7 +122,7 @@ The main entry point for processing agent traces. This method:
 async def received_trace(self, id: str, text: str) -> Optional[AgentSummary]:
     """Process a trace from an agent. Returns an AgentSummary if summarization 
     was triggered, None otherwise."""
-    trigger = await self.buffer_agent.addchunk(id, text)
+    trigger = await self.buffer_agent.addsegment(id, text)
     if trigger:
         agent_buffer = self.buffer_agent.flush()
         buffer_str = "\n".join(agent_buffer)
@@ -198,14 +198,14 @@ class BufferAgent:
 
 **Core Methods**:
 
-#### `addchunk(agent_id: str, chunk: str) -> bool`
+#### `addsegment(agent_id: str, segment: str) -> bool`
 
-Adds a trace chunk to the buffer and determines if summarization should be triggered.
+Adds a trace segment to the buffer and determines if summarization should be triggered.
 
 **Process**:
-1. Tags the chunk with agent ID: `| {agent_id} | {chunk}`
+1. Tags the segment with agent ID: `| {agent_id} | {segment}`
 2. Records the trace count in `traces` dictionary
-3. Adds the tagged chunk to the buffer
+3. Adds the tagged segment to the buffer
 4. Uses an LLM prompt to evaluate if summarization should trigger (even for first trace)
 5. Returns `True` if summarization should be triggered, `False` otherwise
 
@@ -218,17 +218,17 @@ The buffer uses a prompt that asks the LLM to reply with "YES" or "NO" based on:
 
 **Code Snippet**:
 ```python
-async def addchunk(self, agent_id: str, chunk: str) -> bool:
-    tagged_chunk = f"| {agent_id} | {chunk}"
+async def addsegment(self, agent_id: str, segment: str) -> bool:
+    tagged_segment = f"| {agent_id} | {segment}"
     if agent_id not in self.traces:
         self.traces[agent_id] = TraceData(count=0)
     self.traces[agent_id].count += 1
     
-    # Check if buffer was empty before adding this chunk
+    # Check if buffer was empty before adding this segment
     was_empty = not self.buffer
     
-    # Always add the chunk to buffer
-    self.buffer.append(tagged_chunk)
+    # Always add the segment to buffer
+    self.buffer.append(tagged_segment)
     
     # Always call the LLM to decide if summarization should be triggered
     previous_traces = "\n".join(self.buffer[:-1]) if not was_empty else ""
@@ -236,7 +236,7 @@ async def addchunk(self, agent_id: str, chunk: str) -> bool:
     flag_chain = self.flag_prompt | self.llm
     flag_response = await flag_chain.ainvoke({
         "previous_trace": previous_traces if previous_traces else "(No previous traces - this is the first trace)",
-        "new_trace": tagged_chunk
+        "new_trace": tagged_segment
     })
     return "YES" in flag_response.content.strip().upper()
 ```
@@ -773,13 +773,13 @@ Process streaming tokens from an agent using TokenGate for intelligent chunking.
 
 ### BufferAgent Class
 
-#### `async addchunk(agent_id: str, chunk: str) -> bool`
+#### `async addsegment(agent_id: str, segment: str) -> bool`
 
-Add a trace chunk and determine if summarization should trigger.
+Add a trace segment and determine if summarization should trigger.
 
 **Parameters**:
 - `agent_id` (str): Agent identifier
-- `chunk` (str): Trace text
+- `segment` (str): Trace text segment from token gate
 
 **Returns**: `True` if summarization should trigger, `False` otherwise
 
