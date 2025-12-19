@@ -1,0 +1,19 @@
+# EXAID Evaluation - Variant V0 Configuration
+# Baseline variant: No summarization (raw traces)
+
+variant_id: V0
+name: "Baseline - No Summarization"
+description: "Control variant that passes through raw traces without summarization"
+
+# Summarization disabled for baseline
+summarization:
+  enabled: false
+
+# This variant serves as the upper bound for token usage
+# and lower bound for information compression
+metrics_role: "baseline_control"
+
+# No concept extraction parameters needed for baseline
+# (raw traces are used directly)
+
+

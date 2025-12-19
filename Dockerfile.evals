@@ -1,0 +1,28 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY evals/requirements-evals.txt /app/evals/requirements-evals.txt
+RUN pip install --no-cache-dir -r /app/evals/requirements-evals.txt
+
+# Install scispaCy WITHOUT dependency resolution
+RUN pip install --no-cache-dir --no-deps scispacy==0.5.4
+
+# Install ONLY the scispaCy model you actually use
+RUN pip install \
+  https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz
+
+COPY evals/ /app/evals/
+RUN chmod +x /app/evals/scripts/*.sh
+
+WORKDIR /app/evals
+ENTRYPOINT ["bash"]

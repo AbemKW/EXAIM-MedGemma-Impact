@@ -1,0 +1,27 @@
+# EXAID Evaluation - Variant V2 Configuration
+# LLM-triggered summarization variant (default EXAID behavior)
+
+variant_id: V2
+name: "LLM-Triggered Summarization"
+description: "Summarization triggered by LLM-based content analysis"
+
+summarization:
+  enabled: true
+  # Trigger mode: LLM-based (intelligent triggering)
+  trigger_mode: "llm"
+  # LLM evaluates trace content to decide when to summarize
+  llm_trigger:
+    enabled: true
+    # Prefer YES when in doubt
+    bias: "trigger"
+
+# Uses default summarizer config
+summarizer:
+  # Inherit history_k from summarizer.yaml
+  history_k_override: null
+
+# Concept extractor settings (inherit from run defaults)
+concept_extractor:
+  inherit_defaults: true
+
+

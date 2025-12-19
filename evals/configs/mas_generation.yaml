@@ -1,0 +1,45 @@
+# EXAID Evaluation - Multi-Agent System Generation Configuration
+# This file defines parameters for MAS trace generation
+# NOTE: MAC integration will replace the stub trace generator
+
+# MAS generation mode
+mode: "stub"  # Options: stub, mac_integration (future)
+
+# MAC integration placeholder
+# Will be populated when MAC submodule is added
+mac:
+  enabled: false
+  # Path to MAC module (placeholder)
+  module_path: null
+  # MAC configuration file (placeholder)
+  config_file: null
+
+# Agent configuration for trace generation
+agents:
+  # List of agent types to include in generation
+  types:
+    - orchestrator
+    - cardiology
+    - laboratory
+    - radiology
+    - internal_medicine
+
+# Generation parameters
+generation:
+  # Maximum traces per case
+  max_traces_per_case: 50
+  # Random seed for reproducibility
+  seed: 42
+  # Enable streaming mode
+  streaming: true
+
+# Output configuration
+output:
+  # Output directory (relative to evals/)
+  traces_dir: "data/traces"
+  # Output file format
+  format: "jsonl.gz"
+  # Compression level (1-9)
+  compression_level: 6
+
+

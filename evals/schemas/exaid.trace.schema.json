@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exaid.ai/schemas/exaid.trace.schema.json",
+  "title": "EXAID MAS Trace Record",
+  "description": "Schema for multi-agent system trace records. Concepts are NOT stored in traces; they are extracted at run-time by the concept extractor.",
+  "type": "object",
+  "required": [
+    "schema_name",
+    "schema_version",
+    "trace_id",
+    "case_id",
+    "agent_id",
+    "timestamp",
+    "content"
+  ],
+  "properties": {
+    "schema_name": {
+      "type": "string",
+      "const": "exaid.trace",
+      "description": "Schema identifier for validation routing"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the schema"
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^trc-[a-z0-9-]+$",
+      "description": "Unique trace record identifier"
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^case-[a-z0-9-]+$",
+      "description": "Reference to the clinical case being processed"
+    },
+    "agent_id": {
+      "type": "string",
+      "description": "Identifier of the agent that produced this trace"
+    },
+    "sequence_num": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sequential position of this trace within the case"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when trace was generated"
+    },
+    "content": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Raw text content of the agent trace"
+    },
+    "token_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Token count of the content (tokenizer-dependent)"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional metadata for the trace",
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "LLM model that generated this trace"
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_name": "exaid.trace",
+      "schema_version": "1.0.0",
+      "trace_id": "trc-abc123-001",
+      "case_id": "case-patient-042",
+      "agent_id": "cardiology_agent",
+      "sequence_num": 5,
+      "timestamp": "2024-12-19T12:05:30Z",
+      "content": "Based on the elevated troponin levels and ST-segment changes, I suspect acute coronary syndrome...",
+      "token_count": 45,
+      "metadata": {
+        "model": "gpt-4",
+        "temperature": 0.7,
+        "latency_ms": 1250
+      }
+    }
+  ]
+}
+
+

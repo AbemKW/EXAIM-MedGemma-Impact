@@ -1,0 +1,59 @@
+# EXAID Evaluation - Metrics Configuration
+# This file defines evaluation metric parameters
+
+# Redundancy detection thresholds (tau)
+# Semantic similarity threshold for considering content redundant
+tau_list:
+  - 0.85
+  - 0.90
+  - 0.95
+
+# Token budget levels (B)
+# Budget constraints for coverage evaluation
+budget_list:
+  - 250
+  - 500
+  - 1000
+  - 2000
+
+# Output configuration
+output:
+  # Metrics output directory (relative to evals/)
+  metrics_dir: "data/metrics"
+  # Figures output directory
+  figures_dir: "data/metrics/figures"
+  # Primary output figure
+  coverage_figure: "coverage_vs_budget.pdf"
+
+# Concept extraction settings for metric computation
+concept_extraction:
+  # scispaCy model for baseline extraction
+  model: "en_core_sci_sm"
+  # Similarity metric for redundancy computation
+  similarity_metric: "cosine"
+  # Embedding model for semantic similarity (placeholder)
+  embedding_model: null
+
+# Statistical computation
+statistics:
+  # Confidence interval level
+  confidence_level: 0.95
+  # Bootstrap samples for CI computation
+  bootstrap_samples: 1000
+  # Random seed
+  seed: 42
+
+# Figure generation settings
+figures:
+  # Figure DPI
+  dpi: 300
+  # Figure format
+  format: "pdf"
+  # Color palette
+  palette: "colorblind"
+  # Figure size (inches)
+  figsize:
+    width: 8
+    height: 6
+
+
