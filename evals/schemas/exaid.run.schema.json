@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exaid.ai/schemas/exaid.run.schema.json",
+  "title": "EXAID Summarizer Run Record",
+  "description": "Schema for summarizer run output records, including concept extraction metadata",
+  "type": "object",
+  "required": [
+    "schema_name",
+    "schema_version",
+    "run_id",
+    "trace_id",
+    "variant_id",
+    "summaries"
+  ],
+  "properties": {
+    "schema_name": {
+      "type": "string",
+      "const": "exaid.run",
+      "description": "Schema identifier for validation routing"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the schema"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[a-z0-9-]+$",
+      "description": "Unique run identifier"
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^trc-[a-z0-9-]+$",
+      "description": "Reference to the source trace"
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^case-[a-z0-9-]+$",
+      "description": "Reference to the clinical case"
+    },
+    "variant_id": {
+      "type": "string",
+      "pattern": "^V[0-9]+$",
+      "description": "Summarizer variant identifier (V0, V1, V2, V3, V4)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when run was executed"
+    },
+    "summaries": {
+      "type": "array",
+      "description": "Array of generated summaries in sequence order",
+      "items": {
+        "type": "object",
+        "required": ["summary_idx", "content", "token_count"],
+        "properties": {
+          "summary_idx": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Sequential index of this summary"
+          },
+          "content": {
+            "type": "object",
+            "description": "Structured summary content matching AgentSummary schema",
+            "properties": {
+              "status_action": {"type": "string"},
+              "key_findings": {"type": "string"},
+              "differential_rationale": {"type": "string"},
+              "uncertainty_confidence": {"type": "string"},
+              "recommendation_next_step": {"type": "string"},
+              "agent_contributions": {"type": "string"}
+            }
+          },
+          "token_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Token count of the summary"
+          },
+          "trigger_trace_idx": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index of trace that triggered this summary"
+          }
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "description": "Timing statistics for the run",
+      "properties": {
+        "total_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "avg_summary_ms": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "run_meta": {
+      "type": "object",
+      "description": "Run metadata including concept extractor configuration",
+      "properties": {
+        "concept_extractor": {
+          "type": "object",
+          "description": "scispaCy concept extractor configuration",
+          "properties": {
+            "model": {
+              "type": "string",
+              "description": "spaCy/scispaCy model name (e.g., en_core_sci_sm)"
+            },
+            "entity_types_kept": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Entity types to keep (ALL for mention detector mode)"
+            },
+            "stop_entities_file": {
+              "type": "string",
+              "description": "Path to stop-entity list file"
+            },
+            "min_entity_len": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Minimum entity length in characters"
+            },
+            "normalization": {
+              "type": "object",
+              "properties": {
+                "lowercase": {"type": "boolean"},
+                "strip_whitespace": {"type": "boolean"},
+                "canonicalize_punctuation": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "summarizer_config": {
+          "type": "object",
+          "properties": {
+            "history_k": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "concept_coverage": {
+      "type": "object",
+      "description": "Concept coverage statistics (computed at run time)",
+      "properties": {
+        "total_concepts_in_trace": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "concepts_in_summaries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coverage_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "extracted_concepts": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List of unique concepts extracted from trace"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_name": "exaid.run",
+      "schema_version": "1.0.0",
+      "run_id": "run-v3-case042-001",
+      "trace_id": "trc-abc123-001",
+      "case_id": "case-patient-042",
+      "variant_id": "V3",
+      "timestamp": "2024-12-19T12:10:00Z",
+      "summaries": [
+        {
+          "summary_idx": 0,
+          "content": {
+            "status_action": "Initial cardiac workup initiated",
+            "key_findings": "Troponin elevated, ST changes present",
+            "differential_rationale": "ACS likely given biomarker and ECG findings",
+            "uncertainty_confidence": "High confidence for cardiac etiology",
+            "recommendation_next_step": "Urgent cardiology consult",
+            "agent_contributions": "Cardiology agent: primary analysis"
+          },
+          "token_count": 85,
+          "trigger_trace_idx": 5
+        }
+      ],
+      "timing": {
+        "total_ms": 3500,
+        "avg_summary_ms": 1750
+      },
+      "run_meta": {
+        "concept_extractor": {
+          "model": "en_core_sci_sm",
+          "entity_types_kept": ["ALL"],
+          "stop_entities_file": "configs/stop_entities.txt",
+          "min_entity_len": 3,
+          "normalization": {
+            "lowercase": true,
+            "strip_whitespace": true,
+            "canonicalize_punctuation": true
+          }
+        },
+        "summarizer_config": {
+          "history_k": 3
+        }
+      },
+      "concept_coverage": {
+        "total_concepts_in_trace": 25,
+        "concepts_in_summaries": 18,
+        "coverage_ratio": 0.72,
+        "extracted_concepts": ["troponin", "st-segment", "acute coronary syndrome"]
+      }
+    }
+  ]
+}
+
+

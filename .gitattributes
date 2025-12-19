@@ -1,0 +1,15 @@
+# Force Unix line endings for shell scripts
+*.sh text eol=lf
+
+# Enforce LF for config and data files
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.jsonl text eol=lf
+
+# Python files
+*.py text eol=lf
+
+# Dockerfile
+Dockerfile* text eol=lf
+

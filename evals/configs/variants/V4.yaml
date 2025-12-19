@@ -1,0 +1,39 @@
+# EXAID Evaluation - Variant V4 Configuration
+# Extended history variant for comparison
+
+variant_id: V4
+name: "Extended History EXAID"
+description: "LLM-triggered summarization with extended history context"
+
+summarization:
+  enabled: true
+  trigger_mode: "llm"
+  llm_trigger:
+    enabled: true
+    bias: "trigger"
+
+# Summarizer config with extended history
+summarizer:
+  # Override history_k to test extended context
+  history_k_override: 5
+
+# Uses same chunk/time params as V3 for fair comparison
+chunk_params:
+  frozen: true
+  token_gate:
+    min_tokens: 35
+    max_tokens: 90
+    boundary_cues: ".?!\n"
+
+time_params:
+  frozen: true
+  timeouts:
+    silence_timer: 15.0
+    max_wait_timeout: 40.0
+
+# Concept extractor settings
+concept_extractor:
+  inherit_defaults: true
+  model: "en_core_sci_sm"
+
+

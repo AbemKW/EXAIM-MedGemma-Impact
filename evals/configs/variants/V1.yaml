@@ -1,0 +1,24 @@
+# EXAID Evaluation - Variant V1 Configuration
+# Fixed-threshold summarization variant
+
+variant_id: V1
+name: "Fixed Threshold Summarization"
+description: "Summarization triggered by fixed trace count threshold"
+
+summarization:
+  enabled: true
+  # Trigger mode: threshold-based (not LLM-based)
+  trigger_mode: "threshold"
+  # Number of traces before triggering summarization
+  trigger_threshold: 5
+
+# Uses default summarizer config
+summarizer:
+  # Inherit history_k from summarizer.yaml
+  history_k_override: null
+
+# Concept extractor settings (inherit from run defaults)
+concept_extractor:
+  inherit_defaults: true
+
+

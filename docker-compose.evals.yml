@@ -1,0 +1,14 @@
+# EXAID Evaluation Module - Docker Compose Configuration
+# Usage: docker compose -f docker-compose.evals.yml build
+#        docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
+
+services:
+  evals:
+    build:
+      context: .
+      dockerfile: Dockerfile.evals
+    volumes:
+      - ./evals:/app/evals
+    working_dir: /app/evals
+    stdin_open: true
+    tty: true

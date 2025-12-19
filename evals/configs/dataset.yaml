@@ -1,0 +1,35 @@
+# EXAID Evaluation - Dataset Configuration
+# This file defines dataset selection and filtering rules
+
+# Include all available runs in evaluation
+include_all_runs: true
+
+# Selection rule for filtering cases
+# Placeholder - to be defined based on dataset structure
+selection_rule: "placeholder"
+
+# Dataset source configuration
+source:
+  # Path to cases directory (relative to evals/)
+  cases_dir: "data/cases"
+  # File pattern for case files
+  file_pattern: "*.json"
+
+# Case filtering (placeholder values)
+filters:
+  # Minimum number of agent traces per case
+  min_traces: 1
+  # Maximum number of agent traces per case (null = no limit)
+  max_traces: null
+  # Required agent types (empty = any)
+  required_agents: []
+
+# Sampling configuration (for subset evaluation)
+sampling:
+  enabled: false
+  # Random seed for reproducibility
+  seed: 42
+  # Number of cases to sample (when enabled)
+  n_samples: null
+
+

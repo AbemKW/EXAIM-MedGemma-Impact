@@ -1,0 +1,106 @@
+# EXAID Evaluation - Stop Entity List for scispaCy Concept Extraction
+# Entities in this list are filtered out during concept extraction
+# One entity per line, case-insensitive matching after normalization
+# Lines starting with # are comments
+
+# Generic medical terms (too broad)
+patient
+patients
+diagnosis
+diagnoses
+treatment
+treatments
+symptom
+symptoms
+condition
+conditions
+disease
+diseases
+medication
+medications
+drug
+drugs
+test
+tests
+result
+results
+finding
+findings
+
+# Common non-specific terms
+normal
+abnormal
+positive
+negative
+elevated
+decreased
+increased
+high
+low
+mild
+moderate
+severe
+acute
+chronic
+
+# Temporal terms
+day
+days
+week
+weeks
+month
+months
+year
+years
+hour
+hours
+time
+times
+
+# Quantity terms
+level
+levels
+value
+values
+range
+rate
+rates
+
+# Administrative terms
+report
+reports
+note
+notes
+history
+follow
+followup
+referral
+consult
+consultation
+
+# Common verbs/actions (when extracted as entities)
+showed
+shows
+show
+revealed
+indicates
+indicated
+suggests
+suggested
+recommend
+recommended
+
+# Body part generics (too common)
+body
+organ
+organs
+system
+systems
+tissue
+tissues
+cell
+cells
+
+# Add domain-specific stop entities below as needed
+
+

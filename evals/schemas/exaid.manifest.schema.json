@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exaid.ai/schemas/exaid.manifest.schema.json",
+  "title": "EXAID Experiment Manifest",
+  "description": "Schema for experiment manifest files that track evaluation configuration and provenance",
+  "type": "object",
+  "required": [
+    "schema_name",
+    "schema_version",
+    "experiment_id",
+    "created_at",
+    "config_hash"
+  ],
+  "properties": {
+    "schema_name": {
+      "type": "string",
+      "const": "exaid.manifest",
+      "description": "Schema identifier for validation routing"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the schema"
+    },
+    "experiment_id": {
+      "type": "string",
+      "pattern": "^exp-[a-z0-9-]+$",
+      "description": "Unique experiment identifier"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of manifest creation"
+    },
+    "config_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "description": "SHA-256 hash of concatenated config files for reproducibility verification"
+    },
+    "dataset_config": {
+      "type": "object",
+      "description": "Dataset configuration snapshot",
+      "properties": {
+        "include_all_runs": {
+          "type": "boolean"
+        },
+        "selection_rule": {
+          "type": "string"
+        },
+        "case_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "variant_configs": {
+      "type": "object",
+      "description": "Map of variant IDs to their configuration snapshots",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "string"
+          },
+          "config_file": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "summarizer_config": {
+      "type": "object",
+      "description": "Summarizer configuration snapshot",
+      "properties": {
+        "history_k": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "mas_generation_config": {
+      "type": "object",
+      "description": "MAS generation configuration snapshot"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional human-readable notes about the experiment"
+    }
+  },
+  "examples": [
+    {
+      "schema_name": "exaid.manifest",
+      "schema_version": "1.0.0",
+      "experiment_id": "exp-2024-paper-main",
+      "created_at": "2024-12-19T12:00:00Z",
+      "config_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dataset_config": {
+        "include_all_runs": true,
+        "selection_rule": "all",
+        "case_count": 100
+      },
+      "summarizer_config": {
+        "history_k": 3
+      }
+    }
+  ]
+}
+
+

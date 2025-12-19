@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exaid.ai/schemas/exaid.metrics.schema.json",
+  "title": "EXAID Metrics Record",
+  "description": "Schema for computed evaluation metrics records",
+  "type": "object",
+  "required": [
+    "schema_name",
+    "schema_version",
+    "metric_id",
+    "variant_id",
+    "computed_at"
+  ],
+  "properties": {
+    "schema_name": {
+      "type": "string",
+      "const": "exaid.metrics",
+      "description": "Schema identifier for validation routing"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the schema"
+    },
+    "metric_id": {
+      "type": "string",
+      "pattern": "^met-[a-z0-9-]+$",
+      "description": "Unique metric record identifier"
+    },
+    "variant_id": {
+      "type": "string",
+      "pattern": "^V[0-9]+$",
+      "description": "Summarizer variant identifier"
+    },
+    "computed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when metrics were computed"
+    },
+    "case_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of cases included in this metric computation"
+    },
+    "coverage": {
+      "type": "object",
+      "description": "Concept coverage metrics",
+      "properties": {
+        "mean": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "std": {
+          "type": "number",
+          "minimum": 0
+        },
+        "median": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "redundancy": {
+      "type": "object",
+      "description": "Redundancy metrics at different tau thresholds",
+      "properties": {
+        "tau_0.85": {
+          "type": "object",
+          "properties": {
+            "mean": {"type": "number"},
+            "std": {"type": "number"}
+          }
+        },
+        "tau_0.90": {
+          "type": "object",
+          "properties": {
+            "mean": {"type": "number"},
+            "std": {"type": "number"}
+          }
+        },
+        "tau_0.95": {
+          "type": "object",
+          "properties": {
+            "mean": {"type": "number"},
+            "std": {"type": "number"}
+          }
+        }
+      }
+    },
+    "token_budget": {
+      "type": "object",
+      "description": "Coverage at different token budget levels",
+      "properties": {
+        "B_250": {
+          "type": "object",
+          "properties": {
+            "coverage_mean": {"type": "number"},
+            "coverage_std": {"type": "number"}
+          }
+        },
+        "B_500": {
+          "type": "object",
+          "properties": {
+            "coverage_mean": {"type": "number"},
+            "coverage_std": {"type": "number"}
+          }
+        },
+        "B_1000": {
+          "type": "object",
+          "properties": {
+            "coverage_mean": {"type": "number"},
+            "coverage_std": {"type": "number"}
+          }
+        },
+        "B_2000": {
+          "type": "object",
+          "properties": {
+            "coverage_mean": {"type": "number"},
+            "coverage_std": {"type": "number"}
+          }
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "description": "Timing statistics across all runs",
+      "properties": {
+        "mean_run_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total_compute_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_name": "exaid.metrics",
+      "schema_version": "1.0.0",
+      "metric_id": "met-v3-20241219",
+      "variant_id": "V3",
+      "computed_at": "2024-12-19T14:00:00Z",
+      "case_count": 100,
+      "coverage": {
+        "mean": 0.73,
+        "std": 0.12,
+        "median": 0.75,
+        "min": 0.45,
+        "max": 0.92
+      },
+      "redundancy": {
+        "tau_0.85": {"mean": 0.15, "std": 0.08},
+        "tau_0.90": {"mean": 0.10, "std": 0.05},
+        "tau_0.95": {"mean": 0.05, "std": 0.03}
+      },
+      "token_budget": {
+        "B_250": {"coverage_mean": 0.45, "coverage_std": 0.10},
+        "B_500": {"coverage_mean": 0.62, "coverage_std": 0.08},
+        "B_1000": {"coverage_mean": 0.73, "coverage_std": 0.06},
+        "B_2000": {"coverage_mean": 0.82, "coverage_std": 0.05}
+      },
+      "timing": {
+        "mean_run_ms": 2500,
+        "total_compute_ms": 250000
+      }
+    }
+  ]
+}
+
+
