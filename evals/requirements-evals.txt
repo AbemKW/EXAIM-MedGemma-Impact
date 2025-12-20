@@ -15,3 +15,7 @@ matplotlib>=3.8.0,<4.0.0
 
 # NLP
 spacy==3.7.4
+
+# MAC Integration (Multi-Agent Conversation)
+# pyautogen is required to run MAC trace generation
+pyautogen==0.2.32

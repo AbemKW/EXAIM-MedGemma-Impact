@@ -13,3 +13,6 @@
 # Dockerfile
 Dockerfile* text eol=lf
 
+# Git configuration files
+.gitmodules text eol=lf
+
