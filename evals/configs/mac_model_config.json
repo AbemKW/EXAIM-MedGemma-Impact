@@ -1,7 +1,6 @@
 [
   {
     "model": "gpt-4o-mini",
-    "api_key": "${OPENAI_API_KEY}",
     "base_url": "https://api.openai.com/v1",
     "tags": ["x_gpt4o_mini", "x_openai"]
   }

@@ -426,6 +426,8 @@ Schema files use JSON Schema Draft 2020-12.
 - en_core_sci_sm model pre-installed
 - All dependencies pinned in `requirements-evals.txt`
 
+The evaluation container is pinned to linux/amd64 to ensure compatibility across common reviewer and CI environments.
+
 **Note on scispaCy installation:** We install scispaCy with dependency resolution disabled (`--no-deps`) to ensure compatibility with Python 3.12; concept extraction uses only pretrained NER models and does not rely on SciPy internals beyond array operations.
 
 ### Running Commands Manually
