@@ -84,6 +84,8 @@ This separation ensures that:
 2. EXAID evaluates only its own summarization middleware, not MAC's diagnostic capability
 3. Results are reproducible using frozen trace files
 
+**Runtime Configuration:** MAC is executed using a model configuration supplied by EXAID at runtime (`evals/configs/mac_model_config.json`). The MAC submodule itself is unmodified and pinned to the authors' released commit.
+
 ### Version Pinning and Decoding Parameters
 
 MAC is integrated as a pinned git submodule at `third_party/mac/`:

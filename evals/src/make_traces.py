@@ -293,39 +293,36 @@ def run_mac_case(
             get_inital_message,
         )
         
-        # Load MAC's own config
-        config_path = Path(mac_module_path) / "configs" / "config_list.json"
+        # Load EXAID-owned model configuration
+        # MAC submodule is unmodified; EXAID controls provider selection at runtime
+        # This config is versioned in EXAID and fully reproducible
+        script_dir = Path(__file__).parent.parent  # evals/
+        config_path = script_dir / "configs" / "mac_model_config.json"
         
-        # Check if config exists, if not we'll create a minimal stub
         if not config_path.exists():
-            # For trace generation without actual API calls, we need the config
-            # In production, this should be provided
-            return [], f"MAC config not found: {config_path}"
+            return [], f"EXAID model config not found: {config_path}"
         
-        # Use MAC's internal configuration
-        # Note: We do NOT override temperature or other decoding parameters
-        # Model priority: gpt-4o-mini (preferred) -> gpt-4-turbo -> gpt-3.5-turbo
+        # Load config with model priority: gpt-4o-mini -> gpt-4-turbo -> gpt-3.5-turbo
+        # Note: We do NOT override MAC's internal temperature or decoding parameters
         config_list = config_list_from_json(
             env_or_file=str(config_path),
             filter_dict={"tags": ["x_gpt4o_mini"]}
         )
         
         if not config_list:
-            # Fall back to GPT-4 turbo if gpt-4o-mini not configured
             config_list = config_list_from_json(
                 env_or_file=str(config_path),
                 filter_dict={"tags": ["x_gpt4_turbo"]}
             )
         
         if not config_list:
-            # Fall back to GPT-3.5 as last resort
             config_list = config_list_from_json(
                 env_or_file=str(config_path),
                 filter_dict={"tags": ["x_gpt35_turbo"]}
             )
         
         if not config_list:
-            return [], "No valid model configuration found in MAC config"
+            return [], "No valid model configuration found in EXAID config"
         
         # MAC's internal model config - we do not override these
         model_config = {
