@@ -53,10 +53,20 @@
       "minLength": 1,
       "description": "Raw text content of the agent trace"
     },
+    "text_units_ctu": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Character-Normalized Token Units (CTU), defined as ceil(len(text)/4). Used for all evaluation metrics."
+    },
     "token_count": {
       "type": "integer",
       "minimum": 0,
-      "description": "Token count of the content (tokenizer-dependent)"
+      "description": "DEPRECATED: Legacy token count field. Use text_units_ctu for evaluation metrics or provider_token_count for raw provider data."
+    },
+    "provider_token_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Provider-reported token count (usage metadata only, not used in evaluation)"
     },
     "metadata": {
       "type": "object",
@@ -66,14 +76,26 @@
           "type": "string",
           "description": "LLM model that generated this trace"
         },
-        "temperature": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 2
-        },
         "latency_ms": {
           "type": "integer",
           "minimum": 0
+        },
+        "mas_run_id": {
+          "type": "string",
+          "description": "Deterministic identifier for the MAS trace generation run"
+        },
+        "mac_commit": {
+          "type": "string",
+          "description": "Git commit hash of the MAC submodule used for generation"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["success", "failed"],
+          "description": "Execution status of the trace generation"
+        },
+        "failure_reason": {
+          "type": "string",
+          "description": "Reason for failure if status is 'failed'"
         }
       }
     }
@@ -88,10 +110,11 @@
       "sequence_num": 5,
       "timestamp": "2024-12-19T12:05:30Z",
       "content": "Based on the elevated troponin levels and ST-segment changes, I suspect acute coronary syndrome...",
-      "token_count": 45,
+      "text_units_ctu": 24,
+      "token_count": 23,
+      "provider_token_count": 23,
       "metadata": {
-        "model": "gpt-4",
-        "temperature": 0.7,
+        "model": "gpt-4o-mini",
         "latency_ms": 1250
       }
     }

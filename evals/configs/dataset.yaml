@@ -5,8 +5,7 @@
 include_all_runs: true
 
 # Selection rule for filtering cases
-# Placeholder - to be defined based on dataset structure
-selection_rule: "placeholder"
+selection_rule: "mac_subset"
 
 # Dataset source configuration
 source:
@@ -32,4 +31,36 @@ sampling:
   # Number of cases to sample (when enabled)
   n_samples: null
 
+# =============================================================================
+# MAC Case Selection Policy
+# =============================================================================
+# Controls which cases from the MAC dataset (302 total) are used for trace
+# generation. Selection is deterministic and recorded in the manifest.
 
+mac_selection:
+  # Selection mode: "fixed_subset" | "all"
+  # - fixed_subset: Select n_cases using seeded random sampling
+  # - all: Use all 302 MAC cases
+  mode: "fixed_subset"
+  
+  # Random seed for deterministic case selection
+  # Changing this seed will produce a different case subset
+  seed: 42
+  
+  # Number of cases to select (when mode=fixed_subset)
+  # Recommended range: 30-50 for development, full 302 for final evaluation
+  n_cases: 40
+  
+  # Explicit case list override (optional)
+  # If provided as a list of case IDs, takes precedence over random selection
+  # Example: ["case-001", "case-015", "case-042"]
+  explicit_cases: null
+  
+  # Include-all execution policy within selected subset
+  # When true, all selected cases MUST be executed (no early stopping)
+  include_all_in_subset: true
+  
+  # Failure handling policy
+  # - "log_stub": Write a stub trace with status=failed (recommended)
+  # - "raise": Raise exception and halt execution
+  on_failure: "log_stub"
