@@ -28,6 +28,7 @@ import os
 import random
 import re
 import sys
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Optional
@@ -281,6 +282,13 @@ def run_mac_case(
         # Add MAC to path
         sys.path.insert(0, mac_module_path)
         
+        # Suppress autogen's overly strict API key format warning
+        # "sk-proj" keys are valid OpenAI keys but autogen doesn't recognize them
+        # Autogen uses logging, not warnings, so we need to filter logging
+        import logging
+        autogen_logger = logging.getLogger("autogen.oai.client")
+        autogen_logger.setLevel(logging.ERROR)  # Only show errors, suppress warnings
+        
         from autogen import (
             GroupChat,
             GroupChatManager,
@@ -302,27 +310,60 @@ def run_mac_case(
         if not config_path.exists():
             return [], f"EXAID model config not found: {config_path}"
         
-        # Load config with model priority: gpt-4o-mini -> gpt-4-turbo -> gpt-3.5-turbo
-        # Note: We do NOT override MAC's internal temperature or decoding parameters
-        config_list = config_list_from_json(
-            env_or_file=str(config_path),
-            filter_dict={"tags": ["x_gpt4o_mini"]}
-        )
+        # Load JSON and inject API key from environment
+        # Autogen doesn't automatically read from env when api_key is missing
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
         
-        if not config_list:
+        # Get API key from environment (passed via docker-compose)
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return [], "OPENAI_API_KEY environment variable not set"
+        
+        # Trim whitespace and validate
+        api_key = api_key.strip()
+        if not api_key:
+            return [], "OPENAI_API_KEY environment variable is empty or whitespace-only"
+        
+        # Inject API key into each config entry
+        for config_entry in config_data:
+            if "api_key" not in config_entry or not config_entry.get("api_key"):
+                config_entry["api_key"] = api_key
+        
+        # Write to temporary file for autogen to read
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
+            json.dump(config_data, tmp_file)
+            tmp_config_path = tmp_file.name
+        
+        try:
+            # Load config with model priority: gpt-4o-mini -> gpt-4-turbo -> gpt-3.5-turbo
+            # Note: We do NOT override MAC's internal temperature or decoding parameters
             config_list = config_list_from_json(
-                env_or_file=str(config_path),
-                filter_dict={"tags": ["x_gpt4_turbo"]}
+                env_or_file=tmp_config_path,
+                filter_dict={"tags": ["x_gpt4o_mini"]}
             )
         
-        if not config_list:
-            config_list = config_list_from_json(
-                env_or_file=str(config_path),
-                filter_dict={"tags": ["x_gpt35_turbo"]}
-            )
-        
-        if not config_list:
-            return [], "No valid model configuration found in EXAID config"
+            if not config_list:
+                config_list = config_list_from_json(
+                    env_or_file=tmp_config_path,
+                    filter_dict={"tags": ["x_gpt4_turbo"]}
+                )
+            
+            if not config_list:
+                config_list = config_list_from_json(
+                    env_or_file=tmp_config_path,
+                    filter_dict={"tags": ["x_gpt35_turbo"]}
+                )
+            
+            if not config_list:
+                return [], "No valid model configuration found in EXAID config"
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(tmp_config_path)
+            except:
+                pass
         
         # MAC's internal model config - we do not override these
         model_config = {

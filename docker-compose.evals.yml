@@ -11,13 +11,16 @@
 
 services:
   evals:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.evals
+      platforms:
+        - linux/amd64
     volumes:
       - ./evals:/app/evals
     working_dir: /app/evals
     stdin_open: true
     tty: true
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
