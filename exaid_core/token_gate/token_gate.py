@@ -7,12 +7,16 @@ class TokenGate:
     
     The Token Gate does not interpret meaning - it only decides when enough structure
     has accumulated to pass tokens upstream to the BufferAgent for semantic evaluation.
+    
+    Note: This class counts whitespace-delimited words (not model tokenizer tokens)
+    for its min/max thresholds. The class name "TokenGate" refers to its role in
+    gating streaming tokens from the LLM, not to the counting method.
     """
     
     def __init__(
         self,
-        min_tokens: int = 35,
-        max_tokens: int = 90,
+        min_words: int = 35,
+        max_words: int = 90,
         boundary_cues: str = ".?!\n",
         silence_timer: float = 15,
         max_wait_timeout: float = 40
@@ -20,19 +24,19 @@ class TokenGate:
         """Initialize TokenGate with configurable flush triggers.
         
         Args:
-            min_tokens: Minimum token threshold before flushing (default: 35)
-            max_tokens: Maximum token cap to force flush (default: 90)
+            min_words: Minimum word threshold (whitespace-delimited) before flushing (default: 35)
+            max_words: Maximum word cap (whitespace-delimited) to force flush (default: 90)
             boundary_cues: Punctuation/newline characters that trigger early flush (default: ".?!\n")
             silence_timer: Seconds of inactivity before flush (default: 15)
             max_wait_timeout: Maximum seconds before forced flush (default: 40)
         """
-        self.min_tokens = min_tokens
-        self.max_tokens = max_tokens
+        self.min_words = min_words
+        self.max_words = max_words
         self.boundary_cues = boundary_cues
         self.silence_timer = silence_timer
         self.max_wait_timeout = max_wait_timeout
         
-        # Per-agent token buffers
+        # Per-agent text buffers
         self.buffers: Dict[str, str] = {}
         
         # Track when each agent's buffer started (for max wait timeout)
@@ -41,32 +45,38 @@ class TokenGate:
         # Track when last token was received (for silence timer)
         self.last_token_times: Dict[str, datetime] = {}
     
-    def _count_tokens(self, text: str) -> int:
-        """Approximate token count using whitespace-based splitting.
+    def _count_words(self, text: str) -> int:
+        """Count whitespace-delimited words in text.
         
-        This is a simple approximation - actual tokenizers would be more accurate,
-        but this avoids external dependencies and is fast enough for flow control.
+        This counts words by splitting on whitespace, providing a simple and fast
+        method for flow control without external tokenizer dependencies.
+        
+        Args:
+            text: Text to count words in
+            
+        Returns:
+            Number of whitespace-delimited words
         """
         if not text:
             return 0
-        # Split by whitespace and count non-empty tokens
-        tokens = text.split()
-        return len(tokens)
+        # Split by whitespace and count non-empty words
+        words = text.split()
+        return len(words)
     
     def _has_boundary_cue(self, text: str, min_threshold: int) -> bool:
         """Check if text contains boundary cues after reaching ~70% of min_threshold.
         
         Args:
             text: Text to check
-            min_threshold: Minimum token threshold
+            min_threshold: Minimum word threshold
             
         Returns:
             True if boundary cue found after threshold, False otherwise
         """
-        token_count = self._count_tokens(text)
+        word_count = self._count_words(text)
         early_flush_threshold = int(min_threshold * 0.7)
         
-        if token_count < early_flush_threshold:
+        if word_count < early_flush_threshold:
             return False
         
         # Check if any boundary cue exists in the text
@@ -89,16 +99,16 @@ class TokenGate:
             return False
         
         buffer_text = self.buffers[agent_id]
-        token_count = self._count_tokens(buffer_text)
+        word_count = self._count_words(buffer_text)
         
-        # Maximum token cap - force flush
-        if token_count >= self.max_tokens:
+        # Maximum word cap - force flush
+        if word_count >= self.max_words:
             return True
         
-        # Minimum token threshold reached
-        if token_count >= self.min_tokens:
+        # Minimum word threshold reached
+        if word_count >= self.min_words:
             # Check for boundary cue early flush
-            if self._has_boundary_cue(buffer_text, self.min_tokens):
+            if self._has_boundary_cue(buffer_text, self.min_words):
                 return True
             # Even without boundary cue, flush at min threshold
             return True
@@ -141,7 +151,7 @@ class TokenGate:
         
         Args:
             agent_id: Agent identifier
-            token: Token string to add
+            token: Token string to add (streaming token from LLM)
             
         Returns:
             Flushed chunk text if flush triggered, None otherwise
@@ -226,4 +236,3 @@ class TokenGate:
         if self._check_timer_conditions(agent_id):
             return await self.flush(agent_id)
         return None
-

@@ -106,10 +106,10 @@ The system is organized around a few small modules:
 - `agents/token_gate.py` — Token streaming pre-buffer
   - Purpose: A lightweight, syntax-aware pre-buffer that regulates token flow into BufferAgent for streaming scenarios.
   - Features:
-    - Configurable token thresholds (min/max tokens)
+    - Configurable word thresholds (min/max words, whitespace-delimited)
     - Boundary cue detection (punctuation, newlines)
     - Silence timer and max wait timeout
-    - Per-agent token buffering
+    - Per-agent text buffering
 
 - `agents/base_agent.py` — Base agent interface
   - Purpose: Abstract base class (`BaseAgent`) defining the interface for agents that can be integrated with EXAID.
@@ -137,7 +137,7 @@ The system is organized around a few small modules:
 
 - **LLM-powered event-driven summarization:** The buffer uses an LLM to intelligently decide when to trigger summarization based on trace content, not just a static threshold. Summarization triggers when thoughts complete, topics change, or sufficient context accumulates.
 - **Multi-agent support:** Traces are tagged by agent ID and summarized in context, allowing multiple specialized agents to contribute to a single reasoning workflow.
-- **Streaming token support:** `TokenGate` provides intelligent chunking of streaming tokens with configurable thresholds, boundary detection, and timeout mechanisms.
+- **Streaming token support:** `TokenGate` provides intelligent chunking of streaming tokens with configurable word thresholds (whitespace-delimited), boundary detection, and timeout mechanisms.
 - **Structured summaries:** Summaries are generated as structured `AgentSummary` objects with fields optimized for medical reasoning:
   - `agents`: List of agent IDs involved
   - `action`: Brief action statement (max 100 chars)
