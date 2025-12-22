@@ -24,9 +24,10 @@ buffer:
   fallback_threshold: 5
 
 # Token gate configuration (for streaming)
+# Note: min_words/max_words count whitespace-delimited words, not model tokens
 token_gate:
-  min_tokens: 35
-  max_tokens: 90
+  min_words: 35
+  max_words: 90
   boundary_cues: ".?!\n"
   silence_timer: 15.0
   max_wait_timeout: 40.0

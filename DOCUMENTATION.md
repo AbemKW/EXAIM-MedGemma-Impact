@@ -414,14 +414,16 @@ class AgentSummary(BaseModel):
 
 **Purpose**: A lightweight, syntax-aware pre-buffer that regulates token flow into BufferAgent for streaming scenarios. It does not interpret meaning - it only decides when enough structure has accumulated to pass tokens upstream for semantic evaluation.
 
+**Note**: TokenGate counts **whitespace-delimited words** (not model tokenizer tokens) for its min/max thresholds. The class name "TokenGate" refers to its role in gating streaming tokens from the LLM, not to the counting method.
+
 **Key Components**:
 
 ```python
 class TokenGate:
     def __init__(
         self,
-        min_tokens: int = 35,
-        max_tokens: int = 90,
+        min_words: int = 35,
+        max_words: int = 90,
         boundary_cues: str = ".?!\n",
         silence_timer: float = 15,
         max_wait_timeout: float = 40
@@ -435,8 +437,8 @@ class TokenGate:
 Adds a token to the buffer for the given agent. If flush conditions are met, returns the buffered text and clears the buffer.
 
 **Flush Conditions**:
-- Maximum token cap reached (`max_tokens`)
-- Minimum token threshold reached (`min_tokens`) AND boundary cue detected
+- Maximum word cap reached (`max_words`)
+- Minimum word threshold reached (`min_words`) AND boundary cue detected
 - Silence timer expired (no tokens received for `silence_timer` seconds)
 - Max wait timeout expired (buffer has existed for `max_wait_timeout` seconds)
 
@@ -455,11 +457,11 @@ Check if timers have expired and flush if needed. Should be called periodically 
 **Returns**: Flushed chunk if timer expired, `None` otherwise
 
 **Features**:
-- Per-agent token buffering
-- Configurable token thresholds
+- Per-agent text buffering
+- Configurable word thresholds (whitespace-delimited)
 - Boundary cue detection (punctuation, newlines)
 - Timeout mechanisms (silence timer, max wait timeout)
-- Approximate token counting using whitespace-based splitting
+- Word counting using whitespace-based splitting
 
 ---
 
@@ -806,13 +808,15 @@ Get trace count for an agent.
 
 ### TokenGate Class
 
+Note: TokenGate counts whitespace-delimited words (not model tokenizer tokens) for its min/max thresholds.
+
 #### `async add_token(agent_id: str, token: str) -> Optional[str]`
 
-Add a token to the buffer for the given agent.
+Add a streaming token to the buffer for the given agent. Flushes when word thresholds are met.
 
 **Parameters**:
 - `agent_id` (str): Agent identifier
-- `token` (str): Token string to add
+- `token` (str): Token string to add (streaming token from LLM)
 
 **Returns**: Flushed chunk text if flush triggered, `None` otherwise
 
