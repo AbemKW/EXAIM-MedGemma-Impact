@@ -1,112 +1,265 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://exaid.ai/schemas/exaid.manifest.schema.json",
-  "title": "EXAID Experiment Manifest",
-  "description": "Schema for experiment manifest files that track evaluation configuration and provenance",
-  "type": "object",
-  "required": [
-    "schema_name",
-    "schema_version",
-    "experiment_id",
-    "created_at",
-    "config_hash"
+  "title": "EXAID Dataset Manifest",
+  "description": "Schema for dataset manifest files (v2.0.0). Multi-record JSONL format with full provenance for reproducibility.",
+  
+  "oneOf": [
+    { "$ref": "#/$defs/manifest_meta" },
+    { "$ref": "#/$defs/provenance" },
+    { "$ref": "#/$defs/trace_entry" },
+    { "$ref": "#/$defs/summary" }
   ],
-  "properties": {
-    "schema_name": {
-      "type": "string",
-      "const": "exaid.manifest",
-      "description": "Schema identifier for validation routing"
-    },
-    "schema_version": {
-      "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "Semantic version of the schema"
-    },
-    "experiment_id": {
-      "type": "string",
-      "pattern": "^exp-[a-z0-9-]+$",
-      "description": "Unique experiment identifier"
-    },
-    "created_at": {
-      "type": "string",
-      "format": "date-time",
-      "description": "ISO 8601 timestamp of manifest creation"
-    },
-    "config_hash": {
-      "type": "string",
-      "pattern": "^sha256:[a-f0-9]{64}$",
-      "description": "SHA-256 hash of concatenated config files for reproducibility verification"
-    },
-    "dataset_config": {
+  
+  "$defs": {
+    "manifest_meta": {
       "type": "object",
-      "description": "Dataset configuration snapshot",
+      "description": "Manifest-level metadata (first record)",
+      "required": [
+        "record_type",
+        "schema_version",
+        "dataset_id",
+        "mas_run_id",
+        "created_at"
+      ],
       "properties": {
-        "include_all_runs": {
-          "type": "boolean"
+        "record_type": {
+          "type": "string",
+          "const": "manifest_meta",
+          "description": "Record type discriminator"
         },
-        "selection_rule": {
-          "type": "string"
+        "schema_version": {
+          "type": "string",
+          "const": "2.0.0",
+          "description": "Schema version (frozen)"
         },
-        "case_count": {
-          "type": "integer",
-          "minimum": 0
+        "dataset_id": {
+          "type": "string",
+          "pattern": "^exaid_traces_[a-z0-9_]+$",
+          "description": "Dataset identifier (input-derived, deterministic)"
+        },
+        "mas_run_id": {
+          "type": "string",
+          "pattern": "^mas_[a-z0-9_]+$",
+          "description": "MAS generation campaign ID that produced these traces"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of manifest creation"
+        },
+        "stub_mode": {
+          "type": "boolean",
+          "description": "True if traces were generated using stub mode (not real MAC execution). Stub traces must not be used for evaluation."
         }
-      }
+      },
+      "additionalProperties": false
     },
-    "variant_configs": {
+    
+    "provenance": {
       "type": "object",
-      "description": "Map of variant IDs to their configuration snapshots",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "variant_id": {
-            "type": "string"
-          },
-          "config_file": {
-            "type": "string"
-          },
-          "parameters": {
-            "type": "object"
-          }
-        }
-      }
-    },
-    "summarizer_config": {
-      "type": "object",
-      "description": "Summarizer configuration snapshot",
+      "description": "Full provenance information for reproducibility",
+      "required": [
+        "record_type",
+        "mac_fork_url",
+        "mac_commit",
+        "exaid_commit",
+        "model",
+        "decoding",
+        "case_list_hash",
+        "config_hash"
+      ],
       "properties": {
-        "history_k": {
-          "type": "integer",
-          "minimum": 1
+        "record_type": {
+          "type": "string",
+          "const": "provenance",
+          "description": "Record type discriminator"
+        },
+        "mac_fork_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL of MAC fork repository"
+        },
+        "mac_commit": {
+          "type": "string",
+          "minLength": 40,
+          "maxLength": 40,
+          "description": "Full 40-character MAC commit hash"
+        },
+        "exaid_commit": {
+          "type": "string",
+          "description": "EXAID repository commit hash that generated traces"
+        },
+        "model": {
+          "type": "string",
+          "description": "LLM model used for generation"
+        },
+        "decoding": {
+          "type": "object",
+          "description": "Decoding parameters (canonicalized for hash)",
+          "properties": {
+            "temperature": { "type": "number" },
+            "top_p": { "type": ["number", "null"] },
+            "max_tokens": { "type": ["integer", "null"] },
+            "seed": { "type": ["integer", "null"] }
+          },
+          "required": ["temperature"]
+        },
+        "case_list_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA256 hash of case_list.jsonl file bytes"
+        },
+        "case_list_hash_input": {
+          "type": "string",
+          "const": "SHA256 of case_list.jsonl file bytes",
+          "description": "Definition of case_list_hash input"
+        },
+        "config_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA256 hash of generation config files"
+        },
+        "trace_dataset_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA256 of canonical dataset fields for eval_run_id derivation"
+        },
+        "trace_dataset_hash_definition": {
+          "type": "string",
+          "const": "SHA256 of JSON: {mas_run_id, case_list_hash, sorted [(case_id, trace_sha256)]}",
+          "description": "Definition of trace_dataset_hash computation"
         }
-      }
+      },
+      "additionalProperties": false
     },
-    "mas_generation_config": {
+    
+    "trace_entry": {
       "type": "object",
-      "description": "MAS generation configuration snapshot"
+      "description": "Per-trace file entry with hash and statistics",
+      "required": [
+        "record_type",
+        "case_id",
+        "file",
+        "sha256",
+        "delta_count",
+        "turn_count"
+      ],
+      "properties": {
+        "record_type": {
+          "type": "string",
+          "const": "trace_entry",
+          "description": "Record type discriminator"
+        },
+        "case_id": {
+          "type": "string",
+          "pattern": "^case-[a-z0-9-]+$",
+          "description": "Case identifier"
+        },
+        "file": {
+          "type": "string",
+          "description": "Trace file name (relative to traces directory)"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA256 hash of trace file bytes"
+        },
+        "delta_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of stream_delta records in trace"
+        },
+        "turn_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of turns in trace"
+        }
+      },
+      "additionalProperties": false
     },
-    "notes": {
-      "type": "string",
-      "description": "Optional human-readable notes about the experiment"
+    
+    "summary": {
+      "type": "object",
+      "description": "Dataset summary statistics (last record)",
+      "required": [
+        "record_type",
+        "total_cases",
+        "total_deltas",
+        "total_turns"
+      ],
+      "properties": {
+        "record_type": {
+          "type": "string",
+          "const": "summary",
+          "description": "Record type discriminator"
+        },
+        "total_cases": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of cases in dataset"
+        },
+        "total_deltas": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total stream_delta records across all traces"
+        },
+        "total_turns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total turns across all traces"
+        },
+        "successful_cases": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of successfully generated cases"
+        },
+        "failed_cases": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of failed cases"
+        }
+      },
+      "additionalProperties": false
     }
   },
+  
   "examples": [
     {
-      "schema_name": "exaid.manifest",
-      "schema_version": "1.0.0",
-      "experiment_id": "exp-2024-paper-main",
-      "created_at": "2024-12-19T12:00:00Z",
-      "config_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "dataset_config": {
-        "include_all_runs": true,
-        "selection_rule": "all",
-        "case_count": 100
-      },
-      "summarizer_config": {
-        "history_k": 3
-      }
+      "record_type": "manifest_meta",
+      "schema_version": "2.0.0",
+      "dataset_id": "exaid_traces_1d5b227a_a3b4c5d6_e7f8g9h0",
+      "mas_run_id": "mas_1d5b227a_gpt4omini_a3b4c5d6_e7f8g9h0",
+      "created_at": "2024-12-24T12:30:00Z"
+    },
+    {
+      "record_type": "provenance",
+      "mac_fork_url": "https://github.com/AbemKW/mac-streaming-traces",
+      "mac_commit": "1d5b227afa64fe3dd5eb7b7c0ef778a09501b220",
+      "exaid_commit": "8d45cbb1234567890abcdef1234567890abcdef12",
+      "model": "gpt-4o-mini",
+      "decoding": {"temperature": 1.0, "top_p": null, "max_tokens": 4096, "seed": null},
+      "case_list_hash": "sha256:abc123def456789012345678901234567890123456789012345678901234abcd",
+      "case_list_hash_input": "SHA256 of case_list.jsonl file bytes",
+      "config_hash": "sha256:def456abc789012345678901234567890123456789012345678901234567efgh",
+      "trace_dataset_hash": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba98765432",
+      "trace_dataset_hash_definition": "SHA256 of JSON: {mas_run_id, case_list_hash, sorted [(case_id, trace_sha256)]}"
+    },
+    {
+      "record_type": "trace_entry",
+      "case_id": "case-33651373",
+      "file": "case-33651373.trace.jsonl.gz",
+      "sha256": "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "delta_count": 1523,
+      "turn_count": 13
+    },
+    {
+      "record_type": "summary",
+      "total_cases": 40,
+      "total_deltas": 58420,
+      "total_turns": 520,
+      "successful_cases": 40,
+      "failed_cases": 0
     }
   ]
 }
-
-

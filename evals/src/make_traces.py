@@ -1,71 +1,163 @@
 #!/usr/bin/env python3
 """
-EXAID Evaluation - Trace Generation Script
+EXAID Evaluation - Timed Trace Generation Script (v2.0.0)
 
-Generates MAS traces from clinical cases using the MAC (Multi-Agent Conversation)
-framework as an upstream trace generator.
+Generates timed MAS traces from clinical cases using the MAC (Multi-Agent Conversation)
+framework with streaming instrumentation.
 
-MAC Integration:
-- MAC is used as an instrumentation-only trace generator
-- MAC controls its own decoding parameters internally (EXAID does not override)
-- Traces are frozen and replayed by EXAID variants
+Phase 2: Raw Stream Capture
+- Traces contain ONLY: delta_text, timestamps, attribution, seq
+- NO derived units (ws_units, ctu) are stored in traces
+- Derived units computed during replay/evaluation (Phase 3+)
+- Stream emissions are delta/chunks (may be fragments, not tokenizer-level tokens)
 
-Token Accounting:
-- All traces use Character-Normalized Token Units (CTU): ceil(len(text) / 4)
-- CTU is vendor-agnostic and deterministic
-- Provider token counts are logged separately as usage metadata only
+Run ID Generation:
+- mas_run_id: Input-derived (no date), deterministic from MAC commit + model + 
+              decoding + case list hash
+- dataset_id: Same pattern for dataset identification
+- eval_run_id: Defined for future use (Phase 3+)
 
-Usage:
-    python make_traces.py --config configs/mas_generation.yaml --dataset-config configs/dataset.yaml
+Timing Semantics:
+- t0_emitted_ms: Anchor is first stream_delta emission timestamp
+- t_rel_ms for deltas: Always >= 0 (t_emitted_ms - t0)
+- t_rel_ms for boundaries: May be NEGATIVE if boundary occurs before t0
+
+Critical Constraints:
+- MAC behavior is UNCHANGED (instrumentation-only)
+- Global seq ordering across entire trace (strictly increasing)
+- Deterministic sorting before seq assignment
+- Reversible monkeypatching with try/finally restore
+
+Usage (from evals/ directory or Docker container):
+    python -m evals.src.make_traces --config configs/mas_generation.yaml --dry-run
+    python -m evals.src.make_traces --config configs/mas_generation.yaml --limit 1
 """
 
 import argparse
 import gzip
 import hashlib
 import json
-import math
 import os
 import random
 import re
+import subprocess
 import sys
-import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import yaml
 
 # =============================================================================
-# CTU (Character-Normalized Token Units)
+# Type Aliases
+# =============================================================================
+TurnTrace = Any  # From MAC instrumentation
+DeltaEmission = Any  # From MAC instrumentation (stream delta/chunk, not tokenizer token)
+
+
+# =============================================================================
+# Deterministic ID Generation
 # =============================================================================
 
-def compute_ctu(text: str) -> int:
+def generate_mas_run_id(
+    mac_commit: str,
+    model: str,
+    decoding: Dict[str, Any],
+    case_list_hash: str
+) -> str:
     """
-    Compute Character-Normalized Token Units (CTU).
+    Generate deterministic mas_run_id from ALL generation inputs.
     
-    CTU = ceil(len(text) / 4)
+    Format: mas_<mac8>_<model>_<decoding8>_<cases8>
     
-    CTU is a model-agnostic, character-normalized text unit used as a deterministic
-    proxy for text volume. The ~4 characters per unit heuristic reflects commonly
-    observed token densities across contemporary subword tokenizers (OpenAI, LLaMA,
-    Gemini, Claude) and is used here strictly as a normalization constant.
-    
-    CTU is NOT a tokenizer—it avoids proprietary tokenizer dependencies and ensures:
-    - Offline computation (no API calls required)
-    - Deterministic replay (same text always produces same CTU count)
-    - Reproducibility for reviewers (vendor-independent)
-    
-    For non-text or empty emissions, returns 0.
+    This ID is input-derived only (no date) for true determinism.
+    Same inputs = same ID regardless of when generation runs.
     
     Args:
-        text: The text content to measure
+        mac_commit: Full MAC commit hash
+        model: Model name (e.g., "gpt-4o-mini")
+        decoding: Decoding parameters dict
+        case_list_hash: SHA256 hash of case list (sha256:xxx format)
         
     Returns:
-        CTU count (integer)
+        Deterministic run ID
     """
-    if not text:
-        return 0
-    return math.ceil(len(text) / 4)
+    # Canonicalize decoding params for hash
+    decoding_canonical = json.dumps({
+        "temperature": decoding.get("temperature", 1.0),
+        "top_p": decoding.get("top_p"),
+        "max_tokens": decoding.get("max_tokens"),
+        "seed": decoding.get("seed")
+    }, sort_keys=True, separators=(',', ':'))
+    decoding_hash = hashlib.sha256(decoding_canonical.encode()).hexdigest()[:8]
+    
+    # Slugify model name (lowercase, remove dashes/dots, max 12 chars)
+    model_slug = model.lower().replace("-", "").replace(".", "").replace(" ", "")[:12]
+    
+    # Extract hash portion from case_list_hash (remove "sha256:" prefix)
+    cases_hash = case_list_hash.replace("sha256:", "")[:8]
+    
+    return f"mas_{mac_commit[:8]}_{model_slug}_{decoding_hash}_{cases_hash}"
+
+
+def generate_dataset_id(
+    mac_commit: str,
+    decoding: Dict[str, Any],
+    case_list_hash: str
+) -> str:
+    """
+    Generate deterministic dataset_id from generation inputs.
+    
+    Format: exaid_traces_<mac8>_<decoding8>_<cases8>
+    
+    Args:
+        mac_commit: Full MAC commit hash
+        decoding: Decoding parameters dict
+        case_list_hash: SHA256 hash of case list
+        
+    Returns:
+        Deterministic dataset ID
+    """
+    decoding_canonical = json.dumps({
+        "temperature": decoding.get("temperature", 1.0),
+        "top_p": decoding.get("top_p"),
+        "max_tokens": decoding.get("max_tokens"),
+        "seed": decoding.get("seed")
+    }, sort_keys=True, separators=(',', ':'))
+    decoding_hash = hashlib.sha256(decoding_canonical.encode()).hexdigest()[:8]
+    
+    cases_hash = case_list_hash.replace("sha256:", "")[:8]
+    
+    return f"exaid_traces_{mac_commit[:8]}_{decoding_hash}_{cases_hash}"
+
+
+def compute_trace_dataset_hash(
+    mas_run_id: str,
+    case_list_hash: str,
+    trace_entries: List[Tuple[str, str]]
+) -> str:
+    """
+    Compute trace_dataset_hash for eval_run_id derivation.
+    
+    Definition: SHA256 of canonical manifest fields (NOT raw file bytes).
+    
+    Args:
+        mas_run_id: MAS generation campaign ID
+        case_list_hash: SHA256 of case list file
+        trace_entries: List of (case_id, trace_sha256) tuples
+        
+    Returns:
+        Hash in format "sha256:xxx"
+    """
+    canonical = {
+        "mas_run_id": mas_run_id,
+        "case_list_hash": case_list_hash,
+        "traces": sorted(trace_entries)  # Sort for determinism
+    }
+    
+    canonical_json = json.dumps(canonical, sort_keys=True, separators=(',', ':'))
+    hash_digest = hashlib.sha256(canonical_json.encode()).hexdigest()
+    return f"sha256:{hash_digest}"
 
 
 # =============================================================================
@@ -84,11 +176,43 @@ def load_dataset_config(config_path: Path) -> dict:
         return yaml.safe_load(f)
 
 
+def compute_config_hash(*config_paths: Path) -> str:
+    """
+    Compute SHA256 hash of concatenated config files.
+    
+    Args:
+        config_paths: Paths to config files
+        
+    Returns:
+        Hash in format "sha256:xxx"
+    """
+    hasher = hashlib.sha256()
+    for path in sorted(config_paths):  # Sort for determinism
+        if path.exists():
+            with open(path, "rb") as f:
+                hasher.update(f.read())
+    return f"sha256:{hasher.hexdigest()}"
+
+
+def get_exaid_commit() -> str:
+    """Get current EXAID repository commit hash."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown"
+
+
 # =============================================================================
 # Case Selection
 # =============================================================================
 
-def get_all_mac_case_ids(mac_module_path: str) -> list[str]:
+def get_all_mac_case_ids(mac_module_path: str) -> List[str]:
     """
     Get all case IDs from the MAC dataset.
     
@@ -113,7 +237,7 @@ def get_all_mac_case_ids(mac_module_path: str) -> list[str]:
     return case_ids
 
 
-def select_mac_cases(dataset_config: dict, all_case_ids: list[str]) -> list[str]:
+def select_mac_cases(dataset_config: dict, all_case_ids: List[str]) -> List[str]:
     """
     Select MAC cases based on dataset configuration.
     
@@ -150,78 +274,42 @@ def select_mac_cases(dataset_config: dict, all_case_ids: list[str]) -> list[str]
 
 
 # =============================================================================
-# Deterministic Run ID Generation
+# Case List File Operations
 # =============================================================================
 
-def generate_mas_run_id(
-    mac_commit: str,
-    model: str,
-    case_ids: list[str]
-) -> str:
+def write_case_list(case_ids: List[str], output_path: Path) -> str:
     """
-    Generate a deterministic MAS run ID.
+    Write ordered case list to JSONL file.
     
-    The run ID is a hash of:
-    - MAC commit hash
-    - Model name
-    - Ordered case list
-    
-    Args:
-        mac_commit: Git commit hash of MAC submodule
-        model: Base model name
-        case_ids: Sorted list of case IDs
-        
-    Returns:
-        Deterministic run ID in format "mas-{hash16}"
-    """
-    payload = json.dumps({
-        "mac_commit": mac_commit,
-        "model": model,
-        "cases": case_ids  # Already sorted
-    }, sort_keys=True)
-    
-    hash_digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
-    return f"mas-{hash_digest}"
-
-
-def compute_case_list_hash(case_ids: list[str]) -> str:
-    """
-    Compute a SHA-256 hash of the ordered case list.
+    Format: Each line is {"index": N, "case_id": "case-XXXXX"}
+    NO _meta line - hash is stored in manifest only.
     
     Args:
         case_ids: Sorted list of case IDs
+        output_path: Path to output file
         
     Returns:
-        Hash in format "sha256:{hash64}"
+        SHA256 hash of file bytes (format: "sha256:xxx")
     """
-    payload = json.dumps(case_ids, sort_keys=True)
-    hash_digest = hashlib.sha256(payload.encode()).hexdigest()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    lines = []
+    for idx, case_id in enumerate(case_ids):
+        record = {"index": idx, "case_id": case_id}
+        lines.append(json.dumps(record, sort_keys=True, separators=(',', ':')))
+    
+    content = "\n".join(lines) + "\n"
+    content_bytes = content.encode("utf-8")
+    
+    with open(output_path, "wb") as f:
+        f.write(content_bytes)
+    
+    hash_digest = hashlib.sha256(content_bytes).hexdigest()
     return f"sha256:{hash_digest}"
 
 
 # =============================================================================
-# Trace ID Generation
-# =============================================================================
-
-def generate_trace_id(case_id: str, sequence: int) -> str:
-    """
-    Generate a unique trace ID.
-    
-    Args:
-        case_id: Case identifier (e.g., "case-37470964")
-        sequence: Sequence number within the case
-        
-    Returns:
-        Trace ID in format "trc-{case_number}-{seq:03d}"
-    """
-    # Extract the numeric part from case_id and ensure lowercase
-    # Schema requires [a-z0-9-]+ pattern
-    case_num = case_id.replace("case-", "").lower()
-    return f"trc-{case_num}-{sequence:03d}"
-
-
-# =============================================================================
-# MAC Integration
+# MAC Integration with Safe Monkeypatching
 # =============================================================================
 
 def load_mac_case(mac_module_path: str, case_id: str, stage: str = "inital") -> Optional[dict]:
@@ -244,7 +332,7 @@ def load_mac_case(mac_module_path: str, case_id: str, stage: str = "inital") -> 
     case_url = case_id.replace("case-", "")
     
     for case in data.get("Cases", []):
-        if str(case.get("Case URL")) == case_url:
+        if str(case.get("Case URL")).lower() == case_url:
             presentation_key = "Initial Presentation" if stage == "inital" else "Follow-up Presentation"
             return {
                 "case_id": case_id,
@@ -258,17 +346,19 @@ def load_mac_case(mac_module_path: str, case_id: str, stage: str = "inital") -> 
     return None
 
 
-def run_mac_case(
+def run_mac_case_instrumented(
     mac_module_path: str,
     case_data: dict,
     mas_config: dict,
-) -> tuple[list[dict], Optional[str]]:
+) -> Tuple[List[Any], Optional[str]]:
     """
-    Run MAC for a single case and capture agent emissions.
+    Run MAC for a single case with streaming instrumentation.
+    
+    CRITICAL: Uses reversible monkeypatching with try/finally restore.
     
     IMPORTANT: This function does NOT modify MAC's internal behavior.
     MAC controls its own decoding parameters (temperature, sampling) internally.
-    EXAID only captures the agent message emissions.
+    EXAID only captures the delta/chunk emission timing.
     
     Args:
         mac_module_path: Path to MAC module
@@ -276,18 +366,32 @@ def run_mac_case(
         mas_config: MAS generation configuration
         
     Returns:
-        Tuple of (list of message dicts, error_message or None)
+        Tuple of (list of TurnTrace objects, error_message or None)
     """
+    original_methods = {}  # Store originals for restoration
+    
     try:
         # Add MAC to path
         sys.path.insert(0, mac_module_path)
         
+        # CRITICAL: Install OpenAI patch BEFORE importing autogen
+        # Import from the instrumentation package (not individual files)
+        from instrumentation import (
+            install_openai_patch,
+            get_trace_collector,
+            set_current_agent_id,
+        )
+        
+        install_openai_patch()
+        
+        # Get and RESET collector for this case (avoid cross-case contamination)
+        collector = get_trace_collector()
+        collector.clear()
+        
         # Suppress autogen's overly strict API key format warning
-        # "sk-proj" keys are valid OpenAI keys but autogen doesn't recognize them
-        # Autogen uses logging, not warnings, so we need to filter logging
         import logging
         autogen_logger = logging.getLogger("autogen.oai.client")
-        autogen_logger.setLevel(logging.ERROR)  # Only show errors, suppress warnings
+        autogen_logger.setLevel(logging.ERROR)
         
         from autogen import (
             GroupChat,
@@ -302,48 +406,40 @@ def run_mac_case(
         )
         
         # Load EXAID-owned model configuration
-        # MAC submodule is unmodified; EXAID controls provider selection at runtime
-        # This config is versioned in EXAID and fully reproducible
-        script_dir = Path(__file__).parent.parent  # evals/
+        script_dir = Path(__file__).parent.parent
         config_path = script_dir / "configs" / "mac_model_config.json"
         
         if not config_path.exists():
             return [], f"EXAID model config not found: {config_path}"
         
         # Load JSON and inject API key from environment
-        # Autogen doesn't automatically read from env when api_key is missing
         with open(config_path, 'r') as f:
             config_data = json.load(f)
         
-        # Get API key from environment (passed via docker-compose)
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             return [], "OPENAI_API_KEY environment variable not set"
         
-        # Trim whitespace and validate
         api_key = api_key.strip()
         if not api_key:
-            return [], "OPENAI_API_KEY environment variable is empty or whitespace-only"
+            return [], "OPENAI_API_KEY environment variable is empty"
         
-        # Inject API key into each config entry
         for config_entry in config_data:
             if "api_key" not in config_entry or not config_entry.get("api_key"):
                 config_entry["api_key"] = api_key
         
-        # Write to temporary file for autogen to read
+        # Write to temporary file for autogen
         import tempfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
             json.dump(config_data, tmp_file)
             tmp_config_path = tmp_file.name
         
         try:
-            # Load config with model priority: gpt-4o-mini -> gpt-4-turbo -> gpt-3.5-turbo
-            # Note: We do NOT override MAC's internal temperature or decoding parameters
             config_list = config_list_from_json(
                 env_or_file=tmp_config_path,
                 filter_dict={"tags": ["x_gpt4o_mini"]}
             )
-        
+            
             if not config_list:
                 config_list = config_list_from_json(
                     env_or_file=tmp_config_path,
@@ -357,18 +453,17 @@ def run_mac_case(
                 )
             
             if not config_list:
-                return [], "No valid model configuration found in EXAID config"
+                return [], "No valid model configuration found"
         finally:
-            # Clean up temp file
             try:
                 os.unlink(tmp_config_path)
             except:
                 pass
         
-        # MAC's internal model config - we do not override these
+        # MAC's internal model config
         model_config = {
             "cache_seed": None,
-            "temperature": 1,  # MAC's default - we do NOT override this
+            "temperature": 1,  # MAC's default
             "config_list": config_list,
             "timeout": 300,
         }
@@ -377,7 +472,7 @@ def run_mac_case(
         num_doctors = 3
         n_round = 13
         
-        # Create agents using MAC's prompts
+        # Create agents
         docs = []
         for index in range(num_doctors):
             name = f"Doctor{index}"
@@ -403,6 +498,19 @@ def run_mac_case(
         
         agents = docs + [supervisor]
         
+        # SAFE MONKEYPATCHING: Store originals and patch with closure safety
+        for agent in agents:
+            original_methods[agent.name] = agent.generate_reply
+            
+            # Capture in closure explicitly to avoid late-binding issues
+            def make_wrapper(agent_name: str, original_fn):
+                def wrapper(*args, **kwargs):
+                    set_current_agent_id(agent_name.lower())
+                    return original_fn(*args, **kwargs)
+                return wrapper
+            
+            agent.generate_reply = make_wrapper(agent.name, original_methods[agent.name])
+        
         groupchat = GroupChat(
             agents=agents,
             messages=[],
@@ -427,242 +535,456 @@ def run_mac_case(
         )
         
         # Run the conversation
-        output = supervisor.initiate_chat(
+        supervisor.initiate_chat(
             manager,
             message=initial_message,
         )
         
-        # Extract messages from chat history
-        messages = []
-        for msg in output.chat_history:
-            agent_name = msg.get("name", "Supervisor")
-            content = msg.get("content", "")
-            messages.append({
-                "agent_id": agent_name.lower().replace(" ", "_"),
-                "content": content,
-                "role": msg.get("role", "assistant"),
-            })
-        
-        return messages, None
+        # Retrieve timed turns from collector
+        turns = collector.get_all_turns()
+        return turns, None
         
     except ImportError as e:
         return [], f"Failed to import MAC dependencies: {e}"
     except Exception as e:
         return [], f"MAC execution failed: {e}"
     finally:
+        # ALWAYS restore original methods (even on exception)
+        for agent_name, original_fn in original_methods.items():
+            for agent in agents if 'agents' in dir() else []:
+                if agent.name == agent_name:
+                    agent.generate_reply = original_fn
+        
         # Remove MAC from path
         if mac_module_path in sys.path:
             sys.path.remove(mac_module_path)
+        
+        instrumentation_path = os.path.join(mac_module_path, "instrumentation")
+        if instrumentation_path in sys.path:
+            sys.path.remove(instrumentation_path)
 
 
-def generate_stub_traces(case_id: str, case_data: dict) -> list[dict]:
+# =============================================================================
+# Trace Serialization with Deterministic Global Order
+# =============================================================================
+
+def serialize_to_trace_records(
+    turns: List[Any],
+    case_id: str
+) -> Tuple[List[dict], int, int, int]:
     """
-    Generate stub traces for demonstration/testing without MAC execution.
+    Convert collector turns to globally-ordered trace records.
     
-    This is used when MAC is not available or for scaffold testing.
+    CRITICAL: Explicit sort by time with deterministic tie-breakers.
+    seq is global across entire trace (strictly increasing).
+    
+    RAW CAPTURE: No derived units (ws_units, ctu) are stored.
+    Stream emissions are delta/chunks (may be fragments, not tokenizer tokens).
+    
+    Timing Semantics:
+    - t0 = first stream_delta t_emitted_ms
+    - Delta t_rel_ms: Always >= 0 (by definition)
+    - Boundary t_rel_ms: May be NEGATIVE if boundary occurs before t0
     
     Args:
+        turns: List of TurnTrace objects from collector
         case_id: Case identifier
-        case_data: Case data dict
         
     Returns:
-        List of message dicts
+        Tuple of (records, t0_emitted_ms, total_deltas, total_turns)
     """
-    # Create minimal stub messages
-    presentation = case_data.get("presentation", "No presentation available")
+    if not turns:
+        return [], 0, 0, 0
     
-    messages = [
-        {
-            "agent_id": "supervisor",
-            "content": f"[STUB] Analyzing case: {case_id}\nPresentation: {presentation[:200]}...",
-            "role": "assistant"
-        },
-        {
-            "agent_id": "doctor0",
-            "content": "[STUB] Initial differential diagnosis based on presentation...",
-            "role": "assistant"
-        },
-        {
-            "agent_id": "doctor1",
-            "content": "[STUB] Additional considerations from specialist perspective...",
-            "role": "assistant"
-        },
-        {
-            "agent_id": "supervisor",
-            "content": '[STUB] Consensus reached. {"Most Likely Diagnosis": "Pending MAC integration"}',
-            "role": "assistant"
-        },
-    ]
+    # Step 1: Flatten all events into a single list with sort keys
+    events = []
     
-    return messages
+    for turn in turns:
+        turn_id = turn.turn_id
+        agent_id = turn.agent_id
+        
+        # Turn start event
+        events.append({
+            "sort_key": (turn.t_start_ms, 0, turn_id, 0),  # (time, type_priority, turn, sub_seq)
+            "type": "turn_start",
+            "turn_id": turn_id,
+            "agent_id": agent_id,
+            "t_ms": turn.t_start_ms
+        })
+        
+        # Delta events (stream chunks, not tokenizer tokens)
+        for i, emission in enumerate(turn.token_emissions):
+            events.append({
+                "sort_key": (emission.t_emitted_ms, 1, turn_id, i),
+                "type": "delta",
+                "turn_id": turn_id,
+                "agent_id": agent_id,
+                "delta_text": emission.token,
+                "t_emitted_ms": emission.t_emitted_ms
+            })
+        
+        # Turn end event
+        events.append({
+            "sort_key": (turn.t_end_ms, 2, turn_id, 0),
+            "type": "turn_end",
+            "turn_id": turn_id,
+            "agent_id": agent_id,
+            "t_ms": turn.t_end_ms,
+            "content": turn.content
+        })
+    
+    # Step 2: Sort by sort_key (deterministic)
+    events.sort(key=lambda e: e["sort_key"])
+    
+    # Step 3: Find t0 (first delta's emission time)
+    t0 = None
+    for event in events:
+        if event["type"] == "delta":
+            t0 = event["t_emitted_ms"]
+            break
+    
+    if t0 is None:
+        # No deltas found, use first turn start
+        t0 = events[0]["t_ms"] if events else 0
+    
+    # Step 4: Assign global seq and build records
+    records = []
+    global_seq = 0
+    total_deltas = 0
+    turn_delta_texts = {}  # turn_id -> list of delta_text for content hash
+    turn_first_delta_t = {}  # turn_id -> first delta t_emitted_ms
+    turn_last_delta_t = {}   # turn_id -> last delta t_emitted_ms
+    
+    for event in events:
+        turn_id = event["turn_id"]
+        agent_id = event["agent_id"]
+        
+        if event["type"] == "delta":
+            t_emitted = event["t_emitted_ms"]
+            records.append({
+                "record_type": "stream_delta",
+                "case_id": case_id,
+                "seq": global_seq,
+                "turn_id": turn_id,
+                "agent_id": agent_id,
+                "delta_text": event["delta_text"],
+                "t_emitted_ms": t_emitted,
+                "t_rel_ms": t_emitted - t0  # Always >= 0 for deltas by definition
+            })
+            total_deltas += 1
+            
+            # Accumulate for content hash
+            if turn_id not in turn_delta_texts:
+                turn_delta_texts[turn_id] = []
+            turn_delta_texts[turn_id].append(event["delta_text"])
+            
+            # Track first/last delta times for boundary validation
+            if turn_id not in turn_first_delta_t:
+                turn_first_delta_t[turn_id] = t_emitted
+            turn_last_delta_t[turn_id] = t_emitted
+            
+        elif event["type"] == "turn_start":
+            t_ms = event["t_ms"]
+            # t_rel_ms may be NEGATIVE for boundaries before t0
+            records.append({
+                "record_type": "turn_boundary",
+                "case_id": case_id,
+                "turn_id": turn_id,
+                "agent_id": agent_id,
+                "boundary": "start",
+                "seq": global_seq,
+                "t_ms": t_ms,
+                "t_rel_ms": t_ms - t0  # May be negative!
+            })
+            
+        elif event["type"] == "turn_end":
+            t_ms = event["t_ms"]
+            
+            # Compute content hash from accumulated deltas
+            deltas = turn_delta_texts.get(turn_id, [])
+            content = "".join(deltas)
+            content_hash = f"sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}"
+            
+            # t_rel_ms may be negative for boundaries (though end is typically after t0)
+            records.append({
+                "record_type": "turn_boundary",
+                "case_id": case_id,
+                "turn_id": turn_id,
+                "agent_id": agent_id,
+                "boundary": "end",
+                "seq": global_seq,
+                "t_ms": t_ms,
+                "t_rel_ms": t_ms - t0,  # Typically positive for end boundaries
+                "content_hash": content_hash,
+                "content_hash_input": "UTF-8 bytes of concatenated delta_text in seq order for this turn"
+            })
+        
+        global_seq += 1
+    
+    total_turns = len(turns)
+    
+    return records, t0, total_deltas, total_turns
 
 
 # =============================================================================
-# Trace Generation
+# Trace File I/O
 # =============================================================================
 
-def generate_traces_for_case(
+def write_trace_file(
     case_id: str,
-    case_data: dict,
-    messages: list[dict],
+    records: List[dict],
+    t0_emitted_ms: int,
+    total_deltas: int,
+    total_turns: int,
     mas_run_id: str,
     mac_commit: str,
-    base_model: str,
-    status: str = "success",
-    failure_reason: Optional[str] = None
-) -> Iterator[dict]:
+    exaid_commit: str,
+    model: str,
+    decoding: Dict[str, Any],
+    output_path: Path,
+    stub_mode: bool = False
+) -> Tuple[int, str]:
     """
-    Generate trace records for a case from MAC messages.
+    Write trace records to gzip JSONL file.
+    
+    First record is trace_meta with provenance.
+    
+    Timing Semantics:
+    - t0_emitted_ms: First stream_delta emission timestamp
+    - Delta t_rel_ms: Always >= 0
+    - Boundary t_rel_ms: May be negative if boundary occurs before t0
     
     Args:
         case_id: Case identifier
-        case_data: Original case data
-        messages: List of agent messages from MAC
-        mas_run_id: Deterministic run ID
+        records: List of stream_delta and turn_boundary records
+        t0_emitted_ms: Anchor timestamp (first delta)
+        total_deltas: Total delta count
+        total_turns: Total turn count
+        mas_run_id: MAS run ID
         mac_commit: MAC commit hash
-        base_model: Base model name
-        status: Execution status ("success" or "failed")
-        failure_reason: Reason for failure if status is "failed"
-        
-    Yields:
-        Trace records conforming to exaid.trace schema
-    """
-    timestamp = datetime.now(timezone.utc)
-    
-    if status == "failed" or not messages:
-        # Generate stub trace for failed case
-        yield {
-            "schema_name": "exaid.trace",
-            "schema_version": "1.0.0",
-            "trace_id": generate_trace_id(case_id, 0),
-            "case_id": case_id,
-            "agent_id": "_system",
-            "sequence_num": 0,
-            "timestamp": timestamp.isoformat(),
-            "content": f"[FAILED] {failure_reason or 'Case execution failed'}",
-            "text_units_ctu": 0,
-            "metadata": {
-                "status": "failed",
-                "failure_reason": failure_reason or "Unknown error",
-                "mas_run_id": mas_run_id,
-                "mac_commit": mac_commit,
-                "model": base_model
-            }
-        }
-        return
-    
-    # Generate traces for each message
-    for seq, msg in enumerate(messages):
-        content = msg.get("content", "")
-        agent_id = msg.get("agent_id", "unknown")
-        
-        trace = {
-            "schema_name": "exaid.trace",
-            "schema_version": "1.0.0",
-            "trace_id": generate_trace_id(case_id, seq),
-            "case_id": case_id,
-            "agent_id": agent_id,
-            "sequence_num": seq,
-            "timestamp": timestamp.isoformat(),
-            "content": content,
-            "text_units_ctu": compute_ctu(content),
-            "metadata": {
-                "mas_run_id": mas_run_id,
-                "mac_commit": mac_commit,
-                "model": base_model,
-                "status": "success"
-            }
-        }
-        
-        yield trace
-
-
-# =============================================================================
-# File I/O
-# =============================================================================
-
-def write_traces(
-    traces: Iterator[dict],
-    output_path: Path,
-    compress: bool = True
-) -> int:
-    """
-    Write traces to a JSONL file.
-    
-    Args:
-        traces: Iterator of trace records
+        exaid_commit: EXAID commit hash
+        model: Model name
+        decoding: Decoding parameters
         output_path: Output file path
-        compress: Whether to gzip compress the output
+        stub_mode: True if trace generated with stub mode (not real MAC)
         
     Returns:
-        Number of traces written
+        Tuple of (record_count, sha256_hash)
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    count = 0
-    open_func = gzip.open if compress else open
-    mode = "wt" if compress else "w"
-    
-    with open_func(output_path, mode, encoding="utf-8") as f:
-        for trace in traces:
-            f.write(json.dumps(trace) + "\n")
-            count += 1
-    
-    return count
-
-
-def write_manifest(
-    manifest_path: Path,
-    mas_run_id: str,
-    mac_commit: str,
-    base_model: str,
-    dataset_config: dict,
-    selected_cases: list[str],
-    all_case_ids: list[str]
-) -> None:
-    """
-    Write dataset manifest with generation metadata.
-    
-    Args:
-        manifest_path: Path to manifest file
-        mas_run_id: Deterministic run ID
-        mac_commit: MAC commit hash
-        base_model: Base model name
-        dataset_config: Dataset configuration
-        selected_cases: List of selected case IDs
-        all_case_ids: List of all available case IDs
-    """
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    mac_sel = dataset_config.get("mac_selection", {})
-    
-    manifest = {
-        "schema_name": "exaid.manifest",
-        "schema_version": "1.0.0",
-        "experiment_id": f"exp-mac-traces-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
+    # Build trace_meta record
+    trace_meta = {
+        "record_type": "trace_meta",
+        "schema_version": "2.0.0",
+        "case_id": case_id,
+        "mas_run_id": mas_run_id,
+        "mac_commit": mac_commit,
+        "exaid_commit": exaid_commit,
+        "model": model,
+        "decoding": decoding,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "config_hash": f"sha256:{hashlib.sha256(json.dumps(dataset_config, sort_keys=True).encode()).hexdigest()}",
-        "mas_generation_config": {
-            "mas_run_id": mas_run_id,
-            "mac_commit": mac_commit,
-            "base_model": base_model,
-            "decoding_note": "Controlled by MAC internally; EXAID does not override",
-            "text_unit": {
-                "name": "CTU",
-                "definition": "ceil(len(text) / 4)",
-                "applies_to": "input_and_output"
-            },
-            "selection_mode": mac_sel.get("mode", "fixed_subset"),
-            "selection_seed": mac_sel.get("seed", 42),
-            "n_cases_selected": len(selected_cases),
-            "n_cases_available": len(all_case_ids),
-            "case_list_hash": compute_case_list_hash(selected_cases),
-            "ordered_case_list": selected_cases
-        }
+        "t0_emitted_ms": t0_emitted_ms,
+        "t0_definition": "t_emitted_ms of first stream_delta record",
+        "total_turns": total_turns,
+        "total_deltas": total_deltas
     }
     
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        f.write(json.dumps(manifest) + "\n")
+    # Add stub_mode flag if true
+    if stub_mode:
+        trace_meta["stub_mode"] = True
+    
+    # Write with deterministic gzip (mtime=0)
+    lines = []
+    lines.append(json.dumps(trace_meta, sort_keys=True, separators=(',', ':')))
+    for record in records:
+        lines.append(json.dumps(record, sort_keys=True, separators=(',', ':')))
+    
+    content = "\n".join(lines) + "\n"
+    content_bytes = content.encode("utf-8")
+    
+    # Compute hash before compression
+    hash_digest = hashlib.sha256(content_bytes).hexdigest()
+    
+    # Write with gzip (mtime=0 for determinism)
+    with gzip.GzipFile(output_path, mode='wb', mtime=0) as f:
+        f.write(content_bytes)
+    
+    return len(records) + 1, f"sha256:{hash_digest}"  # +1 for trace_meta
+
+
+def compute_file_hash(file_path: Path) -> str:
+    """Compute SHA256 hash of file bytes."""
+    with open(file_path, "rb") as f:
+        hash_digest = hashlib.sha256(f.read()).hexdigest()
+    return f"sha256:{hash_digest}"
+
+
+# =============================================================================
+# Manifest Writer
+# =============================================================================
+
+def write_manifest(
+    output_path: Path,
+    dataset_id: str,
+    mas_run_id: str,
+    mac_fork_url: str,
+    mac_commit: str,
+    exaid_commit: str,
+    model: str,
+    decoding: Dict[str, Any],
+    case_list_hash: str,
+    config_hash: str,
+    trace_entries: List[Dict[str, Any]],
+    total_deltas: int,
+    total_turns: int,
+    successful_cases: int,
+    failed_cases: int,
+    stub_mode: bool = False
+) -> None:
+    """
+    Write dataset manifest with full provenance.
+    
+    Multi-record JSONL format per schema v2.0.0.
+    
+    Args:
+        output_path: Manifest file path
+        stub_mode: True if traces generated with stub mode (not real MAC)
+        ... (see schema for field descriptions)
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Compute trace_dataset_hash
+    trace_hashes = [(e["case_id"], e["sha256"]) for e in trace_entries]
+    trace_dataset_hash = compute_trace_dataset_hash(mas_run_id, case_list_hash, trace_hashes)
+    
+    records = []
+    
+    # manifest_meta
+    manifest_meta = {
+        "record_type": "manifest_meta",
+        "schema_version": "2.0.0",
+        "dataset_id": dataset_id,
+        "mas_run_id": mas_run_id,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # Add stub_mode flag if true
+    if stub_mode:
+        manifest_meta["stub_mode"] = True
+    
+    records.append(manifest_meta)
+    
+    # provenance
+    records.append({
+        "record_type": "provenance",
+        "mac_fork_url": mac_fork_url,
+        "mac_commit": mac_commit,
+        "exaid_commit": exaid_commit,
+        "model": model,
+        "decoding": decoding,
+        "case_list_hash": case_list_hash,
+        "case_list_hash_input": "SHA256 of case_list.jsonl file bytes",
+        "config_hash": config_hash,
+        "trace_dataset_hash": trace_dataset_hash,
+        "trace_dataset_hash_definition": "SHA256 of JSON: {mas_run_id, case_list_hash, sorted [(case_id, trace_sha256)]}"
+    })
+    
+    # trace_entry records
+    for entry in trace_entries:
+        records.append({
+            "record_type": "trace_entry",
+            "case_id": entry["case_id"],
+            "file": entry["file"],
+            "sha256": entry["sha256"],
+            "delta_count": entry["delta_count"],
+            "turn_count": entry["turn_count"]
+        })
+    
+    # summary
+    records.append({
+        "record_type": "summary",
+        "total_cases": len(trace_entries),
+        "total_deltas": total_deltas,
+        "total_turns": total_turns,
+        "successful_cases": successful_cases,
+        "failed_cases": failed_cases
+    })
+    
+    # Write JSONL
+    with open(output_path, "w", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record, sort_keys=True, separators=(',', ':')) + "\n")
+
+
+# =============================================================================
+# Stub Generation (for testing without MAC)
+# =============================================================================
+
+def generate_stub_turns(case_id: str, case_data: dict) -> List[Any]:
+    """
+    Generate stub turns for testing without MAC execution.
+    
+    Creates minimal TurnTrace-like objects for scaffold testing.
+    """
+    import time
+    from dataclasses import dataclass, field
+    from typing import List as ListType
+    
+    @dataclass
+    class StubTokenEmission:
+        token: str
+        t_emitted_ms: int
+        seq: int
+    
+    @dataclass
+    class StubTurnTrace:
+        turn_id: int
+        agent_id: str
+        content: str
+        t_start_ms: int
+        t_end_ms: int
+        duration_ms: int
+        token_emissions: ListType = field(default_factory=list)
+    
+    base_time = int(time.time() * 1000)
+    turns = []
+    
+    # Stub messages
+    messages = [
+        ("supervisor", f"[STUB] Analyzing case: {case_id}"),
+        ("doctor0", "[STUB] Initial differential diagnosis..."),
+        ("doctor1", "[STUB] Additional considerations..."),
+        ("supervisor", '[STUB] Consensus reached. {"Most Likely Diagnosis": "Pending"}'),
+    ]
+    
+    for i, (agent, content) in enumerate(messages):
+        t_start = base_time + i * 1000
+        emissions = []
+        
+        # Split content into "tokens"
+        words = content.split()
+        for j, word in enumerate(words):
+            token = word + " " if j < len(words) - 1 else word
+            emissions.append(StubTokenEmission(
+                token=token,
+                t_emitted_ms=t_start + 50 + j * 30,
+                seq=j
+            ))
+        
+        t_end = t_start + 50 + len(words) * 30 + 100
+        
+        turns.append(StubTurnTrace(
+            turn_id=i + 1,
+            agent_id=agent,
+            content=content,
+            t_start_ms=t_start,
+            t_end_ms=t_end,
+            duration_ms=t_end - t_start,
+            token_emissions=emissions
+        ))
+    
+    return turns
 
 
 # =============================================================================
@@ -671,7 +993,7 @@ def write_manifest(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate MAS traces from clinical cases using MAC"
+        description="Generate timed MAS traces from clinical cases using MAC"
     )
     parser.add_argument(
         "--config",
@@ -692,15 +1014,20 @@ def main():
         help="Output traces directory"
     )
     parser.add_argument(
-        "--manifest",
+        "--manifests",
         type=Path,
-        default=Path("data/manifests/dataset_manifest.jsonl"),
-        help="Output manifest file"
+        default=Path("data/manifests"),
+        help="Output manifests directory"
     )
     parser.add_argument(
-        "--no-compress",
+        "--dry-run",
         action="store_true",
-        help="Disable gzip compression"
+        help="Validate config and case list without running MAC"
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="Limit number of cases to process"
     )
     parser.add_argument(
         "--stub-mode",
@@ -711,7 +1038,8 @@ def main():
     args = parser.parse_args()
     
     print("=" * 70)
-    print("EXAID Trace Generation - MAC Integration")
+    print("EXAID Timed Trace Generation (v2.0.0)")
+    print("Phase 2: Raw Stream Capture")
     print("=" * 70)
     print()
     
@@ -721,34 +1049,44 @@ def main():
         mas_config = load_config(args.config)
         print(f"Loaded MAS config: {args.config}")
     else:
-        print(f"WARNING: MAS config not found: {args.config}")
+        print(f"ERROR: MAS config not found: {args.config}")
+        return 1
     
     dataset_config = {}
     if args.dataset_config.exists():
         dataset_config = load_dataset_config(args.dataset_config)
         print(f"Loaded dataset config: {args.dataset_config}")
     else:
-        print(f"WARNING: Dataset config not found: {args.dataset_config}")
+        print(f"ERROR: Dataset config not found: {args.dataset_config}")
+        return 1
     
     # Get MAC configuration
     mac_config = mas_config.get("mac", {})
     mac_module_path = mac_config.get("module_path", "/app/third_party/mac")
+    mac_fork_url = mac_config.get("fork_url", "https://github.com/AbemKW/mac-streaming-traces")
     mac_commit = mac_config.get("commit", "unknown")
-    base_model = mac_config.get("base_model", "gpt-4o-mini")
+    model = mac_config.get("base_model", "gpt-4o-mini")
+    decoding = mac_config.get("decoding", {"temperature": 1.0})
     mac_enabled = mac_config.get("enabled", False)
+    
+    # Get EXAID commit
+    exaid_commit = get_exaid_commit()
     
     print()
     print("Configuration:")
     print(f"  MAC module path: {mac_module_path}")
+    print(f"  MAC fork URL: {mac_fork_url}")
     print(f"  MAC commit: {mac_commit}")
-    print(f"  Base model: {base_model}")
+    print(f"  EXAID commit: {exaid_commit[:8]}...")
+    print(f"  Model: {model}")
+    print(f"  Decoding: {json.dumps(decoding)}")
     print(f"  MAC enabled: {mac_enabled}")
     print()
     
-    # Check if MAC is available
+    # Check MAC availability
     mac_available = Path(mac_module_path).exists() and mac_enabled and not args.stub_mode
     
-    if not mac_available:
+    if not mac_available and not args.dry_run:
         if args.stub_mode:
             print("NOTE: Running in stub mode (--stub-mode flag)")
         elif not mac_enabled:
@@ -763,15 +1101,19 @@ def main():
         if mac_available or Path(mac_module_path).exists():
             all_case_ids = get_all_mac_case_ids(mac_module_path)
         else:
-            # Generate stub case IDs for testing
             all_case_ids = [f"case-stub-{i:03d}" for i in range(10)]
         print(f"Total cases available: {len(all_case_ids)}")
     except Exception as e:
         print(f"ERROR: Failed to load case IDs: {e}")
         all_case_ids = [f"case-stub-{i:03d}" for i in range(10)]
     
-    # Select cases based on configuration
+    # Select cases
     selected_cases = select_mac_cases(dataset_config, all_case_ids)
+    
+    # Apply limit if specified
+    if args.limit:
+        selected_cases = selected_cases[:args.limit]
+    
     print(f"Cases selected: {len(selected_cases)}")
     
     mac_sel = dataset_config.get("mac_selection", {})
@@ -779,14 +1121,62 @@ def main():
     print(f"  Selection seed: {mac_sel.get('seed', 42)}")
     print()
     
-    # Generate deterministic run ID
-    mas_run_id = generate_mas_run_id(mac_commit, base_model, selected_cases)
+    # Write case list and compute hash
+    config_hash = compute_config_hash(args.config, args.dataset_config)
+    
+    # Compute case list hash (for ID generation before writing)
+    case_list_content = "\n".join([
+        json.dumps({"index": i, "case_id": cid}, sort_keys=True, separators=(',', ':'))
+        for i, cid in enumerate(selected_cases)
+    ]) + "\n"
+    case_list_hash = f"sha256:{hashlib.sha256(case_list_content.encode()).hexdigest()}"
+    
+    # Generate deterministic IDs
+    mas_run_id = generate_mas_run_id(mac_commit, model, decoding, case_list_hash)
+    dataset_id = generate_dataset_id(mac_commit, decoding, case_list_hash)
+    
     print(f"MAS Run ID: {mas_run_id}")
+    print(f"Dataset ID: {dataset_id}")
+    print(f"Case list hash: {case_list_hash[:30]}...")
+    print(f"Config hash: {config_hash[:30]}...")
     print()
     
+    # Write case list file
+    case_list_path = args.manifests / f"{dataset_id}.case_list.jsonl"
+    actual_case_list_hash = write_case_list(selected_cases, case_list_path)
+    print(f"Case list written: {case_list_path}")
+    
+    # Verify hash matches
+    if actual_case_list_hash != case_list_hash:
+        print(f"WARNING: Case list hash mismatch!")
+        case_list_hash = actual_case_list_hash
+    
+    # DRY RUN: Stop here if requested
+    if args.dry_run:
+        print()
+        print("=" * 70)
+        print("DRY RUN COMPLETE")
+        print("=" * 70)
+        print()
+        print("Configuration validated successfully.")
+        print(f"Would process {len(selected_cases)} cases.")
+        print()
+        print("Files that would be created:")
+        print(f"  - {case_list_path}")
+        print(f"  - {args.manifests}/{dataset_id}.manifest.jsonl")
+        for case_id in selected_cases[:3]:
+            safe_id = re.sub(r'[^a-z0-9-]', '-', case_id.lower())
+            print(f"  - {args.output}/{safe_id}.trace.jsonl.gz")
+        if len(selected_cases) > 3:
+            print(f"  - ... and {len(selected_cases) - 3} more trace files")
+        print()
+        return 0
+    
     # Process cases
-    total_traces = 0
-    total_cases = 0
+    trace_entries = []
+    total_deltas = 0
+    total_turns = 0
+    successful_cases = 0
     failed_cases = 0
     
     on_failure = mac_sel.get("on_failure", "log_stub")
@@ -794,16 +1184,15 @@ def main():
     print("Processing cases:")
     print("-" * 50)
     
-    for case_id in selected_cases:
-        total_cases += 1
-        print(f"  [{total_cases}/{len(selected_cases)}] {case_id}...", end=" ")
+    for idx, case_id in enumerate(selected_cases):
+        print(f"  [{idx + 1}/{len(selected_cases)}] {case_id}...", end=" ", flush=True)
         
         # Load case data
         case_data = None
         if mac_available or Path(mac_module_path).exists():
             try:
                 case_data = load_mac_case(mac_module_path, case_id, stage="inital")
-            except Exception as e:
+            except Exception:
                 case_data = None
         
         if case_data is None:
@@ -814,79 +1203,103 @@ def main():
             }
         
         # Run MAC or generate stub traces
-        messages = []
+        turns = []
         error_message = None
         
         if mac_available:
-            messages, error_message = run_mac_case(mac_module_path, case_data, mas_config)
+            turns, error_message = run_mac_case_instrumented(mac_module_path, case_data, mas_config)
         else:
-            messages = generate_stub_traces(case_id, case_data)
+            turns = generate_stub_turns(case_id, case_data)
         
         # Handle failures
-        status = "success"
         if error_message:
             failed_cases += 1
-            status = "failed"
             if on_failure == "raise":
                 print(f"FAILED: {error_message}")
                 raise RuntimeError(f"Case {case_id} failed: {error_message}")
             else:
-                print(f"FAILED (stub logged)")
+                print(f"FAILED (stub): {error_message}")
+                turns = generate_stub_turns(case_id, case_data)
         else:
-            print(f"OK ({len(messages)} messages)")
+            successful_cases += 1
         
-        # Generate traces
-        traces = generate_traces_for_case(
+        # Serialize turns to trace records
+        records, t0, case_deltas, case_turns = serialize_to_trace_records(turns, case_id)
+        
+        print(f"OK ({case_turns} turns, {case_deltas} deltas)")
+        
+        # Write trace file
+        safe_case_id = re.sub(r'[^a-z0-9-]', '-', case_id.lower())
+        output_file = args.output / f"{safe_case_id}.trace.jsonl.gz"
+        
+        record_count, trace_hash = write_trace_file(
             case_id=case_id,
-            case_data=case_data,
-            messages=messages,
+            records=records,
+            t0_emitted_ms=t0,
+            total_deltas=case_deltas,
+            total_turns=case_turns,
             mas_run_id=mas_run_id,
             mac_commit=mac_commit,
-            base_model=base_model,
-            status=status,
-            failure_reason=error_message
+            exaid_commit=exaid_commit,
+            model=model,
+            decoding=decoding,
+            output_path=output_file,
+            stub_mode=args.stub_mode
         )
         
-        # Determine output path
-        # Sanitize case_id for filename (replace non-alphanumeric with dash)
-        safe_case_id = re.sub(r'[^a-z0-9-]', '-', case_id.lower())
-        output_file = args.output / f"{safe_case_id}.jsonl"
-        if not args.no_compress:
-            output_file = output_file.with_suffix(".jsonl.gz")
+        # Track entry for manifest
+        trace_entries.append({
+            "case_id": case_id,
+            "file": output_file.name,
+            "sha256": trace_hash,
+            "delta_count": case_deltas,
+            "turn_count": case_turns
+        })
         
-        # Write traces
-        count = write_traces(traces, output_file, compress=not args.no_compress)
-        total_traces += count
+        total_deltas += case_deltas
+        total_turns += case_turns
     
     print("-" * 50)
     print()
     
     # Write manifest
-    print(f"Writing manifest: {args.manifest}")
+    manifest_path = args.manifests / f"{dataset_id}.manifest.jsonl"
+    print(f"Writing manifest: {manifest_path}")
+    
     write_manifest(
-        manifest_path=args.manifest,
+        output_path=manifest_path,
+        dataset_id=dataset_id,
         mas_run_id=mas_run_id,
+        mac_fork_url=mac_fork_url,
         mac_commit=mac_commit,
-        base_model=base_model,
-        dataset_config=dataset_config,
-        selected_cases=selected_cases,
-        all_case_ids=all_case_ids
+        exaid_commit=exaid_commit,
+        model=model,
+        decoding=decoding,
+        case_list_hash=case_list_hash,
+        config_hash=config_hash,
+        trace_entries=trace_entries,
+        total_deltas=total_deltas,
+        total_turns=total_turns,
+        successful_cases=successful_cases,
+        failed_cases=failed_cases,
+        stub_mode=args.stub_mode
     )
     
     print()
     print("=" * 70)
     print("COMPLETE")
     print("=" * 70)
-    print(f"  Cases processed: {total_cases}")
-    print(f"  Cases failed: {failed_cases}")
-    print(f"  Total traces: {total_traces}")
+    print(f"  Cases processed: {len(selected_cases)}")
+    print(f"  Successful: {successful_cases}")
+    print(f"  Failed: {failed_cases}")
+    print(f"  Total turns: {total_turns}")
+    print(f"  Total deltas: {total_deltas}")
     print(f"  Output directory: {args.output}")
-    print(f"  Manifest: {args.manifest}")
+    print(f"  Manifest: {manifest_path}")
     print()
-    print("Text Unit Accounting:")
-    print("  All traces use CTU (Character-Normalized Token Units)")
-    print("  Definition: ceil(len(text) / 4)")
-    print("  Provider token counts logged separately as usage metadata only")
+    print("Phase 2: Raw Stream Capture")
+    print("  Stored: delta_text, t_emitted_ms, t_rel_ms, agent_id, turn_id, seq")
+    print("  NOT stored: ws_units, ctu (computed during replay/evaluation)")
     print()
     
     if failed_cases > 0:

@@ -18,9 +18,9 @@ git submodule update --init --recursive
 The MAC submodule (`third_party/mac`) is a fork of the original MAC framework:
 
 - Fork: https://github.com/AbemKW/mac-streaming-traces
-- Purpose: Enables per-token `t_emitted_ms` capture for realistic streaming replay
+- Purpose: Enables per-delta `t_emitted_ms` capture for realistic streaming replay
 
-**Invariant:** This fork only adds transparent token-level timing instrumentation. All MAC conversation logic, agent orchestration, speaker selection, and termination conditions remain unchanged from the original implementation.
+**Invariant:** This fork only adds transparent delta/chunk-level timing instrumentation. All MAC conversation logic, agent orchestration, speaker selection, and termination conditions remain unchanged from the original implementation.
 
 ## Quick Start
 

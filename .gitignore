@@ -159,6 +159,10 @@ evals/data/metrics/*.json
 evals/data/metrics/figures/*.png
 evals/data/metrics/figures/*.pdf
 
-# Manifest files (may contain case identifiers)
-# Comment out this line if manifests are sanitized and safe to commit
-evals/data/manifests/*.jsonl
+# Manifest files - SAFE TO COMMIT
+# Manifests contain only case IDs from public MAC dataset (no PHI)
+# evals/data/manifests/*.jsonl  # Commented out - manifests are safe to commit
+
+# Case list files - SAFE TO COMMIT  
+# Only contain public MAC case IDs (no PHI)
+# evals/data/manifests/*.case_list.jsonl  # Commented out - safe to commit
