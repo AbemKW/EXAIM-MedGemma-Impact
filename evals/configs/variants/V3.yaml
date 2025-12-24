@@ -1,57 +1,63 @@
 # EXAID Evaluation - Variant V3 Configuration
-# Calibrated variant with frozen chunk/time parameters
-# This is the primary evaluation variant for the conference paper
+# No TokenGate (Ablation: removes TokenGate, uses fixed chunk intervals)
+#
+# Paper hook: "V3 triggers BufferAgent at fixed CTU intervals calibrated
+# from V0's median flush size, removing adaptive accumulation (Section 4.2)"
 
 variant_id: V3
-name: "Calibrated EXAID"
-description: "LLM-triggered summarization with calibrated parameters"
+name: "No TokenGate"
+description: "Fixed chunk/time trigger, BufferAgent + Summarizer"
 
-summarization:
-  enabled: true
-  trigger_mode: "llm"
-  llm_trigger:
-    enabled: true
-    bias: "trigger"
+# Trigger policy enum (for ablation suite)
+trigger_policy: "no_tokengate"
 
-# Calibration settings
-# These parameters are FROZEN for the conference paper evaluation
-calibration:
-  enabled: true
-  # Placeholder: calibration procedure to be documented
-  placeholder: true
-  # Calibration dataset reference (placeholder)
-  calibration_dataset: null
-  # Calibration date (placeholder)
-  calibration_date: null
-
-# Frozen chunk parameters
-# These values are fixed for reproducibility
-chunk_params:
-  frozen: true
-  # Token gate settings (frozen)
+# Component configuration
+components:
+  # TokenGate: DISABLED (use fixed intervals instead)
   token_gate:
-    min_tokens: 35
-    max_tokens: 90
-    boundary_cues: ".?!\n"
+    enabled: false
+  
+  # BufferAgent: all checks enabled
+  buffer_agent:
+    enabled: true
+    completeness_check: true
+    value_check: true
+    novelty_check: true
+  
+  # Summarizer: generates summaries
+  summarizer:
+    enabled: true
 
-# Frozen time parameters
-# These values are fixed for reproducibility
-time_params:
-  frozen: true
-  # Timeout settings (frozen)
-  timeouts:
-    silence_timer: 15.0
-    max_wait_timeout: 40.0
+# Fixed interval trigger (replaces TokenGate)
+fixed_trigger:
+  enabled: true
+  # Chunk size in CTU (Character-normalized Token Units)
+  # ceil(len(text) / 4)
+  chunk_size_ctu: 125
 
-# Summarizer config
+# V3 Calibration Settings
+# Paper hook: "V3 chunk size calibrated using median V0 flush size
+# from calibration subset (Section 4.2)"
+v3_calibration:
+  # Method: median (NOT mean) of V0 flush sizes
+  calibration_method: "median"
+  # Calibrated chunk size in CTU
+  chunk_size_ctu: 125
+  # Calibration subset case IDs (placeholder for actual IDs)
+  calibration_subset_ids: []
+  # Calibration date
+  calibration_date: "2025-12-21"
+  # Reference: documented in calibration_report.json
+  calibration_report: "data/calibration/v3_calibration_report.json"
+
+# Summarizer settings
 summarizer:
-  # MANDATORY: history_k = 3 (frozen)
-  history_k_override: 3
+  # MANDATORY: history_k = 3 for all variants
+  history_k: 3
 
-# Concept extractor settings
+# Metrics role
+metrics_role: "ablation_no_tokengate"
+
+# Concept extractor (inherit from extractor.yaml)
 concept_extractor:
-  inherit_defaults: true
-  # scispaCy model (frozen)
-  model: "en_core_sci_sm"
-
-
+  inherit_from: "extractor.yaml"

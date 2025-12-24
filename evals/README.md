@@ -2,6 +2,20 @@
 
 Reproducible evaluation framework for the EXAID conference paper. This module provides Docker-based reproducibility for all evaluation experiments.
 
+## Purpose and Claims Boundary
+
+**Performance-only evaluation of EXAID summarization middleware.**
+
+This evaluation measures:
+- Compression efficiency (CTU saved)
+- Concept coverage (trace CUIs recalled in summaries)
+- Faithfulness (unsupported content rates)
+- Latency and resource usage
+
+**No clinical outcome claims are made.**
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -40,314 +54,287 @@ docker compose -f docker-compose.evals.yml run --rm evals -c "python --version &
 docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
 ```
 
-## How to Reproduce Tables/Figures
+---
+
+## Complete Workflow (Phases 0-5)
 
 Execute the following commands in order:
 
-### Step 0: Validate Schemas and Data
+### Phase 0: Validate Traces + Generate Stoplists
 
 ```bash
-docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
+# 0a. Validate frozen traces
+docker compose -f docker-compose.evals.yml run --rm evals \
+  python src/validate_traces.py --traces data/traces/ --verbose
+
+# 0b. Generate stoplists (drift-proof, non-circular)
+docker compose -f docker-compose.evals.yml run --rm evals \
+  python src/generate_stoplists.py --traces data/traces/ \
+    --output configs/ --config configs/extractor.yaml --verbose
 ```
 
-This validates all JSONL files against their schemas. In scaffold mode (empty data directories), this will pass with a "scaffold mode" message.
+**Output:**
+- `configs/stop_entities.txt` - Surface-form stoplist
+- `configs/stop_cuis.txt` - CUI stoplist
+- `configs/stoplist_df_report.csv` - Audit artifact with DF statistics
 
-### Step 1: Generate Traces
+### Phase 1: Generate Traces (if not already frozen)
 
 ```bash
-docker compose -f docker-compose.evals.yml run --rm evals scripts/01_make_traces.sh
-```
-
-Generates MAS traces using MAC as the upstream trace generator. See [MAC Trace Generation](#mac-trace-generation) for details.
-
-### Step 2: Run Summarizer Variants
-
-```bash
-docker compose -f docker-compose.evals.yml run --rm evals scripts/02_run_variants.sh
-```
-
-Runs all variants (V0-V4) on the generated traces. To run a specific variant:
-
-```bash
-docker compose -f docker-compose.evals.yml run --rm evals scripts/02_run_variants.sh V3
-```
-
-### Step 3: Compute Metrics
-
-```bash
-docker compose -f docker-compose.evals.yml run --rm evals scripts/03_compute_metrics.sh
-```
-
-Generates:
-- `data/metrics/*.jsonl` - Metric records for each variant
-- `data/metrics/figures/coverage_vs_budget.pdf` - Main paper figure
-
----
-
-## MAC Trace Generation
-
-This section documents the integration of MAC (Multi-Agent Conversation) as an upstream trace generator for EXAID evaluation. This documentation is intended to be detailed enough for use in the Methods section of the paper.
-
-### Role of MAC
-
-MAC is used exclusively as an **upstream trace generator**. EXAID performs **instrumentation-only** integration:
-
-- MAC generates multi-agent diagnostic conversations from clinical cases
-- EXAID captures agent message emissions as frozen traces
-- EXAID variants replay these frozen traces for middleware evaluation
-- **No diagnostic accuracy evaluation is performed by EXAID**
-
-This separation ensures that:
-1. MAC's reasoning, prompts, routing, and termination behavior are preserved exactly as released by the authors
-2. EXAID evaluates only its own summarization middleware, not MAC's diagnostic capability
-3. Results are reproducible using frozen trace files
-
-**Runtime Configuration:** MAC is executed using a model configuration supplied by EXAID at runtime (`evals/configs/mac_model_config.json`). The MAC submodule itself is unmodified and pinned to the authors' released commit.
-
-### Version Pinning and Decoding Parameters
-
-MAC is integrated as a pinned git submodule at `third_party/mac/`:
-
-| Parameter | Value |
-|-----------|-------|
-| Repository | `https://github.com/geteff1/Multi-agent-conversation-for-disease-diagnosis` |
-| Commit | `896a5deb4d6db7a2c872630a6638da4da3b0f4d4` |
-| Base Model | `gpt-4o-mini` (OpenAI) |
-
-MAC traces are generated using OpenAI's `gpt-4o-mini` model. Decoding parameters (temperature, sampling) are controlled internally by MAC and are not overridden by EXAID. CTU remains the evaluation unit for all metrics, ensuring vendor-agnostic and reproducible measurement.
-
-**Decoding Parameters:**
-
-MAC was executed using the authors' released decoding parameters. **EXAID does not override agent-level temperature or sampling behavior.** Decoding parameters (temperature, top-p, etc.) are controlled internally by MAC per agent role and are not modified by the EXAID integration.
-
-This is recorded in `configs/mas_generation.yaml`:
-
-```yaml
-mac:
-  decoding:
-    max_tokens: 4096  # Logged for documentation only
-    note: "Decoding parameters (temperature, sampling) are controlled by MAC internally and are not overridden by EXAID"
-```
-API credentials are supplied via environment variables at runtime. No credentials are stored in the repository.
-
-### Case Selection Policy
-
-MAC provides 302 clinical cases (primary and follow-up presentations). EXAID implements a configurable case selection policy defined in `configs/dataset.yaml`:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `mode` | `fixed_subset` | Selection mode (`fixed_subset` or `all`) |
-| `seed` | `42` | Random seed for deterministic selection |
-| `n_cases` | `40` | Number of cases to select (when `mode=fixed_subset`) |
-| `on_failure` | `log_stub` | Failure handling (`log_stub` or `raise`) |
-
-**Selection Process:**
-1. All 302 case IDs are sorted lexicographically
-2. A seeded random generator (`random.Random(seed)`) samples `n_cases` cases
-3. Selected cases are sorted again for deterministic ordering
-4. The ordered case list and its hash are recorded in the manifest
-
-This policy is deterministic: the same seed always produces the same case selection.
-
-**Rationale for Subset Selection:**
-- MAC execution is computationally expensive (~5-10 minutes per case)
-- 40 cases provide sufficient statistical power for middleware evaluation
-- Full 302-case runs can be enabled by setting `mode: all`
-- Selection methodology is fully disclosed and reproducible
-
-### Token Accounting and Compression Metrics
-
-All evaluation metrics use **Character-Normalized Token Units (CTU)**, defined as:
-
-```
-CTU(text) = ceil(len(text) / 4)
-```
-
-CTU is a **model-agnostic, character-normalized text unit**—not a tokenizer. The ≈4 characters per unit heuristic reflects average token densities observed across modern LLM tokenizers (OpenAI, LLaMA, Gemini, Claude) and is used strictly as a normalization constant. This ensures:
-
-- **Offline computation**: CTU can be computed without API calls
-- **Deterministic replay**: Same text always produces same CTU count
-- **Reproducibility for reviewers**: No vendor-specific tokenizer dependencies
-- **Vendor-agnostic**: Works identically regardless of LLM provider
-
-**CTU is applied uniformly to both input trace text and EXAID summary outputs; all compression and budget metrics are computed using the same unit on both sides.**
-
-For non-text or empty emissions, `text_units_ctu` is defined as `0`.
-
-**Provider Token Counts:**
-
-Provider-reported token counts (when available from any LLM provider) are logged separately in trace records as `provider_token_count`. These are recorded for **usage transparency only** and are **not used in any evaluation metric**. Evaluation metrics do not depend on provider tokenizers—CTU ensures reproducibility, offline computation, and vendor independence.
-
-This separation is enforced in the trace schema (`schemas/exaid.trace.schema.json`):
-
-```json
-"text_units_ctu": {
-  "type": "integer",
-  "minimum": 0,
-  "description": "Character-Normalized Token Units (CTU), defined as ceil(len(text)/4). Used for all evaluation metrics."
-},
-"provider_token_count": {
-  "type": "integer", 
-  "minimum": 0,
-  "description": "Provider-reported token count (usage metadata only, not used in evaluation)"
-}
-```
-
-### Trace Construction Rules
-
-For each selected case, MAC generates a conversation trace stored as a JSONL file:
-
-**File Format:**
-- One JSONL.gz file per case: `data/traces/case-{id}.jsonl.gz`
-- Each line is a JSON object conforming to `exaid.trace.schema.json`
-
-**Record Structure:**
-```json
-{
-  "schema_name": "exaid.trace",
-  "schema_version": "1.0.0",
-  "trace_id": "trc-{case_id}-{seq:03d}",
-  "case_id": "case-{mac_case_url}",
-  "agent_id": "doctor0|doctor1|doctor2|supervisor",
-  "sequence_num": 0,
-  "timestamp": "2024-12-19T12:00:00Z",
-  "content": "Agent message text...",
-  "text_units_ctu": 123,
-  "metadata": {
-    "mas_run_id": "mas-abc123...",
-    "mac_commit": "896a5deb...",
-    "model": "gpt-4o-mini",
-    "status": "success"
-  }
-}
-```
-
-**Trace Properties:**
-- `sequence_num` is strictly increasing (0, 1, 2, ...)
-- No buffering or reordering of agent emissions
-- One trace record per MAC message emission
-- `text_units_ctu` computed via `ceil(len(content) / 4)`
-- For non-text or empty emissions, `text_units_ctu` is `0`
-
-### Include-All and Failure Handling
-
-EXAID implements an **include-all execution policy** within the selected subset:
-
-1. All selected cases are executed (no early stopping)
-2. Failed cases produce stub traces with `status: failed`
-3. No cases are silently skipped
-
-**Failure Trace Format:**
-```json
-{
-  "schema_name": "exaid.trace",
-  "schema_version": "1.0.0",
-  "trace_id": "trc-{case_id}-000",
-  "case_id": "case-{case_id}",
-  "agent_id": "_system",
-  "sequence_num": 0,
-  "timestamp": "...",
-  "content": "[FAILED] Case execution failed",
-  "text_units_ctu": 0,
-  "metadata": {
-    "status": "failed",
-    "failure_reason": "Specific error message",
-    "mas_run_id": "...",
-    "mac_commit": "..."
-  }
-}
-```
-
-This ensures:
-- Downstream metrics can account for failures
-- Trace file counts match selected case counts
-- No hidden data loss
-
-### Freezing and Replay Semantics
-
-The trace generation process follows a **frozen replay model**:
-
-1. **Generation Phase**: MAC runs once to produce frozen traces
-2. **Storage**: Traces are written to `data/traces/` as JSONL.gz files
-3. **Replay Phase**: EXAID variants replay the same frozen traces
-4. **Provenance**: `mas_run_id` ensures trace provenance is verifiable
-
-**`mas_run_id` Generation:**
-
-The run ID is a deterministic hash of:
-- MAC commit hash
-- Model name
-- Ordered case list
-
-```python
-mas_run_id = f"mas-{sha256(payload)[:16]}"
-```
-
-This ID is recorded in:
-- Each trace record's `metadata.mas_run_id`
-- The dataset manifest (`data/manifests/dataset_manifest.jsonl`)
-
-### Exact Reproduction Commands
-
-To reproduce trace generation:
-
-```bash
-# 1. Build the evaluation container
-docker compose -f docker-compose.evals.yml build
-
-# 2. Generate traces (requires API credentials for MAC)
 docker compose -f docker-compose.evals.yml run --rm \
   -e GOOGLE_API_KEY=$GOOGLE_API_KEY \
   evals scripts/01_make_traces.sh
+```
 
-# 3. Validate generated traces
+### Phase 2: Validate Schemas
+
+```bash
 docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
 ```
 
-**For testing without API calls (stub mode):**
+### Phase 3: Run Summarizer Variants
 
 ```bash
-docker compose -f docker-compose.evals.yml run --rm \
-  -e EXAID_STUB_MODE=1 \
-  evals scripts/01_make_traces.sh
+# Run all variants (V0-V4)
+docker compose -f docker-compose.evals.yml run --rm evals scripts/02_run_variants.sh
+
+# Run specific variant
+docker compose -f docker-compose.evals.yml run --rm evals scripts/02_run_variants.sh V3
+
+# Or use Python directly with more options
+docker compose -f docker-compose.evals.yml run --rm evals \
+  python src/run_variants.py --traces data/traces/ --output data/runs/ --verbose
 ```
 
-### Dataset Manifest
+### Phase 4-5: Compute Metrics
 
-Trace generation produces a manifest file at `data/manifests/dataset_manifest.jsonl`:
+```bash
+docker compose -f docker-compose.evals.yml run --rm evals scripts/03_compute_metrics.sh
 
-```json
-{
-  "schema_name": "exaid.manifest",
-  "schema_version": "1.0.0",
-  "experiment_id": "exp-mac-traces-20241219-120000",
-  "created_at": "2024-12-19T12:00:00Z",
-  "config_hash": "sha256:...",
-  "mas_generation_config": {
-    "mas_run_id": "mas-abc123...",
-    "mac_commit": "896a5deb4d6db7a2c872630a6638da4da3b0f4d4",
-    "base_model": "gpt-4o-mini",
-    "decoding_note": "Controlled by MAC internally; EXAID does not override",
-    "text_unit": {
-      "name": "CTU",
-      "definition": "ceil(len(text) / 4)",
-      "applies_to": "input_and_output"
-    },
-    "selection_mode": "fixed_subset",
-    "selection_seed": 42,
-    "n_cases_selected": 40,
-    "n_cases_available": 302,
-    "case_list_hash": "sha256:...",
-    "ordered_case_list": ["case-34775698", "case-34989141", ...]
-  }
-}
+# Or use Python directly
+docker compose -f docker-compose.evals.yml run --rm evals \
+  python src/compute_metrics.py --runs data/runs/ --traces data/traces/ \
+    --output data/metrics/ --bootstrap-samples 10000 --verbose
 ```
 
-### Documentation Version Tracking
+**Output:**
+- `data/metrics/per_case.metrics.jsonl` - Per-case metric records
+- `data/metrics/aggregate.metrics.json` - Aggregate statistics with CIs
 
-This documentation corresponds to EXAID commit: `7dadb9143892c045b6317e297aa651a79cf4bd14`
+---
 
-Future changes to MAC integration should reference changes made after this commit and update this section accordingly.
+## Canonical Trace Text Definition
+
+**Paper hook: Section 3.1**
+
+Canonical trace text is defined in `src/trace_text.py:build_canonical_trace_text()`:
+
+| Rule | Description |
+|------|-------------|
+| **Include** | Chunks where `event_subtype == "message"` |
+| **Exclude** | `orchestrator_summary`, `system_note`, other subtypes |
+| **Fallback** | If `event_subtype` missing, include unless `agent_id` in `{orchestrator, _system, system, meta}` |
+| **FAIL-FAST** | Raises `TraceParsingError` if 0 message chunks found |
+
+**Statistics tracked:**
+- `included_message_chunks` - Count of message chunks included
+- `excluded_orchestrator_summary` - Excluded orchestrator records
+- `excluded_system_note` - Excluded system notes
+- `excluded_other_subtype` - Other excluded subtypes
+- `missing_event_subtype` - Chunks included via fallback (missing subtype)
+
+**Single source of truth:** All modules MUST import from `trace_text.py`:
+- `build_canonical_trace_text()` - Full trace text
+- `build_window_text()` - Window text for M6a/M6b
+
+---
+
+## Determinism Rules
+
+**Paper hook: Section 3.2**
+
+All outputs are byte-stable across runs:
+
+### Timestamps
+
+| Event Type | Derivation |
+|------------|------------|
+| Chunk events | `t_emitted_ms` from trace chunk |
+| Window events | `t_emitted_ms` from end_seq chunk |
+| Fallback | `run_start_time + seq*1000` (tracked in `run_meta`) |
+
+**STRICT:** No silent 1970 epoch fallback. `missing_t_emitted_ms_count` is tracked in `run_meta.timestamp_derivation`.
+
+### Serialization
+
+| Requirement | Value |
+|-------------|-------|
+| gzip mtime | `0` (deterministic) |
+| JSON sort_keys | `True` |
+| JSON separators | `(',', ':')` (compact) |
+| Record ordering | By record_type, then index |
+
+### Verification
+
+```bash
+# Running twice should produce identical outputs
+md5sum data/runs/V0/*.jsonl.gz
+```
+
+---
+
+## Stoplist Generation (No Leakage)
+
+**Paper hook: Section 6.1**
+
+> "DF computed strictly on frozen traces (n=40). Concepts appearing in >=90% of traces were stoplisted."
+
+### Process
+
+1. **Load Phase 4 config** - Same extractor settings as metrics computation (drift-proof)
+2. **Disable stoplists** - `stop_entities_file=None`, `stop_cuis_file=None` (non-circular)
+3. **Extract concepts** - Per-case unique CUI/surface sets
+4. **Compute DF** - Document frequency across all traces
+5. **Apply threshold** - DF >= 90% → stoplisted
+
+### Audit Artifact
+
+`configs/stoplist_df_report.csv` includes:
+- `concept` - CUI or surface string
+- `type` - "CUI" or "SURFACE"
+- `df_count` - Number of traces containing concept
+- `df_fraction` - df_count / n_cases
+- `status` - "STOPLISTED" or "KEPT"
+
+Summary statistics at end:
+```
+# SUMMARY
+# n_cases,40
+# threshold,0.9
+# cutoff_count,36
+# stoplisted_cuis,15
+# stoplisted_surfaces,42
+```
+
+---
+
+## CUI Extraction Ordering
+
+**Paper hook: Section 6.1**
+
+CUI extraction follows **exact** filter→sort→topK→stoplist ordering:
+
+```python
+# Per entity mention:
+1. candidates = list(ent._.kb_ents)           # Retrieve all
+2. filtered = [c for c in candidates if c[1] >= threshold]  # Filter by score
+3. sorted_cands = sorted(filtered, key=lambda x: x[1], reverse=True)  # Sort DESC
+4. top_k = sorted_cands[:max_k]              # Take top K
+5. result = [cui for cui, _ in top_k if cui.upper() not in stop_cuis]  # Stoplist
+```
+
+### CUI Normalization
+
+| Rule | Description |
+|------|-------------|
+| Canonical form | Uppercase (C1234567) |
+| Stoplist matching | Case-insensitive (normalized before comparison) |
+| Storage | Always uppercase |
+
+---
+
+## Faithfulness Paradox Resolution
+
+**Paper hook: Section 5.1**
+
+Schema failures must be handled correctly for M6a/M6b faithfulness metrics:
+
+| Condition | M6a/M6b Result | Effect |
+|-----------|----------------|--------|
+| `schema_ok=false` | **EXCLUDED** (return `None`) | Not counted in denominator |
+| `schema_ok=true`, empty CUIs | **0.0** | Grounded by absence |
+| `schema_ok=true`, non-empty CUIs | Computed value | Normal case |
+
+**Reporting:**
+- `faithfulness_valid_event_count` - Events included in M6a/M6b means
+- `excluded_from_faithfulness_count` - Events excluded (schema failures)
+- `schema_failures` - Total schema failure count (for M10)
+
+**Coverage penalty:** Schema-failed events contribute empty concept sets, penalizing recall.
+
+---
+
+## Variant Ablation Suite
+
+**Paper hook: Section 4.1-4.2**
+
+Note: TokenGate uses whitespace-delimited word counts (not model tokenizer tokens) for its min/max thresholds.
+
+| Variant | Trigger Policy | Components |
+|---------|----------------|------------|
+| **V0** | `full_exaid` | TokenGate (word thresholds) + BufferAgent (completeness/value/novelty) + Summarizer |
+| **V1** | `turn_end` | Trigger at `is_turn_end=True` + Summarizer only |
+| **V2** | `no_buffer` | TokenGate flush → Summarizer (skip BufferAgent) |
+| **V3** | `no_tokengate` | Fixed chunk/time + BufferAgent + Summarizer |
+| **V4** | `no_novelty` | TokenGate (word thresholds) + BufferAgent (completeness + value only) + Summarizer |
+
+### V3 Calibration
+
+V3 uses fixed CTU intervals calibrated from V0:
+- **Method:** Median (not mean) of V0 flush sizes
+- **Chunk size:** 125 CTU (calibrated)
+- **Documented in:** `configs/variants/V3.yaml`
+
+---
+
+## Metrics (M1-M10)
+
+| Metric | Description | Computation |
+|--------|-------------|-------------|
+| **M1** | Compression ratio | `1 - (summary_ctu / trace_ctu)` |
+| **M2** | Summary count | Number of summary events |
+| **M3** | Redundancy | Jaccard similarity on CUI sets between consecutive summaries |
+| **M4** | Trace coverage | `|summary_cuis ∩ trace_cuis| / |trace_cuis|` |
+| **M5a** | Unsupported global | `|summary_cuis - trace_cuis| / |summary_cuis|` |
+| **M5b** | Unsupported per-summary | Mean per-summary unsupported rate |
+| **M6a** | Window-groundedness | Unsupported fraction vs window |
+| **M6b** | Contract-groundedness | Unsupported fraction vs window+latest_summary |
+| **M7** | Mean latency | Mean summary generation latency (ms) |
+| **M8** | LLM usage | Total prompt + completion CTU |
+| **M9** | BufferAgent overhead | Decision count and CTU |
+| **M10** | Schema failure rate | `schema_failures / summary_count` |
+
+### M6b Reconstruction
+
+M6b support set = window_text + latest_summary_semantics_text
+
+`latest_summary_semantics_text` is reconstructed by looking up `latest_summary_event_id` within the run log.
+
+---
+
+## Run Log Schema (v1.3.0)
+
+Multi-record JSONL format per `schemas/exaid.run.schema.json`:
+
+| Record Type | Purpose |
+|-------------|---------|
+| `run_meta` | Provenance, config, timestamps stats |
+| `tokengate_flush` | TokenGate accumulation events |
+| `buffer_decision` | BufferAgent decisions (M9) |
+| `summary_event` | Summary generation events (M6a/M6b) |
+
+### Key Fields
+
+**run_meta:**
+- `concept_extractor.linker_kb_version` - UMLS snapshot (e.g., "2023AB")
+- `stoplists_provenance` - SHA256 hashes of stoplist files
+- `timestamp_derivation.missing_t_emitted_ms_count` - Fallback count
+
+**summary_event:**
+- `schema_ok` - Boolean for faithfulness exclusion
+- `latest_summary_event_id` - For M6b reconstruction
+- `llm_usage.prompt_ctu` / `completion_ctu` - Deterministic CTU
+- `llm_usage.provider_prompt_tokens` - API-reported (optional)
 
 ---
 
@@ -360,24 +347,27 @@ evals/
 ├── schemas/                       # JSON Schema definitions
 │   ├── exaid.manifest.schema.json
 │   ├── exaid.trace.schema.json
-│   ├── exaid.run.schema.json
+│   ├── exaid.run.schema.json      # Multi-record JSONL v1.3.0
 │   └── exaid.metrics.schema.json
 ├── configs/                       # Configuration files
+│   ├── extractor.yaml             # Concept extractor config (Phase 4)
 │   ├── dataset.yaml               # Dataset selection + MAC case policy
 │   ├── mas_generation.yaml        # MAS trace generation (MAC config)
 │   ├── summarizer.yaml            # Summarizer params (history_k=3)
 │   ├── metrics.yaml               # Metric computation params
-│   ├── stop_entities.txt          # scispaCy stop-entity list
+│   ├── stop_entities.txt          # Surface-form stoplist
+│   ├── stop_cuis.txt              # CUI stoplist
+│   ├── stoplist_df_report.csv     # Audit artifact
 │   └── variants/                  # Variant-specific configs
-│       ├── V0.yaml                # Baseline (no summarization)
-│       ├── V1.yaml                # Fixed threshold
-│       ├── V2.yaml                # LLM-triggered
-│       ├── V3.yaml                # Calibrated (primary)
-│       └── V4.yaml                # Extended history
+│       ├── V0.yaml                # Full EXAID
+│       ├── V1.yaml                # Turn-end only
+│       ├── V2.yaml                # No BufferAgent
+│       ├── V3.yaml                # No TokenGate (calibrated)
+│       └── V4.yaml                # No novelty check
 ├── data/                          # Data artifacts
 │   ├── manifests/                 # Experiment manifests
 │   ├── cases/                     # Input clinical cases
-│   ├── traces/                    # Generated MAS traces
+│   ├── traces/                    # Generated MAS traces (frozen)
 │   ├── runs/                      # Summarizer run outputs
 │   │   ├── V0/
 │   │   ├── V1/
@@ -385,12 +375,21 @@ evals/
 │   │   ├── V3/
 │   │   └── V4/
 │   └── metrics/                   # Computed metrics
-│       └── figures/               # Generated figures
+│       ├── per_case.metrics.jsonl
+│       ├── aggregate.metrics.json
+│       └── figures/               # Generated figures (Phase 6)
 ├── src/                           # Python modules
+│   ├── trace_text.py              # Canonical trace text (single source)
+│   ├── validate_traces.py         # Phase 0 validation
+│   ├── generate_stoplists.py      # Phase 0 stoplist generation
+│   ├── deterministic_utils.py     # Timestamps, IDs, CTU
+│   ├── deterministic_io.py        # gzip/JSON writing
+│   ├── concept_extractor.py       # CUI extraction
 │   ├── validate_logs.py           # Schema validation
 │   ├── make_traces.py             # Trace generation (MAC integration)
-│   ├── run_variants.py            # Variant runner
-│   └── compute_metrics.py         # Metrics computation
+│   ├── run_variants.py            # Variant replay engine
+│   ├── compute_metrics.py         # M1-M10 metrics
+│   └── test_concept_extractor.py  # Unit tests
 └── scripts/                       # Orchestration scripts
     ├── 00_validate.sh
     ├── 01_make_traces.sh
@@ -398,90 +397,82 @@ evals/
     └── 03_compute_metrics.sh
 ```
 
+---
+
 ## Frozen Parameters
 
 The following parameters are frozen for the conference paper evaluation:
 
-### Summarizer Configuration (`configs/summarizer.yaml`)
+### Summarizer Configuration
 - `history_k: 3` - Number of historical summaries in context
 
-### Metric Configuration (`configs/metrics.yaml`)
-- `tau_list: [0.85, 0.90, 0.95]` - Redundancy thresholds
-- `budget_list: [250, 500, 1000, 2000]` - Token budget levels (in CTU)
-
-### scispaCy Concept Extractor
+### Concept Extractor Configuration
 - Model: `en_core_sci_sm`
-- `entity_types_kept: ["ALL"]` (mention detector mode)
-- `min_entity_len: 3`
-- Stop entities: `configs/stop_entities.txt`
-- Normalization: lowercase, strip whitespace, canonicalize punctuation
+- Linker: UMLS (`linker_name: umls`)
+- CUI score threshold: 0.7
+- Max K: 10
+- Min entity length: 3 characters
+- CUI normalization: uppercase
 
-### V3 Variant (Primary Evaluation)
-- Calibration: enabled (placeholder for calibration procedure)
-- Chunk params: frozen (token_gate settings)
-- Time params: frozen (timeout settings)
+### Metric Configuration
+- Bootstrap samples: 10,000
+- Confidence level: 95%
+- Random seed: 42
 
-## Schema Versioning
+### V3 Calibration
+- Method: Median of V0 flush sizes
+- Chunk size: 125 CTU
 
-All data files include schema identification for validation:
+---
 
-```json
-{
-  "schema_name": "exaid.trace",
-  "schema_version": "1.0.0",
-  ...
-}
+## Statistical Analysis
+
+**Paper hook: Section 5.3**
+
+### Bootstrap Confidence Intervals
+
+95% CIs computed via 10k bootstrap resamples with fixed seed (42):
+
+```python
+def bootstrap_ci(values, n_resamples=10000, ci_level=0.95, seed=42):
+    rng = np.random.RandomState(seed)
+    bootstrap_means = [np.mean(rng.choice(values, len(values), replace=True)) 
+                       for _ in range(n_resamples)]
+    return (np.mean(values),
+            np.percentile(bootstrap_means, 2.5),
+            np.percentile(bootstrap_means, 97.5))
 ```
 
-Schema files use JSON Schema Draft 2020-12.
+### Paired Tests (if needed)
 
-## Docker Details
+- Wilcoxon signed-rank test for paired comparisons
+- Paired bootstrap for effect sizes
 
-### Container Environment
-- Python 3.12
-- spaCy 3.7.4 with scispaCy 0.5.4
-- pyautogen 0.2.32 (for MAC integration)
-- en_core_sci_sm model pre-installed
-- All dependencies pinned in `requirements-evals.txt`
-
-The evaluation container is pinned to linux/amd64 to ensure compatibility across common reviewer and CI environments.
-
-**Note on scispaCy installation:** We install scispaCy with dependency resolution disabled (`--no-deps`) to ensure compatibility with Python 3.12; concept extraction uses only pretrained NER models and does not rely on SciPy internals beyond array operations.
-
-### Running Commands Manually
-
-```bash
-# Enter interactive shell
-docker compose -f docker-compose.evals.yml run --rm evals
-
-# Run Python directly
-docker compose -f docker-compose.evals.yml run --rm evals -c "python src/validate_logs.py --help"
-
-# Run with environment variables
-docker compose -f docker-compose.evals.yml run --rm \
-  -e GOOGLE_API_KEY=$GOOGLE_API_KEY \
-  evals scripts/01_make_traces.sh
-```
+---
 
 ## Troubleshooting
 
 ### Container build fails
 ```bash
-# Rebuild without cache
 docker compose -f docker-compose.evals.yml build --no-cache
 ```
 
 ### scispaCy model not found
 ```bash
-# Verify model installation
-docker compose -f docker-compose.evals.yml run --rm evals -c "python -c 'import spacy; nlp = spacy.load(\"en_core_sci_sm\"); print(\"OK\")'"
+docker compose -f docker-compose.evals.yml run --rm evals \
+  -c "python -c 'import spacy; nlp = spacy.load(\"en_core_sci_sm\"); print(\"OK\")'"
 ```
 
 ### Validation fails
 ```bash
-# Run validation with verbose output
-docker compose -f docker-compose.evals.yml run --rm evals -c "python src/validate_logs.py data/traces/*.jsonl.gz --verbose"
+docker compose -f docker-compose.evals.yml run --rm evals \
+  python src/validate_traces.py --traces data/traces/ --verbose
 ```
+
+### Trace parsing errors
+Check `TraceParsingStats` in validation output:
+- `missing_event_subtype > 0` - Some chunks used fallback logic
+- `excluded_orchestrator_summary > 0` - Orchestrator records excluded (expected)
 
 ### MAC submodule not found
 The MAC submodule is a fork with streaming instrumentation. Initialize it with:
@@ -494,6 +485,16 @@ cd third_party/mac && git remote -v
 # Should show: https://github.com/AbemKW/mac-streaming-traces
 ```
 
+---
+
 ## License
 
 MIT - See repository root for full license.
+
+---
+
+## Version History
+
+- **v3.2** - Schema-robust trace parsing, fail-fast validation, faithfulness paradox fix
+- **v3.1** - Multi-record JSONL run logs, CUI extraction with ordering
+- **v3.0** - Initial v3.x architecture with deterministic replay

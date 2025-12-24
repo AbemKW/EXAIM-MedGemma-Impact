@@ -1,24 +1,48 @@
 # EXAID Evaluation - Variant V1 Configuration
-# Fixed-threshold summarization variant
+# Turn-End Only (Ablation: removes TokenGate and BufferAgent)
+#
+# Paper hook: "V1 triggers summarization only at turn boundaries,
+# bypassing TokenGate accumulation and BufferAgent filtering (Section 4.2)"
 
 variant_id: V1
-name: "Fixed Threshold Summarization"
-description: "Summarization triggered by fixed trace count threshold"
+name: "Turn-End Only"
+description: "Summarize at turn boundaries only, no TokenGate or BufferAgent"
 
-summarization:
+# Trigger policy enum (for ablation suite)
+trigger_policy: "turn_end"
+
+# Component configuration
+components:
+  # TokenGate: DISABLED (trigger on turn boundary instead)
+  token_gate:
+    enabled: false
+  
+  # BufferAgent: DISABLED (summarize directly)
+  buffer_agent:
+    enabled: false
+    completeness_check: false
+    value_check: false
+    novelty_check: false
+  
+  # Summarizer: generates summaries
+  summarizer:
+    enabled: true
+
+# Turn-end trigger configuration
+turn_trigger:
+  # Trigger when is_turn_end=True in trace
   enabled: true
-  # Trigger mode: threshold-based (not LLM-based)
-  trigger_mode: "threshold"
-  # Number of traces before triggering summarization
-  trigger_threshold: 5
+  field: "is_turn_end"
+  value: true
 
-# Uses default summarizer config
+# Summarizer settings
 summarizer:
-  # Inherit history_k from summarizer.yaml
-  history_k_override: null
+  # MANDATORY: history_k = 3 for all variants
+  history_k: 3
 
-# Concept extractor settings (inherit from run defaults)
+# Metrics role
+metrics_role: "ablation_no_tokengate_no_buffer"
+
+# Concept extractor (inherit from extractor.yaml)
 concept_extractor:
-  inherit_defaults: true
-
-
+  inherit_from: "extractor.yaml"

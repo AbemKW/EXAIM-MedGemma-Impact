@@ -1,19 +1,44 @@
 # EXAID Evaluation - Variant V0 Configuration
-# Baseline variant: No summarization (raw traces)
+# Full EXAID Pipeline (Reference Implementation)
+#
+# Paper hook: "V0 implements the complete EXAID pipeline with TokenGate,
+# BufferAgent (completeness/value/novelty checks), and Summarizer (Section 4.1)"
 
 variant_id: V0
-name: "Baseline - No Summarization"
-description: "Control variant that passes through raw traces without summarization"
+name: "Full EXAID"
+description: "Complete EXAID pipeline with all components enabled"
 
-# Summarization disabled for baseline
-summarization:
-  enabled: false
+# Trigger policy enum (for ablation suite)
+trigger_policy: "full_exaid"
 
-# This variant serves as the upper bound for token usage
-# and lower bound for information compression
-metrics_role: "baseline_control"
+# Component configuration
+components:
+  # TokenGate: accumulates chunks until word threshold (whitespace-delimited)
+  token_gate:
+    enabled: true
+    min_words: 35
+    max_words: 90
+    boundary_cues: ".?!\n"
+  
+  # BufferAgent: 3-layer filter (completeness, value, novelty)
+  buffer_agent:
+    enabled: true
+    completeness_check: true
+    value_check: true
+    novelty_check: true  # All three filters active
+  
+  # Summarizer: generates summaries
+  summarizer:
+    enabled: true
 
-# No concept extraction parameters needed for baseline
-# (raw traces are used directly)
+# Summarizer settings
+summarizer:
+  # MANDATORY: history_k = 3 for all variants
+  history_k: 3
 
+# Metrics role
+metrics_role: "full_system"
 
+# Concept extractor (inherit from extractor.yaml)
+concept_extractor:
+  inherit_from: "extractor.yaml"

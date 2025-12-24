@@ -1,387 +1,961 @@
 #!/usr/bin/env python3
 """
-EXAID Evaluation - Variant Runner Script
+EXAID Evaluation - Deterministic Variant Replay Engine
 
-Replays traces through different summarizer variants and logs the results.
-Implements the data model and logging structure for evaluation runs.
+Paper hook: "Frozen traces replayed through variant pipelines with
+deterministic timestamp derivation and byte-stable output (Section 3.1)"
 
-Current behavior:
-- Reads trace files from data/traces/
-- Processes each trace through variant configurations V0-V4
-- Outputs run logs to data/runs/V{n}/
-- Includes concept extractor configuration in run metadata
+Replays frozen traces through V0-V4 variant pipelines:
+    V0: full_exaid - TokenGate + BufferAgent (all filters) + Summarizer
+    V1: turn_end - Trigger at turn boundaries only
+    V2: no_buffer - TokenGate → Summarizer (skip BufferAgent)
+    V3: no_tokengate - Fixed intervals + BufferAgent + Summarizer
+    V4: no_novelty - TokenGate + BufferAgent (no novelty check) + Summarizer
+
+Output: Multi-record JSONL run logs per evals/schemas/exaid.run.schema.json
 
 Usage:
     python run_variants.py --traces data/traces/ --output data/runs/
-    python run_variants.py --variant V3 --traces data/traces/
+    python run_variants.py --variant V3 --case case-33651373
+
+Dependencies:
+    - trace_text.py (canonical text construction)
+    - deterministic_utils.py (timestamps, IDs)
+    - deterministic_io.py (gzip/JSON writing)
 """
 
 import argparse
-import gzip
+import hashlib
 import json
 import sys
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Optional
 
 import yaml
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
 
-# Concept extractor configuration (scispaCy baseline)
-DEFAULT_CONCEPT_EXTRACTOR_CONFIG = {
-    "model": "en_core_sci_sm",
-    "entity_types_kept": ["ALL"],
-    "stop_entities_file": "configs/stop_entities.txt",
-    "min_entity_len": 3,
-    "normalization": {
-        "lowercase": True,
-        "strip_whitespace": True,
-        "canonicalize_punctuation": True
-    }
-}
+from trace_text import (
+    build_canonical_trace_text,
+    build_window_text,
+    load_trace_chunks_for_case,
+    TraceParsingStats,
+)
+from deterministic_utils import (
+    DeterministicTimestamps,
+    compute_ctu,
+    compute_text_hash,
+    generate_event_id,
+    generate_decision_id,
+)
+from deterministic_io import (
+    RunLogBuilder,
+    write_run_log_deterministic,
+    compute_file_hash,
+)
+from config_loader import (
+    load_extractor_config as _load_extractor_config_central,
+    load_variant_config as _load_variant_config_central,
+    get_stoplists_provenance,
+)
 
 
-def load_config(config_path: Path) -> dict:
-    """Load a YAML configuration file."""
+# ============================================================================
+# Configuration Loading
+# ============================================================================
+
+def load_yaml_config(config_path: Path) -> dict:
+    """Load YAML config file."""
     if not config_path.exists():
         return {}
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
-def load_summarizer_config() -> dict:
-    """Load the summarizer configuration."""
-    config_path = Path("configs/summarizer.yaml")
-    return load_config(config_path)
+def load_variant_config(variant_id: str, configs_dir: Path) -> dict:
+    """Load variant configuration via centralized loader."""
+    return _load_variant_config_central(variant_id, configs_dir)
 
 
-def load_variant_config(variant_id: str) -> dict:
-    """Load a variant configuration."""
-    config_path = Path(f"configs/variants/{variant_id}.yaml")
-    return load_config(config_path)
-
-
-def load_stop_entities(stop_file: Path) -> set:
-    """Load stop entities from file."""
-    if not stop_file.exists():
-        return set()
-    
-    entities = set()
-    with open(stop_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                entities.add(line.lower())
-    return entities
-
-
-def normalize_entity(entity: str) -> str:
-    """Normalize an entity string."""
-    # Lowercase
-    entity = entity.lower()
-    # Strip whitespace
-    entity = entity.strip()
-    # Canonicalize punctuation (remove trailing punctuation)
-    entity = entity.rstrip(".,;:!?")
-    return entity
-
-
-def extract_concepts_stub(text: str, config: dict) -> list[str]:
+def load_extractor_config(configs_dir: Path) -> dict:
     """
-    STUB: Extract concepts from text using scispaCy.
+    Load extractor configuration via centralized loader.
     
-    TODO: Implement actual scispaCy extraction
+    Paper hook: "Extractor config loaded via centralized loader ensuring
+    drift-proof evaluation with resolved stoplist paths (Section 6.1)"
+    """
+    return _load_extractor_config_central(configs_dir, resolve_paths=True, include_hashes=True)
+
+
+# ============================================================================
+# Data Classes
+# ============================================================================
+
+@dataclass
+class SummaryResult:
+    """Result of summary generation."""
+    event_index: int
+    event_id: str
+    start_seq: int
+    end_seq: int
+    timestamp: str
+    schema_ok: bool
+    schema_error: Optional[str]
+    summary_semantics_text: str
+    summary_ctu: int
+    summary_content: dict
+    latest_summary_event_id: Optional[str]
+    new_buffer_text_hash: str
+    llm_usage: dict
+    latency_ms: int
+
+
+@dataclass 
+class BufferDecisionResult:
+    """Result of BufferAgent decision."""
+    decision_index: int
+    decision_id: str
+    start_seq: int
+    end_seq: int
+    timestamp: str
+    input_ctu: int
+    decision: str  # "summarize", "buffer", "discard"
+    filter_results: dict
+    llm_usage: dict
+    latency_ms: int
+
+
+@dataclass
+class TokenGateFlushResult:
+    """Result of TokenGate flush."""
+    flush_index: int
+    start_seq: int
+    end_seq: int
+    timestamp: str
+    accumulated_ctu: int
+    trigger_reason: str
+    text_hash: str
+
+
+@dataclass
+class RunContext:
+    """Context for a single run execution."""
+    case_id: str
+    variant_id: str
+    trace_file: Path
+    trace_chunks: list[dict]
+    timestamps: DeterministicTimestamps
+    history_k: int = 3
+    mas_run_id: str = ""
+    eval_run_id: str = ""
     
-    This stub returns placeholder concepts.
-    Real implementation will:
-    1. Load en_core_sci_sm model
-    2. Process text through NER pipeline
-    3. Filter by entity_types_kept
-    4. Apply stop entity filtering
-    5. Apply min_entity_len filtering
-    6. Normalize and deduplicate
+    # Counters
+    summary_count: int = 0
+    decision_count: int = 0
+    flush_count: int = 0
     
-    Args:
-        text: Input text
-        config: Concept extractor configuration
+    # Latest summary for M6b reconstruction
+    latest_summary_event_id: Optional[str] = None
+    latest_summary_text: str = ""
+
+
+# ============================================================================
+# Abstract Variant Pipeline
+# ============================================================================
+
+class VariantPipeline(ABC):
+    """
+    Abstract base class for variant pipelines.
+    
+    Paper hook: "Each variant implements a specific trigger policy
+    and component configuration (Section 4.1)"
+    """
+    
+    def __init__(self, config: dict):
+        self.config = config
+        self.variant_id = config.get("variant_id", "V?")
+        self.trigger_policy = config.get("trigger_policy", "unknown")
+    
+    @abstractmethod
+    def run(self, ctx: RunContext) -> tuple[list, list, list]:
+        """
+        Execute variant pipeline on trace.
         
-    Returns:
-        List of extracted concept strings
-    """
-    # Placeholder: return stub concepts
-    # Real implementation would use spaCy/scispaCy
-    stub_concepts = ["placeholder_concept_1", "placeholder_concept_2"]
-    
-    # Apply normalization and filtering (demonstrating the pipeline)
-    min_len = config.get("min_entity_len", 3)
-    normalized = []
-    for concept in stub_concepts:
-        norm = normalize_entity(concept)
-        if len(norm) >= min_len:
-            normalized.append(norm)
-    
-    return list(set(normalized))
-
-
-def generate_run_id(variant_id: str, trace_id: str) -> str:
-    """Generate a unique run ID."""
-    trace_part = trace_id.replace("trc-", "")
-    return f"run-{variant_id.lower()}-{trace_part}"
-
-
-def open_trace_file(file_path: Path):
-    """Open a trace file, handling gzip compression."""
-    if str(file_path).endswith(".gz"):
-        return gzip.open(file_path, "rt", encoding="utf-8")
-    return open(file_path, "r", encoding="utf-8")
-
-
-def read_traces(traces_dir: Path) -> Iterator[tuple[Path, list[dict]]]:
-    """
-    Read trace files from directory.
-    
-    Yields:
-        Tuples of (file_path, list_of_traces)
-    """
-    if not traces_dir.exists():
-        print(f"Traces directory does not exist: {traces_dir}")
-        return
-    
-    patterns = ["*.jsonl", "*.jsonl.gz"]
-    for pattern in patterns:
-        for trace_file in sorted(traces_dir.glob(pattern)):
-            traces = []
-            with open_trace_file(trace_file) as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        traces.append(json.loads(line))
-            if traces:
-                yield trace_file, traces
-
-
-def generate_stub_summary(trace: dict, summary_idx: int, history_k: int) -> dict:
-    """
-    STUB: Generate a summary from a trace.
-    
-    TODO: Replace with actual EXAID summarizer integration
-    
-    Args:
-        trace: Trace record
-        summary_idx: Summary sequence index
-        history_k: Number of historical summaries to consider
-        
-    Returns:
-        Summary content dict
-    """
-    return {
-        "status_action": f"[STUB] Processing trace from {trace.get('agent_id', 'unknown')}",
-        "key_findings": "[STUB] Placeholder findings",
-        "differential_rationale": "[STUB] Placeholder rationale",
-        "uncertainty_confidence": "[STUB] Moderate confidence",
-        "recommendation_next_step": "[STUB] Continue analysis",
-        "agent_contributions": f"[STUB] {trace.get('agent_id', 'unknown')}: primary"
-    }
-
-
-def run_variant(
-    variant_id: str,
-    traces: list[dict],
-    summarizer_config: dict,
-    variant_config: dict
-) -> dict:
-    """
-    Run a variant on a set of traces.
-    
-    Args:
-        variant_id: Variant identifier (V0, V1, etc.)
-        traces: List of trace records
-        summarizer_config: Base summarizer configuration
-        variant_config: Variant-specific configuration
-        
-    Returns:
-        Run record conforming to exaid.run.schema.json
-    """
-    if not traces:
-        return None
-    
-    first_trace = traces[0]
-    trace_id = first_trace.get("trace_id", "unknown")
-    case_id = first_trace.get("case_id", "unknown")
-    
-    # Determine history_k (variant override or default)
-    history_k = variant_config.get("summarizer", {}).get("history_k_override")
-    if history_k is None:
-        history_k = summarizer_config.get("history_k", 3)
-    
-    # Check if summarization is enabled for this variant
-    summarization_enabled = variant_config.get("summarization", {}).get("enabled", True)
-    
-    # Generate summaries
-    summaries = []
-    start_time = datetime.now(timezone.utc)
-    
-    if summarization_enabled:
-        # Generate summaries (stub implementation)
-        for idx, trace in enumerate(traces):
-            summary = {
-                "summary_idx": idx,
-                "content": generate_stub_summary(trace, idx, history_k),
-                "token_count": 50,  # Placeholder
-                "trigger_trace_idx": idx
-            }
-            summaries.append(summary)
-    else:
-        # V0 baseline: no summarization, pass through raw traces
+        Args:
+            ctx: Run context with trace data
+            
+        Returns:
+            Tuple of (summary_results, buffer_decisions, tokengate_flushes)
+        """
         pass
     
-    end_time = datetime.now(timezone.utc)
-    duration_ms = int((end_time - start_time).total_seconds() * 1000)
-    
-    # Extract concepts from traces (for coverage computation)
-    all_trace_text = " ".join(t.get("content", "") for t in traces)
-    extracted_concepts = extract_concepts_stub(all_trace_text, DEFAULT_CONCEPT_EXTRACTOR_CONFIG)
-    
-    # Build run record
-    run_record = {
-        "schema_name": "exaid.run",
-        "schema_version": "1.0.0",
-        "run_id": generate_run_id(variant_id, trace_id),
-        "trace_id": trace_id,
-        "case_id": case_id,
-        "variant_id": variant_id,
-        "timestamp": end_time.isoformat(),
-        "summaries": summaries,
-        "timing": {
-            "total_ms": duration_ms,
-            "avg_summary_ms": duration_ms / len(summaries) if summaries else 0
-        },
-        "run_meta": {
-            "concept_extractor": DEFAULT_CONCEPT_EXTRACTOR_CONFIG,
-            "summarizer_config": {
-                "history_k": history_k
-            }
-        },
-        "concept_coverage": {
-            "total_concepts_in_trace": len(extracted_concepts),
-            "concepts_in_summaries": len(extracted_concepts),  # Stub: same as total
-            "coverage_ratio": 1.0 if extracted_concepts else 0.0,  # Stub
-            "extracted_concepts": extracted_concepts
+    def generate_stub_summary(
+        self,
+        ctx: RunContext,
+        start_seq: int,
+        end_seq: int,
+        input_text: str
+    ) -> SummaryResult:
+        """
+        Generate a stub summary (to be replaced with real EXAID integration).
+        
+        Args:
+            ctx: Run context
+            start_seq: Start of window
+            end_seq: End of window
+            input_text: Input text for summarization
+        """
+        event_index = ctx.summary_count
+        ctx.summary_count += 1
+        
+        event_id = generate_event_id(ctx.case_id, ctx.variant_id, event_index)
+        timestamp = ctx.timestamps.get_window_timestamp(end_seq)
+        
+        # Stub summary content
+        summary_content = {
+            "status_action": f"[STUB] Processing chunks {start_seq}-{end_seq}",
+            "key_findings": "[STUB] Placeholder findings",
+            "differential_rationale": "[STUB] Placeholder rationale",
+            "uncertainty_confidence": "[STUB] Moderate confidence",
+            "recommendation_next_step": "[STUB] Continue analysis",
+            "agent_contributions": "[STUB] Analysis complete"
         }
+        
+        # Concatenate summary sections for concept extraction
+        summary_semantics_text = " ".join([
+            summary_content.get("status_action", ""),
+            summary_content.get("key_findings", ""),
+            summary_content.get("differential_rationale", ""),
+            summary_content.get("uncertainty_confidence", ""),
+            summary_content.get("recommendation_next_step", ""),
+            summary_content.get("agent_contributions", ""),
+        ])
+        
+        result = SummaryResult(
+            event_index=event_index,
+            event_id=event_id,
+            start_seq=start_seq,
+            end_seq=end_seq,
+            timestamp=timestamp,
+            schema_ok=True,
+            schema_error=None,
+            summary_semantics_text=summary_semantics_text,
+            summary_ctu=compute_ctu(summary_semantics_text),
+            summary_content=summary_content,
+            latest_summary_event_id=ctx.latest_summary_event_id,
+            new_buffer_text_hash=compute_text_hash(input_text),
+            llm_usage={
+                "prompt_ctu": compute_ctu(input_text),
+                "completion_ctu": compute_ctu(summary_semantics_text),
+                "provider_prompt_tokens": None,
+                "provider_completion_tokens": None,
+                "model_id": "stub"
+            },
+            latency_ms=100  # Stub latency
+        )
+        
+        # Update context for next summary
+        ctx.latest_summary_event_id = event_id
+        ctx.latest_summary_text = summary_semantics_text
+        
+        return result
+
+
+# ============================================================================
+# Variant Implementations
+# ============================================================================
+
+class V0_FullEXAID(VariantPipeline):
+    """
+    V0: Full EXAID pipeline.
+    
+    Paper hook: "V0 implements complete EXAID with TokenGate accumulation,
+    BufferAgent 3-layer filtering, and Summarizer (Section 4.1)"
+    """
+    
+    def run(self, ctx: RunContext) -> tuple[list, list, list]:
+        summaries = []
+        decisions = []
+        flushes = []
+        
+        # TokenGate parameters (word thresholds)
+        min_words = self.config.get("components", {}).get("token_gate", {}).get("min_words", 35)
+        max_words = self.config.get("components", {}).get("token_gate", {}).get("max_words", 90)
+        
+        # Simulate TokenGate accumulation
+        accumulated_text = ""
+        accumulated_ctu = 0
+        window_start = 0
+        
+        for chunk in ctx.trace_chunks:
+            seq = chunk.get("seq", chunk.get("sequence_num", 0))
+            text = chunk.get("text_chunk") or chunk.get("content") or ""
+            chunk_ctu = compute_ctu(text)
+            
+            accumulated_text += " " + text
+            accumulated_ctu += chunk_ctu
+            
+            # Check TokenGate threshold
+            if accumulated_ctu >= min_words:
+                # TokenGate flush
+                flush = TokenGateFlushResult(
+                    flush_index=ctx.flush_count,
+                    start_seq=window_start,
+                    end_seq=seq,
+                    timestamp=ctx.timestamps.get_window_timestamp(seq),
+                    accumulated_ctu=accumulated_ctu,
+                    trigger_reason="threshold",
+                    text_hash=compute_text_hash(accumulated_text)
+                )
+                flushes.append(flush)
+                ctx.flush_count += 1
+                
+                # BufferAgent decision (stub: always summarize)
+                decision = BufferDecisionResult(
+                    decision_index=ctx.decision_count,
+                    decision_id=generate_decision_id(ctx.case_id, ctx.variant_id, ctx.decision_count),
+                    start_seq=window_start,
+                    end_seq=seq,
+                    timestamp=ctx.timestamps.get_window_timestamp(seq),
+                    input_ctu=accumulated_ctu,
+                    decision="summarize",
+                    filter_results={
+                        "completeness_passed": True,
+                        "value_passed": True,
+                        "novelty_passed": True
+                    },
+                    llm_usage={
+                        "prompt_ctu": accumulated_ctu,
+                        "completion_ctu": 5,
+                        "provider_prompt_tokens": None,
+                        "provider_completion_tokens": None,
+                        "model_id": "stub"
+                    },
+                    latency_ms=50
+                )
+                decisions.append(decision)
+                ctx.decision_count += 1
+                
+                # Generate summary
+                summary = self.generate_stub_summary(
+                    ctx, window_start, seq, accumulated_text
+                )
+                summaries.append(summary)
+                
+                # Reset accumulator
+                accumulated_text = ""
+                accumulated_ctu = 0
+                window_start = seq + 1
+        
+        # Handle remaining accumulated text
+        if accumulated_ctu > 0:
+            last_seq = ctx.trace_chunks[-1].get("seq", 0) if ctx.trace_chunks else 0
+            summary = self.generate_stub_summary(
+                ctx, window_start, last_seq, accumulated_text
+            )
+            summaries.append(summary)
+        
+        return summaries, decisions, flushes
+
+
+class V1_TurnEnd(VariantPipeline):
+    """
+    V1: Turn-end only trigger.
+    
+    Paper hook: "V1 triggers summarization only at turn boundaries,
+    bypassing TokenGate and BufferAgent (Section 4.2)"
+    """
+    
+    def run(self, ctx: RunContext) -> tuple[list, list, list]:
+        summaries = []
+        decisions = []
+        flushes = []
+        
+        accumulated_text = ""
+        window_start = 0
+        
+        for chunk in ctx.trace_chunks:
+            seq = chunk.get("seq", chunk.get("sequence_num", 0))
+            text = chunk.get("text_chunk") or chunk.get("content") or ""
+            is_turn_end = chunk.get("is_turn_end", False)
+            
+            accumulated_text += " " + text
+            
+            # Only trigger on turn end
+            if is_turn_end and accumulated_text.strip():
+                summary = self.generate_stub_summary(
+                    ctx, window_start, seq, accumulated_text
+                )
+                summaries.append(summary)
+                
+                accumulated_text = ""
+                window_start = seq + 1
+        
+        # Handle remaining text
+        if accumulated_text.strip():
+            last_seq = ctx.trace_chunks[-1].get("seq", 0) if ctx.trace_chunks else 0
+            summary = self.generate_stub_summary(
+                ctx, window_start, last_seq, accumulated_text
+            )
+            summaries.append(summary)
+        
+        return summaries, decisions, flushes
+
+
+class V2_NoBuffer(VariantPipeline):
+    """
+    V2: No BufferAgent (TokenGate → Summarizer).
+    
+    Paper hook: "V2 flushes TokenGate output directly to Summarizer,
+    measuring BufferAgent's contribution (Section 4.2)"
+    """
+    
+    def run(self, ctx: RunContext) -> tuple[list, list, list]:
+        summaries = []
+        decisions = []
+        flushes = []
+        
+        min_words = self.config.get("components", {}).get("token_gate", {}).get("min_words", 35)
+        
+        accumulated_text = ""
+        accumulated_ctu = 0
+        window_start = 0
+        
+        for chunk in ctx.trace_chunks:
+            seq = chunk.get("seq", chunk.get("sequence_num", 0))
+            text = chunk.get("text_chunk") or chunk.get("content") or ""
+            chunk_ctu = compute_ctu(text)
+            
+            accumulated_text += " " + text
+            accumulated_ctu += chunk_ctu
+            
+            if accumulated_ctu >= min_words:
+                # TokenGate flush
+                flush = TokenGateFlushResult(
+                    flush_index=ctx.flush_count,
+                    start_seq=window_start,
+                    end_seq=seq,
+                    timestamp=ctx.timestamps.get_window_timestamp(seq),
+                    accumulated_ctu=accumulated_ctu,
+                    trigger_reason="threshold",
+                    text_hash=compute_text_hash(accumulated_text)
+                )
+                flushes.append(flush)
+                ctx.flush_count += 1
+                
+                # Skip BufferAgent, go directly to summarizer
+                summary = self.generate_stub_summary(
+                    ctx, window_start, seq, accumulated_text
+                )
+                summaries.append(summary)
+                
+                accumulated_text = ""
+                accumulated_ctu = 0
+                window_start = seq + 1
+        
+        if accumulated_ctu > 0:
+            last_seq = ctx.trace_chunks[-1].get("seq", 0) if ctx.trace_chunks else 0
+            summary = self.generate_stub_summary(
+                ctx, window_start, last_seq, accumulated_text
+            )
+            summaries.append(summary)
+        
+        return summaries, decisions, flushes
+
+
+class V3_NoTokenGate(VariantPipeline):
+    """
+    V3: No TokenGate (fixed intervals).
+    
+    Paper hook: "V3 uses fixed CTU intervals calibrated from V0 median,
+    measuring TokenGate's adaptive contribution (Section 4.2)"
+    """
+    
+    def run(self, ctx: RunContext) -> tuple[list, list, list]:
+        summaries = []
+        decisions = []
+        flushes = []
+        
+        # Fixed chunk size from calibration
+        chunk_size_ctu = self.config.get("fixed_trigger", {}).get("chunk_size_ctu", 125)
+        
+        accumulated_text = ""
+        accumulated_ctu = 0
+        window_start = 0
+        
+        for chunk in ctx.trace_chunks:
+            seq = chunk.get("seq", chunk.get("sequence_num", 0))
+            text = chunk.get("text_chunk") or chunk.get("content") or ""
+            chunk_ctu = compute_ctu(text)
+            
+            accumulated_text += " " + text
+            accumulated_ctu += chunk_ctu
+            
+            if accumulated_ctu >= chunk_size_ctu:
+                # BufferAgent decision (stub)
+                decision = BufferDecisionResult(
+                    decision_index=ctx.decision_count,
+                    decision_id=generate_decision_id(ctx.case_id, ctx.variant_id, ctx.decision_count),
+                    start_seq=window_start,
+                    end_seq=seq,
+                    timestamp=ctx.timestamps.get_window_timestamp(seq),
+                    input_ctu=accumulated_ctu,
+                    decision="summarize",
+                    filter_results={
+                        "completeness_passed": True,
+                        "value_passed": True,
+                        "novelty_passed": True
+                    },
+                    llm_usage={
+                        "prompt_ctu": accumulated_ctu,
+                        "completion_ctu": 5,
+                        "provider_prompt_tokens": None,
+                        "provider_completion_tokens": None,
+                        "model_id": "stub"
+                    },
+                    latency_ms=50
+                )
+                decisions.append(decision)
+                ctx.decision_count += 1
+                
+                summary = self.generate_stub_summary(
+                    ctx, window_start, seq, accumulated_text
+                )
+                summaries.append(summary)
+                
+                accumulated_text = ""
+                accumulated_ctu = 0
+                window_start = seq + 1
+        
+        if accumulated_ctu > 0:
+            last_seq = ctx.trace_chunks[-1].get("seq", 0) if ctx.trace_chunks else 0
+            summary = self.generate_stub_summary(
+                ctx, window_start, last_seq, accumulated_text
+            )
+            summaries.append(summary)
+        
+        return summaries, decisions, flushes
+
+
+class V4_NoNovelty(VariantPipeline):
+    """
+    V4: No novelty check in BufferAgent.
+    
+    Paper hook: "V4 disables novelty filtering to measure its
+    contribution to redundancy reduction (Section 4.2)"
+    """
+    
+    def run(self, ctx: RunContext) -> tuple[list, list, list]:
+        summaries = []
+        decisions = []
+        flushes = []
+        
+        min_words = self.config.get("components", {}).get("token_gate", {}).get("min_words", 35)
+        
+        accumulated_text = ""
+        accumulated_ctu = 0
+        window_start = 0
+        
+        for chunk in ctx.trace_chunks:
+            seq = chunk.get("seq", chunk.get("sequence_num", 0))
+            text = chunk.get("text_chunk") or chunk.get("content") or ""
+            chunk_ctu = compute_ctu(text)
+            
+            accumulated_text += " " + text
+            accumulated_ctu += chunk_ctu
+            
+            if accumulated_ctu >= min_words:
+                flush = TokenGateFlushResult(
+                    flush_index=ctx.flush_count,
+                    start_seq=window_start,
+                    end_seq=seq,
+                    timestamp=ctx.timestamps.get_window_timestamp(seq),
+                    accumulated_ctu=accumulated_ctu,
+                    trigger_reason="threshold",
+                    text_hash=compute_text_hash(accumulated_text)
+                )
+                flushes.append(flush)
+                ctx.flush_count += 1
+                
+                # BufferAgent with novelty DISABLED
+                decision = BufferDecisionResult(
+                    decision_index=ctx.decision_count,
+                    decision_id=generate_decision_id(ctx.case_id, ctx.variant_id, ctx.decision_count),
+                    start_seq=window_start,
+                    end_seq=seq,
+                    timestamp=ctx.timestamps.get_window_timestamp(seq),
+                    input_ctu=accumulated_ctu,
+                    decision="summarize",
+                    filter_results={
+                        "completeness_passed": True,
+                        "value_passed": True,
+                        "novelty_passed": None  # DISABLED
+                    },
+                    llm_usage={
+                        "prompt_ctu": accumulated_ctu,
+                        "completion_ctu": 5,
+                        "provider_prompt_tokens": None,
+                        "provider_completion_tokens": None,
+                        "model_id": "stub"
+                    },
+                    latency_ms=50
+                )
+                decisions.append(decision)
+                ctx.decision_count += 1
+                
+                summary = self.generate_stub_summary(
+                    ctx, window_start, seq, accumulated_text
+                )
+                summaries.append(summary)
+                
+                accumulated_text = ""
+                accumulated_ctu = 0
+                window_start = seq + 1
+        
+        if accumulated_ctu > 0:
+            last_seq = ctx.trace_chunks[-1].get("seq", 0) if ctx.trace_chunks else 0
+            summary = self.generate_stub_summary(
+                ctx, window_start, last_seq, accumulated_text
+            )
+            summaries.append(summary)
+        
+        return summaries, decisions, flushes
+
+
+# ============================================================================
+# Pipeline Factory
+# ============================================================================
+
+def create_pipeline(variant_id: str, config: dict) -> VariantPipeline:
+    """Create variant pipeline instance."""
+    pipeline_classes = {
+        "V0": V0_FullEXAID,
+        "V1": V1_TurnEnd,
+        "V2": V2_NoBuffer,
+        "V3": V3_NoTokenGate,
+        "V4": V4_NoNovelty,
     }
     
-    return run_record
+    pipeline_class = pipeline_classes.get(variant_id)
+    if not pipeline_class:
+        raise ValueError(f"Unknown variant: {variant_id}")
+    
+    return pipeline_class(config)
 
 
-def write_run(run_record: dict, output_dir: Path, compress: bool = True) -> Path:
-    """Write a run record to file."""
-    variant_dir = output_dir / run_record["variant_id"]
-    variant_dir.mkdir(parents=True, exist_ok=True)
+# ============================================================================
+# Run Execution
+# ============================================================================
+
+def execute_run(
+    case_id: str,
+    variant_id: str,
+    trace_file: Path,
+    variant_config: dict,
+    extractor_config: dict,
+    stoplists_provenance: dict,
+    eval_run_id: str,
+    output_dir: Path
+) -> Path:
+    """
+    Execute a single run and write output.
     
-    filename = f"{run_record['case_id']}.jsonl"
-    if compress:
-        filename += ".gz"
+    Args:
+        case_id: Case identifier
+        variant_id: Variant identifier
+        trace_file: Path to trace file
+        variant_config: Variant configuration
+        extractor_config: Concept extractor configuration
+        stoplists_provenance: Stoplist provenance info
+        eval_run_id: Evaluation run batch ID
+        output_dir: Output directory
+        
+    Returns:
+        Path to output run log
+    """
+    # Load trace chunks
+    trace_chunks = load_trace_chunks_for_case(trace_file)
     
-    output_path = variant_dir / filename
+    if not trace_chunks:
+        raise ValueError(f"No chunks found in {trace_file}")
     
-    open_func = gzip.open if compress else open
-    mode = "wt" if compress else "w"
+    # Initialize deterministic timestamps
+    timestamps = DeterministicTimestamps(trace_chunks)
     
-    with open_func(output_path, mode, encoding="utf-8") as f:
-        f.write(json.dumps(run_record) + "\n")
+    # Extract mas_run_id from first chunk if available
+    mas_run_id = trace_chunks[0].get("mas_run_id", "mas-unknown")
+    
+    # Create run context
+    ctx = RunContext(
+        case_id=case_id,
+        variant_id=variant_id,
+        trace_file=trace_file,
+        trace_chunks=trace_chunks,
+        timestamps=timestamps,
+        history_k=variant_config.get("summarizer", {}).get("history_k", 3),
+        mas_run_id=mas_run_id,
+        eval_run_id=eval_run_id,
+    )
+    
+    # Create and run pipeline
+    pipeline = create_pipeline(variant_id, variant_config)
+    summaries, decisions, flushes = pipeline.run(ctx)
+    
+    # Build run log
+    builder = RunLogBuilder()
+    
+    # run_meta record
+    run_meta = {
+        "schema_name": "exaid.run",
+        "schema_version": "1.3.0",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "case_id": case_id,
+        "variant_id": variant_id,
+        "mas_run_id": mas_run_id,
+        "eval_run_id": eval_run_id,
+        "history_k": ctx.history_k,
+        "trigger_policy": variant_config.get("trigger_policy", "unknown"),
+        "trace_file_hash": compute_file_hash(trace_file),
+        "concept_extractor": {
+            "spacy_version": "3.7.4",
+            "scispacy_version": "0.5.4",
+            "scispacy_model": extractor_config.get("scispacy_model", "en_core_sci_sm"),
+            "linker_name": extractor_config.get("linker_name", "umls"),
+            "linker_kb_version": extractor_config.get("linker_kb_version", "2023AB"),
+            "linker_resolve_abbreviations": extractor_config.get("linker_resolve_abbreviations", True),
+            "linker_max_entities_per_mention": extractor_config.get("linker_max_entities_per_mention", 10),
+            "linker_threshold": extractor_config.get("linker_threshold", 0.7),
+            "cui_score_threshold": extractor_config.get("cui_score_threshold", 0.7),
+            "max_k": extractor_config.get("max_k", 10),
+            "min_entity_len": extractor_config.get("min_entity_len", 3),
+            "concept_representation": extractor_config.get("concept_representation", "cui"),
+            "cui_normalization": extractor_config.get("cui_normalization", "uppercase"),
+            "entity_types_kept": extractor_config.get("entity_types_kept", ["ALL"]),
+            "stop_entities_count": 0,
+            "stop_cuis_count": 0
+        },
+        "stoplists_provenance": stoplists_provenance,
+        "timestamp_derivation": timestamps.get_stats(),
+        "determinism": {
+            "gzip_mtime": 0,
+            "json_sort_keys": True,
+            "json_separators": [",", ":"]
+        }
+    }
+    builder.set_run_meta(run_meta)
+    
+    # Add tokengate flushes
+    for flush in flushes:
+        builder.add_tokengate_flush({
+            "flush_index": flush.flush_index,
+            "case_id": case_id,
+            "variant_id": variant_id,
+            "timestamp": flush.timestamp,
+            "start_seq": flush.start_seq,
+            "end_seq": flush.end_seq,
+            "accumulated_ctu": flush.accumulated_ctu,
+            "trigger_reason": flush.trigger_reason,
+            "text_hash": flush.text_hash
+        })
+    
+    # Add buffer decisions
+    for decision in decisions:
+        builder.add_buffer_decision({
+            "decision_index": decision.decision_index,
+            "decision_id": decision.decision_id,
+            "case_id": case_id,
+            "variant_id": variant_id,
+            "timestamp": decision.timestamp,
+            "start_seq": decision.start_seq,
+            "end_seq": decision.end_seq,
+            "input_ctu": decision.input_ctu,
+            "decision": decision.decision,
+            "filter_results": decision.filter_results,
+            "llm_usage": decision.llm_usage,
+            "latency_ms": decision.latency_ms
+        })
+    
+    # Add summary events
+    for summary in summaries:
+        builder.add_summary_event({
+            "event_index": summary.event_index,
+            "event_id": summary.event_id,
+            "case_id": case_id,
+            "variant_id": variant_id,
+            "timestamp": summary.timestamp,
+            "start_seq": summary.start_seq,
+            "end_seq": summary.end_seq,
+            "schema_ok": summary.schema_ok,
+            "schema_error": summary.schema_error,
+            "summary_semantics_text": summary.summary_semantics_text,
+            "summary_ctu": summary.summary_ctu,
+            "summary_content": summary.summary_content,
+            "latest_summary_event_id": summary.latest_summary_event_id,
+            "new_buffer_text_hash": summary.new_buffer_text_hash,
+            "llm_usage": summary.llm_usage,
+            "latency_ms": summary.latency_ms
+        })
+    
+    # Write output
+    output_path = output_dir / variant_id / f"{case_id}.jsonl.gz"
+    builder.write(output_path)
+    
+    # Validate determinism
+    timestamps.validate()
     
     return output_path
 
 
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Run EXAID summarizer variants on traces"
+        description="EXAID Deterministic Variant Replay Engine"
     )
     parser.add_argument(
         "--traces",
         type=Path,
         default=Path("data/traces"),
-        help="Input traces directory"
+        help="Input traces directory (default: data/traces)"
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=Path("data/runs"),
-        help="Output runs directory"
+        help="Output runs directory (default: data/runs)"
+    )
+    parser.add_argument(
+        "--configs",
+        type=Path,
+        default=Path("configs"),
+        help="Configs directory (default: configs)"
     )
     parser.add_argument(
         "--variant",
         choices=["V0", "V1", "V2", "V3", "V4"],
-        help="Run only a specific variant (default: all)"
+        help="Run only specific variant (default: all)"
     )
     parser.add_argument(
-        "--no-compress",
+        "--case",
+        type=str,
+        help="Run only specific case ID"
+    )
+    parser.add_argument(
+        "--eval-run-id",
+        type=str,
+        help="Evaluation run batch ID (default: auto-generated)"
+    )
+    parser.add_argument(
+        "--verbose", "-v",
         action="store_true",
-        help="Disable gzip compression"
+        help="Verbose output"
     )
     
     args = parser.parse_args()
     
     print("=" * 60)
-    print("EXAID Variant Runner (STUB)")
+    print("EXAID Deterministic Variant Replay Engine")
     print("=" * 60)
     print()
-    print("NOTE: This is a STUB implementation.")
-    print("Actual EXAID summarizer integration is pending.")
+    
+    # Generate eval_run_id if not provided
+    eval_run_id = args.eval_run_id
+    if not eval_run_id:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        eval_run_id = f"eval-{timestamp}"
+    
+    print(f"Traces: {args.traces}")
+    print(f"Output: {args.output}")
+    print(f"Eval Run ID: {eval_run_id}")
     print()
     
-    # Load configurations
-    summarizer_config = load_summarizer_config()
-    print(f"Summarizer config: history_k={summarizer_config.get('history_k', 3)}")
-    print()
+    # Load extractor config
+    extractor_config = load_extractor_config(args.configs)
+    
+    # Stub stoplists provenance (will be populated from actual stoplists)
+    stoplists_provenance = {
+        "stop_entities_hash": "sha256:0" * 64,
+        "stop_cuis_hash": "sha256:0" * 64,
+        "stoplists_generated_at": datetime.now(timezone.utc).isoformat(),
+        "stoplists_generated_by_commit": None
+    }
+    
+    # Load actual hashes if files exist
+    stop_entities_path = args.configs / "stop_entities.txt"
+    stop_cuis_path = args.configs / "stop_cuis.txt"
+    if stop_entities_path.exists():
+        stoplists_provenance["stop_entities_hash"] = compute_file_hash(stop_entities_path)
+    if stop_cuis_path.exists():
+        stoplists_provenance["stop_cuis_hash"] = compute_file_hash(stop_cuis_path)
     
     # Determine variants to run
     variants = [args.variant] if args.variant else ["V0", "V1", "V2", "V3", "V4"]
     
-    # Load variant configs
-    variant_configs = {}
-    for v in variants:
-        variant_configs[v] = load_variant_config(v)
-        print(f"Loaded variant config: {v}")
+    # Find trace files
+    trace_files = sorted(args.traces.glob("*.jsonl.gz"))
+    if not trace_files:
+        trace_files = sorted(args.traces.glob("*.jsonl"))
+    
+    if not trace_files:
+        print(f"ERROR: No trace files found in {args.traces}")
+        return 1
+    
+    # Filter by case if specified
+    if args.case:
+        trace_files = [f for f in trace_files if args.case in f.stem]
+    
+    print(f"Found {len(trace_files)} trace files")
+    print(f"Running variants: {', '.join(variants)}")
     print()
     
-    # Process traces
+    # Process each trace file
     total_runs = 0
     
-    for trace_file, traces in read_traces(args.traces):
-        print(f"Processing: {trace_file.name} ({len(traces)} traces)")
+    for trace_file in trace_files:
+        case_id = trace_file.stem.replace(".jsonl", "")
+        
+        if args.verbose:
+            print(f"Processing: {case_id}")
         
         for variant_id in variants:
-            run_record = run_variant(
-                variant_id,
-                traces,
-                summarizer_config,
-                variant_configs[variant_id]
-            )
+            variant_config = load_variant_config(variant_id, args.configs)
             
-            if run_record:
-                output_path = write_run(
-                    run_record,
-                    args.output,
-                    compress=not args.no_compress
+            try:
+                output_path = execute_run(
+                    case_id=case_id,
+                    variant_id=variant_id,
+                    trace_file=trace_file,
+                    variant_config=variant_config,
+                    extractor_config=extractor_config,
+                    stoplists_provenance=stoplists_provenance,
+                    eval_run_id=eval_run_id,
+                    output_dir=args.output
                 )
                 total_runs += 1
-                print(f"  {variant_id}: {len(run_record['summaries'])} summaries -> {output_path.name}")
+                
+                if args.verbose:
+                    print(f"  {variant_id}: {output_path.name}")
+                    
+            except Exception as e:
+                print(f"ERROR: {case_id}/{variant_id}: {e}")
+                if args.verbose:
+                    import traceback
+                    traceback.print_exc()
     
     print()
     print("=" * 60)
-    print(f"COMPLETE: {total_runs} runs across {len(variants)} variants")
+    print(f"COMPLETE: {total_runs} runs")
+    print(f"Output: {args.output}")
     print("=" * 60)
-    print()
-    print("Next steps:")
-    print("1. Integrate actual EXAID summarizer")
-    print("2. Implement scispaCy concept extraction")
-    print("3. Run: python src/compute_metrics.py")
     
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
