@@ -1,8 +1,8 @@
 # EXAID Evaluation - Concept Extractor Configuration
 # 
 # Paper hook: "Concept extraction configuration shared between stoplist
-# generation (Phase 0) and metrics computation (Phase 4/5) to ensure
-# drift-proof evaluation (Section 6.1)"
+# generation and metrics computation to ensure drift-proof evaluation
+# (Section 6.1)"
 #
 # INVARIANT: This is the SINGLE SOURCE OF TRUTH for extractor settings.
 # Both generate_stoplists.py and compute_metrics.py MUST load this config.

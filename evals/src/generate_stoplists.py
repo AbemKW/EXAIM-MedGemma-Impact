@@ -7,7 +7,7 @@ input traces (n=40). Concepts appearing in >=90% of traces were stoplisted,
 preventing masking of variant-specific hallucinations (Section 6.1)"
 
 CRITICAL INVARIANTS:
-    1. Uses SAME extractor config as Phase 4 (drift-proof)
+    1. Uses SAME extractor config as metrics computation (drift-proof)
     2. Stoplist generation with stoplists DISABLED (non-circular)
     3. Uses build_canonical_trace_text() from trace_text.py
     4. Produces audit artifact for reviewer verification
@@ -15,7 +15,7 @@ CRITICAL INVARIANTS:
 Dependencies:
     - trace_text.py (canonical text)
     - concept_extractor.py (CUI extraction)
-    - Phase 4 config file (extractor settings)
+    - extractor config file (extractor settings)
 """
 
 import argparse
@@ -41,7 +41,7 @@ from config_loader import load_extractor_config_for_stoplist_generation, get_con
 
 def load_phase4_extractor_config(config_path: Path) -> dict:
     """
-    Load Phase 4 extractor config to ensure drift-proof stoplist generation.
+    Load extractor config to ensure drift-proof stoplist generation.
     
     Paper hook: "Stoplist generation used identical extractor configuration
     as downstream metrics computation (Section 6.1)"
@@ -270,7 +270,7 @@ def generate_stoplists_with_linking(
     Args:
         traces_dir: Path to data/traces/
         output_dir: Path to configs/
-        phase4_config_path: Path to Phase 4 extractor config
+        phase4_config_path: Path to extractor config
         threshold: DF threshold (default 0.90)
         verbose: Print progress details
         
@@ -292,9 +292,9 @@ def generate_stoplists_with_linking(
         print("Validating traces...")
     validation_report = validate_all_traces(traces_dir)
     
-    # Step 1: Load Phase 4 config (drift-proof)
+    # Step 1: Load extractor config (drift-proof)
     if verbose:
-        print("Loading Phase 4 extractor config...")
+        print("Loading extractor config...")
     base_config = load_phase4_extractor_config(phase4_config_path)
     
     # Step 2: Override ONLY stoplist fields (non-circular)
@@ -311,7 +311,7 @@ def generate_stoplists_with_linking(
     
     nlp = spacy.load(extractor_config.get("scispacy_model", "en_core_sci_sm"))
     
-    # Add UMLS linker with config from Phase 4
+    # Add UMLS linker with config from extractor settings
     linker_config = {
         "resolve_abbreviations": extractor_config.get("linker_resolve_abbreviations", True),
         "linker_name": extractor_config.get("linker_name", "umls"),
@@ -467,7 +467,7 @@ def generate_stoplists(
     verbose: bool = False
 ) -> dict:
     """
-    Generate stoplists with Phase 4 config but stoplists DISABLED.
+    Generate stoplists with extractor config but stoplists DISABLED.
     
     Paper hook: "Stoplist generation uses identical extractor configuration
     as metrics computation, ensuring drift-proof evaluation (Section 6.1)"
@@ -475,7 +475,7 @@ def generate_stoplists(
     Args:
         traces_dir: Path to data/traces/
         output_dir: Path to configs/
-        phase4_config_path: Path to Phase 4 extractor config (optional)
+        phase4_config_path: Path to extractor config (optional)
         threshold: DF threshold (default 0.90)
         verbose: Print progress details
         
@@ -488,7 +488,7 @@ def generate_stoplists(
         )
     else:
         if verbose:
-            print("No Phase 4 config provided, using surface-only mode")
+            print("No extractor config provided, using surface-only mode")
         return generate_stoplists_simple(
             traces_dir, output_dir, threshold, verbose
         )
@@ -496,7 +496,7 @@ def generate_stoplists(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate stoplists from frozen traces (Phase 0)"
+        description="Generate stoplists from frozen traces"
     )
     parser.add_argument(
         "--traces",
@@ -514,7 +514,7 @@ def main():
         "--config",
         type=Path,
         default=Path("configs/extractor.yaml"),
-        help="Phase 4 extractor config (default: configs/extractor.yaml)"
+        help="Extractor config (default: configs/extractor.yaml)"
     )
     parser.add_argument(
         "--threshold",
@@ -536,7 +536,7 @@ def main():
     args = parser.parse_args()
     
     print("=" * 60)
-    print("EXAID Stoplist Generation (Phase 0)")
+    print("EXAID Stoplist Generation")
     print("=" * 60)
     print()
     print(f"Traces directory: {args.traces}")

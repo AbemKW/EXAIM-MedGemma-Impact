@@ -1,7 +1,7 @@
 # EXAID Evaluation - Multi-Agent System Generation Configuration
 # This file defines parameters for MAS trace generation using MAC
 #
-# Phase 2: Raw Stream Capture
+# Timed Trace Generation - Raw Stream Capture
 # - Traces store delta_text + timestamps only
 # - No derived units (ws_units, ctu) in traces
 # - Derived units computed during replay/evaluation
@@ -63,20 +63,20 @@ dataset_id:
   policy: "input_derived"
   example: "exaid_traces_1d5b227a_a3b4c5d6_e7f8g9h0"
 
-# Placeholder for future evaluation runs (Phase 3+)
+# Placeholder for future evaluation runs
 eval_run_id:
   # Format: eval_<variant>_<trace_dataset_hash_8>_<exaid_commit_8>
   # - variant: V0, V1, V2, V3, V4
   # - trace_dataset_hash_8: first 8 chars of trace_dataset_hash
   # - exaid_commit_8: first 8 chars of EXAID commit
   policy: "input_derived"
-  note: "Used in Phase 3+ for EXAID variant evaluation"
+  note: "Used for EXAID variant evaluation"
   example: "eval_V0_b2c3d4e5_8d45cbb1"
 
 # =============================================================================
-# Phase 2: Raw Stream Capture (No Derived Units)
+# Raw Stream Capture (No Derived Units)
 # =============================================================================
-# Phase 2 traces are RAW stream captures.
+# Traces are RAW stream captures.
 # Derived units are NOT stored; they are computed during replay.
 
 raw_capture:
@@ -91,8 +91,8 @@ raw_capture:
   
   # What is NOT stored (computed during replay):
   not_stored:
-    - ws_units        # Computed by TokenGate during replay (Phase 3+)
-    - ctu             # Computed during metrics evaluation (Phase 4+)
+    - ws_units        # Computed by TokenGate during replay
+    - ctu             # Computed during metrics evaluation
   
   # Rationale: Under streaming fragmentation, per-delta whitespace counting
   # produces unreliable results. TokenGate-size counting must use the same

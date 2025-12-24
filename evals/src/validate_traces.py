@@ -2,7 +2,7 @@
 """
 EXAID Trace Validation Script (v2.0.0)
 
-Validates timed trace files for Phase 2 raw stream captures.
+Validates timed trace files for schema compliance and integrity.
 
 Validation Rules:
 1. Global seq strictly increasing across entire trace
@@ -14,11 +14,9 @@ Validation Rules:
 5. Boundary time consistency:
    - turn_start.t_ms <= first_delta.t_emitted_ms for that turn
    - turn_end.t_ms >= last_delta.t_emitted_ms for that turn
+   - NOTE: ±2ms tolerance allowed (BOUNDARY_TIME_EPSILON_MS) due to
+     millisecond resolution; violations within epsilon are warnings, not errors
 6. content_hash matches recomputed hash for turn deltas
-
-NOT Validated (computed during replay):
-- ws_units
-- ctu
 
 Stub Mode Warning:
 - Traces with stub_mode=true are flagged and should not be used for evaluation
@@ -36,6 +34,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+# Boundary timestamp tolerance (milliseconds)
+# Due to millisecond resolution and async timing, boundary timestamps may be
+# off by 1-2ms from delta timestamps. This is cosmetic and does not affect
+# evaluation semantics.
+BOUNDARY_TIME_EPSILON_MS = 2
+
 
 @dataclass
 class ValidationStats:
@@ -51,7 +55,8 @@ class ValidationStats:
     timestamp_violations: int = 0
     t_rel_violations: int = 0
     boundary_mismatches: int = 0
-    boundary_time_violations: int = 0  # turn_start > first_delta or turn_end < last_delta
+    boundary_time_violations: int = 0  # turn_start > first_delta or turn_end < last_delta (> epsilon)
+    boundary_time_warnings: int = 0    # boundary time off by <= BOUNDARY_TIME_EPSILON_MS (cosmetic)
     content_hash_mismatches: int = 0
     missing_fields: List[str] = field(default_factory=list)
     
@@ -126,6 +131,7 @@ def validate_trace_file(
     """
     stats = ValidationStats()
     errors = []
+    warnings = []  # Cosmetic issues within tolerance
     
     # Load records
     try:
@@ -306,10 +312,19 @@ def validate_trace_file(
             end_t_ms = end_record.get("t_ms", 0)
             
             # turn_end.t_ms should be >= last_delta.t_emitted_ms
+            # Allow small epsilon for millisecond resolution timing
             if end_t_ms < last_delta_t:
-                stats.boundary_time_violations += 1
-                if verbose:
-                    errors.append(f"Turn {turn_id}: end.t_ms {end_t_ms} < last_delta.t {last_delta_t}")
+                diff_ms = last_delta_t - end_t_ms
+                if diff_ms <= BOUNDARY_TIME_EPSILON_MS:
+                    # Within tolerance - warning only (cosmetic)
+                    stats.boundary_time_warnings += 1
+                    if verbose:
+                        warnings.append(f"Turn {turn_id}: end.t_ms {end_t_ms} < last_delta.t {last_delta_t} (diff={diff_ms}ms, within epsilon)")
+                else:
+                    # Beyond tolerance - error
+                    stats.boundary_time_violations += 1
+                    if verbose:
+                        errors.append(f"Turn {turn_id}: end.t_ms {end_t_ms} < last_delta.t {last_delta_t} (diff={diff_ms}ms)")
     
     # Re-check turn starts (need to re-parse for this validation)
     # For simplicity, we'll do a second pass to validate turn_start <= first_delta
@@ -323,10 +338,19 @@ def validate_trace_file(
         if turn_id in turn_first_delta_t:
             first_delta_t = turn_first_delta_t[turn_id]
             # turn_start.t_ms should be <= first_delta.t_emitted_ms
+            # Allow small epsilon for millisecond resolution timing
             if start_t_ms > first_delta_t:
-                stats.boundary_time_violations += 1
-                if verbose:
-                    errors.append(f"Turn {turn_id}: start.t_ms {start_t_ms} > first_delta.t {first_delta_t}")
+                diff_ms = start_t_ms - first_delta_t
+                if diff_ms <= BOUNDARY_TIME_EPSILON_MS:
+                    # Within tolerance - warning only (cosmetic)
+                    stats.boundary_time_warnings += 1
+                    if verbose:
+                        warnings.append(f"Turn {turn_id}: start.t_ms {start_t_ms} > first_delta.t {first_delta_t} (diff={diff_ms}ms, within epsilon)")
+                else:
+                    # Beyond tolerance - error
+                    stats.boundary_time_violations += 1
+                    if verbose:
+                        errors.append(f"Turn {turn_id}: start.t_ms {start_t_ms} > first_delta.t {first_delta_t} (diff={diff_ms}ms)")
     
     # Determine overall validity
     is_valid = (
@@ -345,6 +369,12 @@ def validate_trace_file(
             print(f"    ERROR: {error}")
         if len(errors) > 10:
             print(f"    ... and {len(errors) - 10} more errors")
+    
+    if verbose and warnings:
+        for warning in warnings[:5]:  # Limit output
+            print(f"    WARNING: {warning}")
+        if len(warnings) > 5:
+            print(f"    ... and {len(warnings) - 5} more warnings")
     
     return is_valid, stats
 
@@ -384,8 +414,10 @@ def validate_all_traces(
         "total_t_rel_violations": 0,
         "total_boundary_mismatches": 0,
         "total_boundary_time_violations": 0,
+        "total_boundary_time_warnings": 0,  # Cosmetic timing (within epsilon)
         "total_content_hash_mismatches": 0,
         "files_with_errors": [],
+        "files_with_warnings": [],  # Files with cosmetic timing issues
         "stub_mode_files_list": [],
         "per_file_stats": {}
     }
@@ -441,7 +473,12 @@ def validate_all_traces(
         report["total_t_rel_violations"] += stats.t_rel_violations
         report["total_boundary_mismatches"] += stats.boundary_mismatches
         report["total_boundary_time_violations"] += stats.boundary_time_violations
+        report["total_boundary_time_warnings"] += stats.boundary_time_warnings
         report["total_content_hash_mismatches"] += stats.content_hash_mismatches
+        
+        # Track files with warnings (but still valid)
+        if stats.boundary_time_warnings > 0:
+            report["files_with_warnings"].append(case_id)
         
         report["per_file_stats"][case_id] = {
             "is_valid": is_valid,
@@ -489,7 +526,6 @@ def main():
     
     print("=" * 60)
     print("EXAID Trace Validation (v2.0.0)")
-    print("Phase 2: Raw Stream Capture")
     print("=" * 60)
     print()
     print(f"Traces directory: {args.traces}")
@@ -500,10 +536,6 @@ def main():
     print("  3. t_rel_ms == t_emitted_ms - t0_emitted_ms")
     print("  4. Turn boundary start/end pairs match")
     print("  5. content_hash matches recomputed hash")
-    print()
-    print("NOT Validated (computed during replay):")
-    print("  - ws_units")
-    print("  - ctu")
     print()
     
     try:
@@ -534,13 +566,24 @@ def main():
     print(f"  Total stream_deltas: {report['total_stream_deltas']}")
     print(f"  Total turns: {report['total_turns']}")
     print()
-    print("Violations:")
+    print("Violations (errors):")
     print(f"  seq violations: {report['total_seq_violations']}")
     print(f"  timestamp violations: {report['total_timestamp_violations']}")
     print(f"  t_rel violations: {report['total_t_rel_violations']}")
     print(f"  boundary mismatches: {report['total_boundary_mismatches']}")
     print(f"  boundary time violations: {report['total_boundary_time_violations']}")
     print(f"  content_hash mismatches: {report['total_content_hash_mismatches']}")
+    
+    # Show warnings (cosmetic issues within tolerance)
+    if report["total_boundary_time_warnings"] > 0:
+        print()
+        print(f"Warnings (cosmetic, within {BOUNDARY_TIME_EPSILON_MS}ms tolerance):")
+        print(f"  boundary time warnings: {report['total_boundary_time_warnings']}")
+        print(f"  Files with warnings: {len(report['files_with_warnings'])}")
+        for warn_file in report["files_with_warnings"][:5]:
+            print(f"    - {warn_file}")
+        if len(report["files_with_warnings"]) > 5:
+            print(f"    ... and {len(report['files_with_warnings']) - 5} more")
     
     # Stub mode warning
     if report["stub_mode_files"] > 0:

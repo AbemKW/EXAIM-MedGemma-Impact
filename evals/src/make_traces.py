@@ -5,32 +5,29 @@ EXAID Evaluation - Timed Trace Generation Script (v2.0.0)
 Generates timed MAS traces from clinical cases using the MAC (Multi-Agent Conversation)
 framework with streaming instrumentation.
 
-Phase 2: Raw Stream Capture
-- Traces contain ONLY: delta_text, timestamps, attribution, seq
-- NO derived units (ws_units, ctu) are stored in traces
-- Derived units computed during replay/evaluation (Phase 3+)
-- Stream emissions are delta/chunks (may be fragments, not tokenizer-level tokens)
-
-Run ID Generation:
-- mas_run_id: Input-derived (no date), deterministic from MAC commit + model + 
-              decoding + case list hash
-- dataset_id: Same pattern for dataset identification
-- eval_run_id: Defined for future use (Phase 3+)
+Trace Content:
+- delta_text: Raw stream delta/chunk as emitted by LLM
+- t_emitted_ms: Absolute emission timestamp (ms since epoch)
+- t_rel_ms: Relative to t0 (first delta)
+- agent_id, turn_id, seq: Attribution and ordering
 
 Timing Semantics:
 - t0_emitted_ms: Anchor is first stream_delta emission timestamp
 - t_rel_ms for deltas: Always >= 0 (t_emitted_ms - t0)
 - t_rel_ms for boundaries: May be NEGATIVE if boundary occurs before t0
 
+Run ID Generation:
+- mas_run_id: Input-derived, deterministic from MAC commit + model + decoding + case list
+- dataset_id: Same pattern for dataset identification
+
 Critical Constraints:
 - MAC behavior is UNCHANGED (instrumentation-only)
 - Global seq ordering across entire trace (strictly increasing)
 - Deterministic sorting before seq assignment
-- Reversible monkeypatching with try/finally restore
 
 Usage (from evals/ directory or Docker container):
-    python -m evals.src.make_traces --config configs/mas_generation.yaml --dry-run
-    python -m evals.src.make_traces --config configs/mas_generation.yaml --limit 1
+    python src/make_traces.py --config configs/mas_generation.yaml --dry-run
+    python src/make_traces.py --config configs/mas_generation.yaml --limit 1
 """
 
 import argparse
@@ -1039,7 +1036,6 @@ def main():
     
     print("=" * 70)
     print("EXAID Timed Trace Generation (v2.0.0)")
-    print("Phase 2: Raw Stream Capture")
     print("=" * 70)
     print()
     
@@ -1296,10 +1292,6 @@ def main():
     print(f"  Total deltas: {total_deltas}")
     print(f"  Output directory: {args.output}")
     print(f"  Manifest: {manifest_path}")
-    print()
-    print("Phase 2: Raw Stream Capture")
-    print("  Stored: delta_text, t_emitted_ms, t_rel_ms, agent_id, turn_id, seq")
-    print("  NOT stored: ws_units, ctu (computed during replay/evaluation)")
     print()
     
     if failed_cases > 0:

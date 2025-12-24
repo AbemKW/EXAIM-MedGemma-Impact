@@ -8,11 +8,7 @@ include_all_runs: true
 selection_rule: "mac_subset"
 
 # Dataset source configuration
-source:
-  # Path to cases directory (relative to evals/)
-  cases_dir: "data/cases"
-  # File pattern for case files
-  file_pattern: "*.json"
+# Note: Cases are loaded directly from third_party/mac at runtime, not stored locally
 
 # Case filtering (placeholder values)
 filters:

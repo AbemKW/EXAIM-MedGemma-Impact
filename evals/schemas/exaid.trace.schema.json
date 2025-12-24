@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://exaid.ai/schemas/exaid.trace.schema.json",
   "title": "EXAID Timed Trace Record",
-  "description": "Schema for multi-agent system timed trace records (v2.0.0). Phase 2 traces are RAW stream captures - no derived units (ws_units, ctu) are stored. Derived units are computed during replay/evaluation. Note: Stream emissions are delta/chunks, not tokenizer-level tokens.",
+  "description": "Schema for multi-agent system timed trace records (v2.0.0). Traces are RAW stream captures - no derived units (ws_units, ctu) are stored. Derived units are computed during replay/evaluation. Note: Stream emissions are delta/chunks, not tokenizer-level tokens.",
   
   "oneOf": [
     { "$ref": "#/$defs/trace_meta" },
