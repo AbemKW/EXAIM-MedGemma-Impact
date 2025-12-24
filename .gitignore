@@ -132,3 +132,33 @@ Desktop.ini
 *~
 *.swp
 *.swo
+
+# ==============================================================================
+# EXAID Evaluation - Sensitive Data (DO NOT COMMIT)
+# ==============================================================================
+# These directories may contain patient case data from MAC or derived outputs.
+# They should NEVER be committed to the repository.
+
+# Trace files (may contain patient data from MAC repo)
+evals/data/traces/*.jsonl
+evals/data/traces/*.jsonl.gz
+
+# Source case files (patient data)
+evals/data/cases/*.json
+evals/data/cases/*.jsonl
+
+# Run outputs (derived from patient data)
+evals/data/runs/**/*.jsonl
+evals/data/runs/**/*.jsonl.gz
+evals/data/runs/*/*.jsonl
+evals/data/runs/*/*.jsonl.gz
+
+# Computed metrics (references patient cases)
+evals/data/metrics/*.jsonl
+evals/data/metrics/*.json
+evals/data/metrics/figures/*.png
+evals/data/metrics/figures/*.pdf
+
+# Manifest files (may contain case identifiers)
+# Comment out this line if manifests are sanitized and safe to commit
+evals/data/manifests/*.jsonl

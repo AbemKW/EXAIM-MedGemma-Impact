@@ -1,39 +1,44 @@
 # EXAID Evaluation - Variant V4 Configuration
-# Extended history variant for comparison
+# No Novelty Check (Ablation: removes novelty filter from BufferAgent)
+#
+# Paper hook: "V4 disables the novelty check in BufferAgent, keeping only
+# completeness and value filters to measure novelty detection impact (Section 4.2)"
 
 variant_id: V4
-name: "Extended History EXAID"
-description: "LLM-triggered summarization with extended history context"
+name: "No Novelty Check"
+description: "TokenGate + BufferAgent (completeness + value only, no novelty) + Summarizer"
 
-summarization:
-  enabled: true
-  trigger_mode: "llm"
-  llm_trigger:
-    enabled: true
-    bias: "trigger"
+# Trigger policy enum (for ablation suite)
+trigger_policy: "no_novelty"
 
-# Summarizer config with extended history
-summarizer:
-  # Override history_k to test extended context
-  history_k_override: 5
-
-# Uses same chunk/time params as V3 for fair comparison
-chunk_params:
-  frozen: true
+# Component configuration
+components:
+  # TokenGate: accumulates chunks until word threshold (whitespace-delimited)
   token_gate:
-    min_tokens: 35
-    max_tokens: 90
+    enabled: true
+    min_words: 35
+    max_words: 90
     boundary_cues: ".?!\n"
+  
+  # BufferAgent: completeness and value checks only
+  buffer_agent:
+    enabled: true
+    completeness_check: true
+    value_check: true
+    novelty_check: false  # DISABLED for this ablation
+  
+  # Summarizer: generates summaries
+  summarizer:
+    enabled: true
 
-time_params:
-  frozen: true
-  timeouts:
-    silence_timer: 15.0
-    max_wait_timeout: 40.0
+# Summarizer settings
+summarizer:
+  # MANDATORY: history_k = 3 for all variants
+  history_k: 3
 
-# Concept extractor settings
+# Metrics role
+metrics_role: "ablation_no_novelty"
+
+# Concept extractor (inherit from extractor.yaml)
 concept_extractor:
-  inherit_defaults: true
-  model: "en_core_sci_sm"
-
-
+  inherit_from: "extractor.yaml"

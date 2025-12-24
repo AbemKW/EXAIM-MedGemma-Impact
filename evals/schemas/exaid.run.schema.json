@@ -1,228 +1,394 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://exaid.ai/schemas/exaid.run.schema.json",
-  "title": "EXAID Summarizer Run Record",
-  "description": "Schema for summarizer run output records, including concept extraction metadata",
-  "type": "object",
-  "required": [
-    "schema_name",
-    "schema_version",
-    "run_id",
-    "trace_id",
-    "variant_id",
-    "summaries"
+  "title": "EXAID Run Log Schema v1.3.0",
+  "description": "Multi-record JSONL schema for EXAID evaluation run logs. Each line is a record of type: run_meta, tokengate_flush, buffer_decision, or summary_event.",
+  
+  "$comment": "Paper hook: Run logs use multi-record JSONL format for M6b reconstructability and per-event instrumentation (Section 3.2)",
+  
+  "oneOf": [
+    {"$ref": "#/$defs/run_meta"},
+    {"$ref": "#/$defs/tokengate_flush"},
+    {"$ref": "#/$defs/buffer_decision"},
+    {"$ref": "#/$defs/summary_event"}
   ],
-  "properties": {
-    "schema_name": {
-      "type": "string",
-      "const": "exaid.run",
-      "description": "Schema identifier for validation routing"
-    },
-    "schema_version": {
-      "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "Semantic version of the schema"
-    },
-    "run_id": {
-      "type": "string",
-      "pattern": "^run-[a-z0-9-]+$",
-      "description": "Unique run identifier"
-    },
-    "trace_id": {
-      "type": "string",
-      "pattern": "^trc-[a-z0-9-]+$",
-      "description": "Reference to the source trace"
-    },
-    "case_id": {
-      "type": "string",
-      "pattern": "^case-[a-z0-9-]+$",
-      "description": "Reference to the clinical case"
-    },
-    "variant_id": {
-      "type": "string",
-      "pattern": "^V[0-9]+$",
-      "description": "Summarizer variant identifier (V0, V1, V2, V3, V4)"
-    },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time",
-      "description": "ISO 8601 timestamp when run was executed"
-    },
-    "summaries": {
-      "type": "array",
-      "description": "Array of generated summaries in sequence order",
-      "items": {
-        "type": "object",
-        "required": ["summary_idx", "content", "token_count"],
-        "properties": {
-          "summary_idx": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Sequential index of this summary"
-          },
-          "content": {
-            "type": "object",
-            "description": "Structured summary content matching AgentSummary schema",
-            "properties": {
-              "status_action": {"type": "string"},
-              "key_findings": {"type": "string"},
-              "differential_rationale": {"type": "string"},
-              "uncertainty_confidence": {"type": "string"},
-              "recommendation_next_step": {"type": "string"},
-              "agent_contributions": {"type": "string"}
-            }
-          },
-          "token_count": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Token count of the summary"
-          },
-          "trigger_trace_idx": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Index of trace that triggered this summary"
-          }
-        }
-      }
-    },
-    "timing": {
-      "type": "object",
-      "description": "Timing statistics for the run",
-      "properties": {
-        "total_ms": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "avg_summary_ms": {
-          "type": "number",
-          "minimum": 0
-        }
-      }
-    },
+  
+  "$defs": {
     "run_meta": {
       "type": "object",
-      "description": "Run metadata including concept extractor configuration",
+      "title": "Run Metadata Record",
+      "description": "First record in run log, contains provenance and configuration",
+      "required": [
+        "record_type",
+        "schema_name",
+        "schema_version",
+        "created_at",
+        "case_id",
+        "variant_id",
+        "mas_run_id",
+        "eval_run_id",
+        "history_k",
+        "concept_extractor",
+        "stoplists_provenance",
+        "timestamp_derivation",
+        "determinism"
+      ],
       "properties": {
+        "record_type": {
+          "const": "run_meta"
+        },
+        "schema_name": {
+          "const": "exaid.run"
+        },
+        "schema_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "default": "1.3.0"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 UTC timestamp of run execution"
+        },
+        "case_id": {
+          "type": "string",
+          "pattern": "^case-[a-zA-Z0-9-]+$"
+        },
+        "variant_id": {
+          "type": "string",
+          "pattern": "^V[0-4]$"
+        },
+        "mas_run_id": {
+          "type": "string",
+          "pattern": "^mas-[a-f0-9]+$",
+          "description": "Trace generation campaign ID"
+        },
+        "eval_run_id": {
+          "type": "string",
+          "pattern": "^eval-[a-z0-9-]+$",
+          "description": "Evaluation execution batch ID"
+        },
+        "history_k": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of previous summaries in context"
+        },
         "concept_extractor": {
           "type": "object",
-          "description": "scispaCy concept extractor configuration",
+          "description": "Complete concept extractor configuration for provenance",
+          "required": [
+            "spacy_version",
+            "scispacy_version",
+            "scispacy_model",
+            "linker_name",
+            "linker_kb_version",
+            "linker_resolve_abbreviations",
+            "cui_score_threshold",
+            "max_k",
+            "min_entity_len",
+            "concept_representation",
+            "cui_normalization"
+          ],
           "properties": {
-            "model": {
+            "spacy_version": {"type": "string"},
+            "scispacy_version": {"type": "string"},
+            "scispacy_model": {"type": "string"},
+            "linker_name": {"type": "string"},
+            "linker_kb_version": {
+              "type": ["string", "null"],
+              "description": "UMLS snapshot version (e.g., 2023AB)"
+            },
+            "linker_resolve_abbreviations": {"type": "boolean"},
+            "linker_max_entities_per_mention": {"type": "integer"},
+            "linker_threshold": {"type": "number"},
+            "cui_score_threshold": {"type": "number"},
+            "max_k": {"type": "integer"},
+            "min_entity_len": {"type": "integer"},
+            "concept_representation": {
               "type": "string",
-              "description": "spaCy/scispaCy model name (e.g., en_core_sci_sm)"
+              "enum": ["cui", "surface"]
+            },
+            "cui_normalization": {
+              "type": "string",
+              "enum": ["uppercase", "lowercase", "none"]
             },
             "entity_types_kept": {
               "type": "array",
-              "items": {"type": "string"},
-              "description": "Entity types to keep (ALL for mention detector mode)"
+              "items": {"type": "string"}
             },
-            "stop_entities_file": {
+            "stop_entities_count": {"type": "integer"},
+            "stop_cuis_count": {"type": "integer"}
+          }
+        },
+        "stoplists_provenance": {
+          "type": "object",
+          "description": "Single canonical location for stoplist provenance",
+          "required": [
+            "stop_entities_hash",
+            "stop_cuis_hash",
+            "stoplists_generated_at"
+          ],
+          "properties": {
+            "stop_entities_hash": {
               "type": "string",
-              "description": "Path to stop-entity list file"
+              "pattern": "^sha256:[a-f0-9]{64}$"
             },
-            "min_entity_len": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Minimum entity length in characters"
+            "stop_cuis_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
             },
-            "normalization": {
-              "type": "object",
-              "properties": {
-                "lowercase": {"type": "boolean"},
-                "strip_whitespace": {"type": "boolean"},
-                "canonicalize_punctuation": {"type": "boolean"}
-              }
+            "stoplist_df_report_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "stoplists_generated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "stoplists_generated_by_commit": {
+              "type": ["string", "null"]
             }
           }
         },
-        "summarizer_config": {
+        "timestamp_derivation": {
           "type": "object",
+          "description": "How event timestamps were derived (no silent fallbacks)",
+          "required": ["method", "fallback_method", "missing_t_emitted_ms_count"],
           "properties": {
-            "history_k": {
+            "method": {
+              "type": "string",
+              "const": "trace_t_emitted_ms"
+            },
+            "fallback_method": {
+              "type": "string",
+              "const": "run_start_time_plus_seq"
+            },
+            "derived_from_t_emitted": {"type": "integer"},
+            "derived_from_fallback": {"type": "integer"},
+            "missing_t_emitted_ms_count": {
               "type": "integer",
-              "minimum": 1
+              "description": "Count of timestamps derived via fallback"
             }
           }
+        },
+        "determinism": {
+          "type": "object",
+          "description": "Deterministic serialization settings",
+          "properties": {
+            "gzip_mtime": {"const": 0},
+            "json_sort_keys": {"const": true},
+            "json_separators": {
+              "type": "array",
+              "items": {"type": "string"},
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        "trigger_policy": {
+          "type": "string",
+          "enum": ["full_exaid", "turn_end", "no_buffer", "no_tokengate", "no_novelty"]
+        },
+        "trace_file_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
         }
       }
     },
-    "concept_coverage": {
+    
+    "tokengate_flush": {
       "type": "object",
-      "description": "Concept coverage statistics (computed at run time)",
+      "title": "TokenGate Flush Event",
+      "description": "Logged when TokenGate accumulates enough tokens to flush",
+      "required": [
+        "record_type",
+        "flush_index",
+        "case_id",
+        "variant_id",
+        "timestamp",
+        "start_seq",
+        "end_seq",
+        "accumulated_ctu"
+      ],
       "properties": {
-        "total_concepts_in_trace": {
+        "record_type": {"const": "tokengate_flush"},
+        "flush_index": {"type": "integer", "minimum": 0},
+        "case_id": {"type": "string"},
+        "variant_id": {"type": "string"},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "start_seq": {"type": "integer", "minimum": 0},
+        "end_seq": {"type": "integer", "minimum": 0},
+        "accumulated_ctu": {
           "type": "integer",
-          "minimum": 0
+          "description": "CTU = ceil(len(text) / 4)"
         },
-        "concepts_in_summaries": {
-          "type": "integer",
-          "minimum": 0
+        "trigger_reason": {
+          "type": "string",
+          "enum": ["threshold", "boundary_cue", "timeout", "turn_end"]
         },
-        "coverage_ratio": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "extracted_concepts": {
-          "type": "array",
-          "items": {"type": "string"},
-          "description": "List of unique concepts extracted from trace"
+        "text_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "Hash of flushed text for verification"
         }
       }
-    }
-  },
-  "examples": [
-    {
-      "schema_name": "exaid.run",
-      "schema_version": "1.0.0",
-      "run_id": "run-v3-case042-001",
-      "trace_id": "trc-abc123-001",
-      "case_id": "case-patient-042",
-      "variant_id": "V3",
-      "timestamp": "2024-12-19T12:10:00Z",
-      "summaries": [
-        {
-          "summary_idx": 0,
-          "content": {
-            "status_action": "Initial cardiac workup initiated",
-            "key_findings": "Troponin elevated, ST changes present",
-            "differential_rationale": "ACS likely given biomarker and ECG findings",
-            "uncertainty_confidence": "High confidence for cardiac etiology",
-            "recommendation_next_step": "Urgent cardiology consult",
-            "agent_contributions": "Cardiology agent: primary analysis"
-          },
-          "token_count": 85,
-          "trigger_trace_idx": 5
-        }
+    },
+    
+    "buffer_decision": {
+      "type": "object",
+      "title": "BufferAgent Decision Event",
+      "description": "Logged for each BufferAgent decision (M9 overhead tracking)",
+      "required": [
+        "record_type",
+        "decision_index",
+        "decision_id",
+        "case_id",
+        "variant_id",
+        "timestamp",
+        "input_ctu",
+        "decision",
+        "llm_usage"
       ],
-      "timing": {
-        "total_ms": 3500,
-        "avg_summary_ms": 1750
-      },
-      "run_meta": {
-        "concept_extractor": {
-          "model": "en_core_sci_sm",
-          "entity_types_kept": ["ALL"],
-          "stop_entities_file": "configs/stop_entities.txt",
-          "min_entity_len": 3,
-          "normalization": {
-            "lowercase": true,
-            "strip_whitespace": true,
-            "canonicalize_punctuation": true
+      "properties": {
+        "record_type": {"const": "buffer_decision"},
+        "decision_index": {"type": "integer", "minimum": 0},
+        "decision_id": {
+          "type": "string",
+          "pattern": "^case-[a-zA-Z0-9-]+-V[0-4]-bd-\\d{3}$"
+        },
+        "case_id": {"type": "string"},
+        "variant_id": {"type": "string"},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "input_ctu": {"type": "integer"},
+        "start_seq": {"type": "integer"},
+        "end_seq": {"type": "integer"},
+        "decision": {
+          "type": "string",
+          "enum": ["summarize", "buffer", "discard"],
+          "description": "BufferAgent decision outcome"
+        },
+        "filter_results": {
+          "type": "object",
+          "properties": {
+            "completeness_passed": {"type": "boolean"},
+            "value_passed": {"type": "boolean"},
+            "novelty_passed": {"type": ["boolean", "null"]}
           }
         },
-        "summarizer_config": {
-          "history_k": 3
+        "llm_usage": {
+          "$ref": "#/$defs/llm_usage"
+        },
+        "latency_ms": {"type": "integer", "minimum": 0}
+      }
+    },
+    
+    "summary_event": {
+      "type": "object",
+      "title": "Summary Generation Event",
+      "description": "Logged when a summary is generated",
+      "required": [
+        "record_type",
+        "event_index",
+        "event_id",
+        "case_id",
+        "variant_id",
+        "timestamp",
+        "start_seq",
+        "end_seq",
+        "schema_ok",
+        "summary_semantics_text",
+        "summary_ctu",
+        "llm_usage"
+      ],
+      "properties": {
+        "record_type": {"const": "summary_event"},
+        "event_index": {"type": "integer", "minimum": 0},
+        "event_id": {
+          "type": "string",
+          "pattern": "^case-[a-zA-Z0-9-]+-V[0-4]-se-\\d{3}$",
+          "description": "Deterministic, collision-free event ID"
+        },
+        "case_id": {"type": "string"},
+        "variant_id": {"type": "string"},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "start_seq": {
+          "type": "integer",
+          "description": "Start of window for M6a/M6b"
+        },
+        "end_seq": {
+          "type": "integer",
+          "description": "End of window for M6a/M6b"
+        },
+        "schema_ok": {
+          "type": "boolean",
+          "description": "True if summary parsed correctly"
+        },
+        "schema_error": {
+          "type": ["string", "null"],
+          "description": "Error message if schema_ok=false"
+        },
+        "summary_semantics_text": {
+          "type": "string",
+          "description": "Concatenated summary sections for concept extraction"
+        },
+        "summary_ctu": {
+          "type": "integer",
+          "description": "CTU of summary_semantics_text"
+        },
+        "summary_content": {
+          "type": "object",
+          "description": "Structured AgentSummary output",
+          "properties": {
+            "status_action": {"type": "string"},
+            "key_findings": {"type": "string"},
+            "differential_rationale": {"type": "string"},
+            "uncertainty_confidence": {"type": "string"},
+            "recommendation_next_step": {"type": "string"},
+            "agent_contributions": {"type": "string"}
+          }
+        },
+        "latest_summary_event_id": {
+          "type": ["string", "null"],
+          "description": "Event ID of previous summary for M6b reconstruction"
+        },
+        "new_buffer_text_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "Hash of new buffer text for M6b"
+        },
+        "llm_usage": {
+          "$ref": "#/$defs/llm_usage"
+        },
+        "latency_ms": {"type": "integer", "minimum": 0}
+      }
+    },
+    
+    "llm_usage": {
+      "type": "object",
+      "title": "LLM Usage Record",
+      "description": "Separates CTU (deterministic) from provider tokens (API-reported)",
+      "properties": {
+        "prompt_ctu": {
+          "type": "integer",
+          "description": "ceil(len(prompt_text) / 4)"
+        },
+        "completion_ctu": {
+          "type": "integer",
+          "description": "ceil(len(completion_text) / 4)"
+        },
+        "provider_prompt_tokens": {
+          "type": ["integer", "null"],
+          "description": "Tokens reported by LLM API (may differ from CTU)"
+        },
+        "provider_completion_tokens": {
+          "type": ["integer", "null"],
+          "description": "Tokens reported by LLM API"
+        },
+        "model_id": {
+          "type": "string",
+          "description": "LLM model identifier"
         }
-      },
-      "concept_coverage": {
-        "total_concepts_in_trace": 25,
-        "concepts_in_summaries": 18,
-        "coverage_ratio": 0.72,
-        "extracted_concepts": ["troponin", "st-segment", "acute coronary syndrome"]
       }
     }
-  ]
+  }
 }
-
-

@@ -1,4 +1,2 @@
-# Placeholder to track empty directory in git
-# This directory contains input clinical case files (*.json)
-
-
+# This file ensures the directory is tracked by git
+# Actual case data files are gitignored (may contain patient data)

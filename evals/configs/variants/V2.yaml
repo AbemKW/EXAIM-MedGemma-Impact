@@ -1,27 +1,44 @@
 # EXAID Evaluation - Variant V2 Configuration
-# LLM-triggered summarization variant (default EXAID behavior)
+# No BufferAgent (Ablation: removes BufferAgent filtering)
+#
+# Paper hook: "V2 flushes TokenGate output directly to Summarizer,
+# bypassing BufferAgent semantic filtering (Section 4.2)"
 
 variant_id: V2
-name: "LLM-Triggered Summarization"
-description: "Summarization triggered by LLM-based content analysis"
+name: "No BufferAgent"
+description: "TokenGate flush goes directly to Summarizer, skip BufferAgent"
 
-summarization:
-  enabled: true
-  # Trigger mode: LLM-based (intelligent triggering)
-  trigger_mode: "llm"
-  # LLM evaluates trace content to decide when to summarize
-  llm_trigger:
+# Trigger policy enum (for ablation suite)
+trigger_policy: "no_buffer"
+
+# Component configuration
+components:
+  # TokenGate: accumulates chunks until word threshold (whitespace-delimited)
+  token_gate:
     enabled: true
-    # Prefer YES when in doubt
-    bias: "trigger"
+    min_words: 35
+    max_words: 90
+    boundary_cues: ".?!\n"
+  
+  # BufferAgent: DISABLED (bypass all checks)
+  buffer_agent:
+    enabled: false
+    completeness_check: false
+    value_check: false
+    novelty_check: false
+  
+  # Summarizer: generates summaries
+  summarizer:
+    enabled: true
 
-# Uses default summarizer config
+# Summarizer settings
 summarizer:
-  # Inherit history_k from summarizer.yaml
-  history_k_override: null
+  # MANDATORY: history_k = 3 for all variants
+  history_k: 3
 
-# Concept extractor settings (inherit from run defaults)
+# Metrics role
+metrics_role: "ablation_no_buffer"
+
+# Concept extractor (inherit from extractor.yaml)
 concept_extractor:
-  inherit_defaults: true
-
-
+  inherit_from: "extractor.yaml"
