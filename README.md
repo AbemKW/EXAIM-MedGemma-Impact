@@ -22,6 +22,18 @@ The MAC submodule (`third_party/mac`) is a fork of the original MAC framework:
 
 **Invariant:** This fork only adds transparent delta/chunk-level timing instrumentation. All MAC conversation logic, agent orchestration, speaker selection, and termination conditions remain unchanged from the original implementation.
 
+## Evaluation Data
+
+The `evals/` directory contains pre-generated timed traces for reproducible evaluation:
+
+- **Traces**: `evals/data/traces/*.trace.jsonl.gz` - Timed multi-agent conversation traces
+- **Manifests**: `evals/data/manifests/*.manifest.jsonl` - Provenance and integrity metadata
+- **Case lists**: `evals/data/manifests/*.case_list.jsonl` - Selected case IDs
+
+**Data provenance**: Traces derive from [MAC's public rare-disease dataset](https://github.com/microsoft/MAC) (CC BY 4.0). No PHI - safe to redistribute.
+
+See `evals/README.md` for full evaluation documentation.
+
 ## Quick Start
 
 1. **Create and activate a virtual environment (recommended):**
