@@ -1,6 +1,6 @@
-# Forked MAC repository with token-level streaming instrumentation
+# Forked MAC repository with delta/chunk-level streaming instrumentation
 # Fork URL: https://github.com/AbemKW/mac-streaming-traces
-# Purpose: Capture per-token t_emitted_ms for EXAID evaluation traces
+# Purpose: Capture per-delta t_emitted_ms for EXAID evaluation traces
 # NOTE: Conversation logic, speaker selection, and termination are UNCHANGED
 [submodule "third_party/mac"]
 	path = third_party/mac
