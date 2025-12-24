@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://exaid.ai/schemas/exaid.manifest.schema.json",
   "title": "EXAID Dataset Manifest",
-  "description": "Schema for dataset manifest files (v2.0.0). Multi-record JSONL format with full provenance for reproducibility.",
+  "description": "Schema for dataset manifest files (v2.0.0). Multi-record JSONL format with full provenance for reproducibility. Note: Examples are illustrative only; actual counts (delta_count, turn_count, totals) vary by case and dataset configuration.",
   
   "oneOf": [
     { "$ref": "#/$defs/manifest_meta" },
@@ -173,7 +173,7 @@
         "turn_count": {
           "type": "integer",
           "minimum": 0,
-          "description": "Number of turns in trace"
+          "description": "Number of turns in trace (includes all LLM calls: agent responses + orchestration/speaker-selection; may exceed MAC paper 'discussion rounds')"
         }
       },
       "additionalProperties": false
@@ -247,18 +247,18 @@
     },
     {
       "record_type": "trace_entry",
-      "case_id": "case-33651373",
-      "file": "case-33651373.trace.jsonl.gz",
+      "case_id": "case-example",
+      "file": "case-example.trace.jsonl.gz",
       "sha256": "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-      "delta_count": 1523,
-      "turn_count": 13
+      "delta_count": 10,
+      "turn_count": 3
     },
     {
       "record_type": "summary",
-      "total_cases": 40,
-      "total_deltas": 58420,
-      "total_turns": 520,
-      "successful_cases": 40,
+      "total_cases": 2,
+      "total_deltas": 20,
+      "total_turns": 6,
+      "successful_cases": 2,
       "failed_cases": 0
     }
   ]

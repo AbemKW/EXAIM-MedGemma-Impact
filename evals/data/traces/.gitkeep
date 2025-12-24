@@ -1,7 +1,1 @@
-# This file ensures the directory is tracked by git
-# Actual trace data files are gitignored (may contain patient data)
-
-
-
-
-
+# Placeholder until trace files are committed

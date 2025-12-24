@@ -1,7 +1,1 @@
-# This file ensures the directory is tracked by git
-# Metric output files are gitignored (references patient cases)
-
-
-
-
-
+# Keep directory (metrics are gitignored, generated during evaluation)

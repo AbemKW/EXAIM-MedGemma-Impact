@@ -1,7 +1,1 @@
-# This file ensures the directory is tracked by git
-# Run output files are gitignored (derived from patient data)
-
-
-
-
-
+# Keep directory (run outputs are gitignored, generated during evaluation)
