@@ -9,6 +9,24 @@ Reproducible evaluation framework for the EXAID conference paper. This module pr
 - Docker and Docker Compose installed
 - No host Python required (evaluation runs in container)
 
+### MAC Submodule
+
+EXAID uses a forked MAC repository with token-level streaming instrumentation:
+
+- Fork URL: https://github.com/AbemKW/mac-streaming-traces
+- Path: `third_party/mac`
+- Purpose: Capture per-token emission timestamps (`t_emitted_ms`) for realistic streaming replay
+
+**Invariant:** This fork only adds transparent token-level timing instrumentation. All MAC conversation logic, agent orchestration, speaker selection, and termination conditions remain unchanged from the original implementation.
+
+The submodule is pinned to a specific commit for reproducibility. Initialize with:
+
+```bash
+git submodule update --init --recursive
+```
+
+**Important:** If the MAC submodule commit is updated, traces MUST be regenerated before running any evaluation. Results obtained from mismatched traces and submodule commits are invalid.
+
 ### Build and Run
 
 ```bash
@@ -466,9 +484,14 @@ docker compose -f docker-compose.evals.yml run --rm evals -c "python src/validat
 ```
 
 ### MAC submodule not found
+The MAC submodule is a fork with streaming instrumentation. Initialize it with:
 ```bash
-# Initialize submodules
 git submodule update --init --recursive
+```
+Verify the fork remote:
+```bash
+cd third_party/mac && git remote -v
+# Should show: https://github.com/AbemKW/mac-streaming-traces
 ```
 
 ## License

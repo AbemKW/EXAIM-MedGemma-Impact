@@ -1,0 +1,54 @@
+# EXAID Evaluation - Concept Extractor Configuration
+# 
+# Paper hook: "Concept extraction configuration shared between stoplist
+# generation (Phase 0) and metrics computation (Phase 4/5) to ensure
+# drift-proof evaluation (Section 6.1)"
+#
+# INVARIANT: This is the SINGLE SOURCE OF TRUTH for extractor settings.
+# Both generate_stoplists.py and compute_metrics.py MUST load this config.
+
+concept_extractor:
+  # scispaCy model for NER
+  scispacy_model: "en_core_sci_sm"
+  
+  # UMLS Entity Linker settings
+  linker_name: "umls"
+  linker_resolve_abbreviations: true
+  linker_max_entities_per_mention: 10
+  linker_threshold: 0.7
+  
+  # CUI score threshold (filter candidates below this)
+  cui_score_threshold: 0.7
+  
+  # Maximum CUI candidates per mention after filtering/sorting
+  max_k: 10
+  
+  # Minimum entity text length (characters)
+  min_entity_len: 3
+  
+  # Entity types to keep (ALL means no type filtering)
+  entity_types_kept:
+    - "ALL"
+  
+  # CUI normalization (uppercase for canonical form)
+  cui_normalization: "uppercase"
+  
+  # Stoplist file paths (relative to evals/configs/)
+  # NOTE: These are DISABLED during stoplist generation (non-circular)
+  stop_entities_file: "evals/configs/stop_entities.txt"
+  stop_cuis_file: "evals/configs/stop_cuis.txt"
+
+# Stoplist generation settings
+stoplist_generation:
+  # Document frequency threshold for stoplisting
+  # Concepts appearing in >= threshold fraction of traces are stoplisted
+  df_threshold: 0.90
+  
+  # Output files
+  stop_entities_output: "evals/configs/stop_entities.txt"
+  stop_cuis_output: "evals/configs/stop_cuis.txt"
+  df_report_output: "evals/configs/stoplist_df_report.csv"
+
+
+
+
