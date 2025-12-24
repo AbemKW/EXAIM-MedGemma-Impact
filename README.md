@@ -3,6 +3,25 @@
 
 EXAID is an experimental Python project for capturing short, live traces from multiple agents, buffering those traces, and producing concise summaries using an LLM. It is designed as a minimal prototype for medical multi-agent reasoning workflows, where specialized agents (e.g., InfectiousDiseaseAgent, HematologyAgent, OncologyAgent) collaborate on clinical cases, and their reasoning traces are captured and condensed into structured summaries optimized for physician understanding.
 
+## Submodules
+
+This project uses a git submodule for the MAC (Multi-Agent Conversation) trace generator:
+
+```bash
+# Clone with submodules
+git clone --recurse-submodules https://github.com/AbemKW/ExAID.git
+
+# Or if already cloned
+git submodule update --init --recursive
+```
+
+The MAC submodule (`third_party/mac`) is a fork of the original MAC framework:
+
+- Fork: https://github.com/AbemKW/mac-streaming-traces
+- Purpose: Enables per-token `t_emitted_ms` capture for realistic streaming replay
+
+**Invariant:** This fork only adds transparent token-level timing instrumentation. All MAC conversation logic, agent orchestration, speaker selection, and termination conditions remain unchanged from the original implementation.
+
 ## Quick Start
 
 1. **Create and activate a virtual environment (recommended):**

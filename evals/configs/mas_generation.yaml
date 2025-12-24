@@ -15,9 +15,12 @@ mac:
   # Path to MAC module (inside Docker container)
   module_path: "/app/third_party/mac"
   
-  # Pinned commit hash of the MAC submodule
-  # Repository: https://github.com/geteff1/Multi-agent-conversation-for-disease-diagnosis
-  commit: "896a5deb4d6db7a2c872630a6638da4da3b0f4d4"
+  # Pinned commit hash of the MAC submodule used for trace generation.
+  # This duplicates the git submodule pin for explicit provenance
+  # in evaluation artifacts and metadata logs.
+  # Repository: https://github.com/AbemKW/mac-streaming-traces
+  # Fork of original MAC repo with token-level streaming instrumentation
+  commit: "1d5b227afa64fe3dd5eb7b7c0ef778a09501b220"
   
   # Base model used by MAC for agent conversations
   base_model: "gpt-4o-mini"
@@ -62,6 +65,6 @@ output:
 
 documentation:
   # EXAID commit hash when this configuration was last updated
-  last_updated_commit: "7dadb9143892c045b6317e297aa651a79cf4bd14"
+  last_updated_commit: "pending"
   # Date of last documentation update
-  last_updated_date: "2024-12-19"
+  last_updated_date: "2024-12-24"
