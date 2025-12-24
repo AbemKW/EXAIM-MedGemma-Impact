@@ -64,3 +64,21 @@ mac_selection:
   # - "log_stub": Write a stub trace with status=failed (recommended)
   # - "raise": Raise exception and halt execution
   on_failure: "log_stub"
+
+# =============================================================================
+# Case List Output Configuration
+# =============================================================================
+# The ordered case list is written as a separate file for provenance.
+# Hash is stored in the manifest ONLY (not embedded in the file).
+
+case_list:
+  # Output path template (relative to evals/data/manifests/)
+  # {dataset_id} is substituted with the generated dataset_id
+  output_path: "{dataset_id}.case_list.jsonl"
+  
+  # Format: Each line is {"index": N, "case_id": "case-XXXXX"}
+  # NO _meta line in file - hash stored in manifest only
+  format: "jsonl"
+  
+  # Hash computation: SHA256 of file bytes
+  hash_method: "sha256_file_bytes"

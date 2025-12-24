@@ -29,4 +29,4 @@ COPY evals/ /app/evals/
 RUN chmod +x /app/evals/scripts/*.sh
 
 WORKDIR /app/evals
-ENTRYPOINT ["bash"]
+ENTRYPOINT []

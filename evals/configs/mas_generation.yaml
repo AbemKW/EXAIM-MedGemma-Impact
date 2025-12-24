@@ -1,5 +1,10 @@
 # EXAID Evaluation - Multi-Agent System Generation Configuration
 # This file defines parameters for MAS trace generation using MAC
+#
+# Phase 2: Raw Stream Capture
+# - Traces store delta_text + timestamps only
+# - No derived units (ws_units, ctu) in traces
+# - Derived units computed during replay/evaluation
 
 # =============================================================================
 # MAS Generation Mode
@@ -15,37 +20,84 @@ mac:
   # Path to MAC module (inside Docker container)
   module_path: "/app/third_party/mac"
   
+  # MAC fork repository URL
+  fork_url: "https://github.com/AbemKW/mac-streaming-traces"
+  
   # Pinned commit hash of the MAC submodule used for trace generation.
   # This duplicates the git submodule pin for explicit provenance
   # in evaluation artifacts and metadata logs.
   # Repository: https://github.com/AbemKW/mac-streaming-traces
-  # Fork of original MAC repo with token-level streaming instrumentation
+  # Fork of original MAC repo with delta/chunk-level streaming instrumentation
   commit: "1d5b227afa64fe3dd5eb7b7c0ef778a09501b220"
   
   # Base model used by MAC for agent conversations
   base_model: "gpt-4o-mini"
   
-  # Decoding parameters
-  # IMPORTANT: Decoding parameters (temperature, sampling) are controlled by MAC
-  # internally per agent role. EXAID does not override these parameters.
+  # Decoding parameters - CANONICALIZED for mas_run_id hash
+  # These parameters contribute to the deterministic ID generation
   decoding:
-    max_tokens: 4096  # Logged for documentation only
-    note: "Decoding parameters (temperature, sampling) are controlled by MAC internally and are not overridden by EXAID"
+    temperature: 1.0
+    top_p: null           # null = not set (use provider default)
+    max_tokens: 4096
+    seed: null            # null = non-deterministic generation
+    # NOTE: Actual decoding is controlled by MAC internally
+    # These values are logged for provenance only
 
 # =============================================================================
-# Text Unit Accounting (Vendor-Agnostic)
+# Run ID Generation (Input-Derived, Deterministic)
 # =============================================================================
-# All evaluation metrics use Character-Normalized Token Units (CTU)
-# This ensures deterministic, offline-computable, reproducible metrics
+# IDs are derived from inputs only (no date) for true determinism.
+# Same inputs = same ID regardless of when generation runs.
 
-text_unit:
-  name: "CTU"
-  definition: "ceil(len(text) / 4)"
-  # The ~4 characters per unit heuristic reflects average token densities observed
-  # across modern LLM tokenizers (OpenAI, LLaMA, Gemini, Claude). CTU is model-agnostic
-  # and is NOT a tokenizer—it is a deterministic, vendor-independent normalization unit.
-  reference: "Average subword tokenizer density (~4 chars/token) across contemporary LLMs"
-  applies_to: "both input traces and output summaries"
+mas_run_id:
+  # Format: mas_<mac8>_<model>_<decoding8>_<cases8>
+  # - mac8: first 8 chars of MAC commit hash
+  # - model: slugified model name (lowercase, no dashes/dots)
+  # - decoding8: first 8 chars of SHA256(canonicalized decoding params)
+  # - cases8: first 8 chars of case_list_hash
+  policy: "input_derived"
+  example: "mas_1d5b227a_gpt4omini_a3b4c5d6_e7f8g9h0"
+
+dataset_id:
+  # Format: exaid_traces_<mac8>_<decoding8>_<cases8>
+  policy: "input_derived"
+  example: "exaid_traces_1d5b227a_a3b4c5d6_e7f8g9h0"
+
+# Placeholder for future evaluation runs (Phase 3+)
+eval_run_id:
+  # Format: eval_<variant>_<trace_dataset_hash_8>_<exaid_commit_8>
+  # - variant: V0, V1, V2, V3, V4
+  # - trace_dataset_hash_8: first 8 chars of trace_dataset_hash
+  # - exaid_commit_8: first 8 chars of EXAID commit
+  policy: "input_derived"
+  note: "Used in Phase 3+ for EXAID variant evaluation"
+  example: "eval_V0_b2c3d4e5_8d45cbb1"
+
+# =============================================================================
+# Phase 2: Raw Stream Capture (No Derived Units)
+# =============================================================================
+# Phase 2 traces are RAW stream captures.
+# Derived units are NOT stored; they are computed during replay.
+
+raw_capture:
+  # What is stored in traces:
+  stored:
+    - delta_text      # Raw delta/chunk from LLM
+    - t_emitted_ms    # Absolute emission timestamp
+    - t_rel_ms        # Relative to t0_emitted_ms
+    - agent_id        # Agent attribution
+    - turn_id         # Turn structure
+    - seq             # Global sequence number
+  
+  # What is NOT stored (computed during replay):
+  not_stored:
+    - ws_units        # Computed by TokenGate during replay (Phase 3+)
+    - ctu             # Computed during metrics evaluation (Phase 4+)
+  
+  # Rationale: Under streaming fragmentation, per-delta whitespace counting
+  # produces unreliable results. TokenGate-size counting must use the same
+  # streaming accumulator logic during replay. Storing derived units
+  # increases drift risk between capture and replay.
 
 # =============================================================================
 # Output Configuration
@@ -53,8 +105,11 @@ text_unit:
 output:
   # Output directory (relative to evals/)
   traces_dir: "data/traces"
+  manifests_dir: "data/manifests"
+  
   # Output file format
   format: "jsonl.gz"
+  
   # Compression level (1-9)
   compression_level: 6
 
@@ -66,5 +121,9 @@ output:
 documentation:
   # EXAID commit hash when this configuration was last updated
   last_updated_commit: "pending"
-  # Date of last documentation update
-  last_updated_date: "2024-12-24"
+  # Date when schema/config was last reviewed for paper submission
+  # NOTE: This is the review date, not the run date. Update when config changes.
+  config_reviewed_date: "2025-12-24"
+  # Schema version this config is compatible with
+  trace_schema_version: "2.0.0"
+  manifest_schema_version: "2.0.0"

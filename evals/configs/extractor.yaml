@@ -33,10 +33,10 @@ concept_extractor:
   # CUI normalization (uppercase for canonical form)
   cui_normalization: "uppercase"
   
-  # Stoplist file paths (relative to evals/configs/)
+  # Stoplist file paths (relative to evals/ working directory)
   # NOTE: These are DISABLED during stoplist generation (non-circular)
-  stop_entities_file: "evals/configs/stop_entities.txt"
-  stop_cuis_file: "evals/configs/stop_cuis.txt"
+  stop_entities_file: "configs/stop_entities.txt"
+  stop_cuis_file: "configs/stop_cuis.txt"
 
 # Stoplist generation settings
 stoplist_generation:
@@ -44,10 +44,11 @@ stoplist_generation:
   # Concepts appearing in >= threshold fraction of traces are stoplisted
   df_threshold: 0.90
   
-  # Output files
-  stop_entities_output: "evals/configs/stop_entities.txt"
-  stop_cuis_output: "evals/configs/stop_cuis.txt"
-  df_report_output: "evals/configs/stoplist_df_report.csv"
+  # Output files (relative to evals/ working directory)
+  stop_entities_output: "configs/stop_entities.txt"
+  stop_cuis_output: "configs/stop_cuis.txt"
+  df_report_output: "configs/stoplist_df_report.csv"
+
 
 
 

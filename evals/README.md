@@ -25,13 +25,13 @@ This evaluation measures:
 
 ### MAC Submodule
 
-EXAID uses a forked MAC repository with token-level streaming instrumentation:
+EXAID uses a forked MAC repository with delta/chunk-level streaming instrumentation:
 
 - Fork URL: https://github.com/AbemKW/mac-streaming-traces
 - Path: `third_party/mac`
-- Purpose: Capture per-token emission timestamps (`t_emitted_ms`) for realistic streaming replay
+- Purpose: Capture per-delta emission timestamps (`t_emitted_ms`) for realistic streaming replay
 
-**Invariant:** This fork only adds transparent token-level timing instrumentation. All MAC conversation logic, agent orchestration, speaker selection, and termination conditions remain unchanged from the original implementation.
+**Invariant:** This fork only adds transparent delta/chunk-level timing instrumentation. All MAC conversation logic, agent orchestration, speaker selection, and termination conditions remain unchanged from the original implementation.
 
 The submodule is pinned to a specific commit for reproducibility. Initialize with:
 
@@ -40,6 +40,171 @@ git submodule update --init --recursive
 ```
 
 **Important:** If the MAC submodule commit is updated, traces MUST be regenerated before running any evaluation. Results obtained from mismatched traces and submodule commits are invalid.
+
+---
+
+## Phase 2: Raw Stream Capture
+
+**Trace Schema v2.0.0 - Raw stream captures without derived units.**
+
+Phase 2 traces store raw streaming data only:
+
+| Stored in Traces | NOT Stored (Computed During Replay) |
+|------------------|-------------------------------------|
+| `delta_text` (raw stream delta/chunk) | `ws_units` (TokenGate, Phase 3+) |
+| `t_emitted_ms` (absolute timestamp) | `ctu` (metrics, Phase 4+) |
+| `t_rel_ms` (relative to t0) | |
+| `agent_id`, `turn_id`, `seq` | |
+
+**Rationale:** Under streaming fragmentation, per-delta whitespace counting produces unreliable results. TokenGate-size counting must use the same streaming accumulator logic during replay. Storing derived units in traces increases drift risk between capture and replay.
+
+### Record Types
+
+| Record Type | Purpose |
+|-------------|---------|
+| `trace_meta` | Provenance, t0 anchor, schema version |
+| `stream_delta` | Raw stream delta/chunk with timing |
+| `turn_boundary` | Turn start/end markers with content_hash |
+
+### Timing Semantics
+
+- `t0_emitted_ms`: Anchor timestamp (first `stream_delta` emission)
+- `t_emitted_ms`: Absolute emission time (ms since epoch)
+- `t_rel_ms`: Relative to t0 (`t_ms - t0_emitted_ms`)
+
+**Important:** `t_rel_ms` for `turn_boundary` records MAY BE NEGATIVE if the boundary occurs before the first delta. This is valid because:
+- `t0` is defined as the first `stream_delta` emission time
+- `turn_start` boundaries often occur before the first delta of that turn
+- All times remain replayable: given `t0` and `t_rel_ms`, exact timing is reconstructible
+
+| Record Type | t_rel_ms | Notes |
+|-------------|----------|-------|
+| `stream_delta` | Always >= 0 | By definition, t0 = first delta |
+| `turn_boundary` | May be negative | Boundaries can occur before t0 |
+
+### Generate Timed Traces
+
+```bash
+# Dry-run (validate config without running MAC)
+python -m evals.src.make_traces --config configs/mas_generation.yaml --dry-run
+
+# Generate one trace (for testing)
+python -m evals.src.make_traces --config configs/mas_generation.yaml --limit 1
+
+# Generate all traces
+python -m evals.src.make_traces --config configs/mas_generation.yaml
+```
+
+### Validate Traces
+
+```bash
+python -m evals.src.validate_traces --traces data/traces/ --verbose
+```
+
+**Validation Rules:**
+1. `seq` strictly increasing across entire trace
+2. `t_emitted_ms` non-decreasing for `stream_delta` records
+3. `t_rel_ms` consistency:
+   - For `stream_delta`: `t_rel_ms == t_emitted_ms - t0` (always >= 0)
+   - For `turn_boundary`: `t_rel_ms == t_ms - t0` (may be negative!)
+4. Turn boundary start/end pairs match
+5. Boundary time consistency:
+   - `turn_start.t_ms <= first_delta.t_emitted_ms` for that turn
+   - `turn_end.t_ms >= last_delta.t_emitted_ms` for that turn
+6. `content_hash` matches recomputed hash
+
+**Stub Mode Warning:** Traces with `stub_mode: true` are flagged during validation and must NOT be used for evaluation.
+
+---
+
+## Run ID Definitions
+
+### Separation of Concerns
+
+| Phase | ID | Purpose |
+|-------|-----|---------|
+| Phase 2 | `mas_run_id` | Trace generation campaign |
+| Phase 3+ | `eval_run_id` | EXAID variant evaluation |
+
+### mas_run_id (Trace Generation)
+
+**Format:** `mas_<mac8>_<model>_<decoding8>_<cases8>`
+
+- `mac8`: First 8 chars of MAC commit hash
+- `model`: Slugified model name (lowercase, no dashes)
+- `decoding8`: First 8 chars of SHA256(canonicalized decoding params)
+- `cases8`: First 8 chars of case_list_hash
+
+**Example:** `mas_1d5b227a_gpt4omini_a3b4c5d6_e7f8g9h0`
+
+**Property:** Input-derived (no date), deterministic. Same inputs = same ID regardless of when generation runs.
+
+### eval_run_id (Evaluation)
+
+**Format:** `eval_<variant>_<trace_dataset_hash_8>_<exaid_commit_8>`
+
+- `variant`: V0, V1, V2, V3, V4
+- `trace_dataset_hash_8`: First 8 chars of trace_dataset_hash
+- `exaid_commit_8`: First 8 chars of EXAID commit
+
+**Example:** `eval_V0_b2c3d4e5_8d45cbb1`
+
+**Note:** Defined for Phase 3+; not used in trace generation.
+
+### trace_dataset_hash
+
+**Definition:** SHA256 of canonical manifest fields (NOT raw file bytes)
+
+```python
+canonical = {
+    "mas_run_id": "...",
+    "case_list_hash": "sha256:...",
+    "traces": sorted([(case_id, trace_sha256), ...])
+}
+```
+
+---
+
+## Instrumentation-Only Policy
+
+### ALLOWED (Transparent Instrumentation)
+
+- Capture streaming deltas/chunks with timestamps
+- Record agent attribution per turn
+- Compute content hashes for integrity
+- Write trace files with provenance
+
+### NOT ALLOWED (Would Change MAC Behavior)
+
+- Modify prompts or system messages
+- Change speaker selection or routing logic
+- Alter termination conditions
+- Reorder messages or turns
+- Override decoding parameters (temperature, sampling)
+
+---
+
+## What Gets Committed vs Not Committed
+
+| Artifact | Committed | Reason |
+|----------|-----------|--------|
+| Schema files | Yes | Defines trace format |
+| Config files | Yes | Reproducibility |
+| Scripts | Yes | Code |
+| Case list files | Yes | Public MAC case IDs |
+| Manifests | Yes* | Provenance (no PHI) |
+| Trace files | **No** | May contain case content |
+| Raw case data | **No** | MAC dataset |
+
+*Manifests are safe if case IDs are from public MAC dataset.
+
+**.gitignore entries:**
+```
+evals/data/traces/*.jsonl.gz
+evals/data/cases/*.json
+```
+
+---
 
 ### Build and Run
 
