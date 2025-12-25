@@ -97,9 +97,15 @@ python src/make_traces.py --config configs/mas_generation.yaml
 
 ### Validate Traces
 
+**Standalone validation tool** (pre-evaluation check):
+
 ```bash
 python src/validate_traces.py --traces data/traces/ --verbose
 ```
+
+**Note:** The Trace Replay Engine also validates traces during replay (see "Replay Validation Guarantees" section below). Both tools share similar validation rules but serve different purposes:
+- `validate_traces.py`: Standalone validation before evaluation
+- Replay engine: Validation during replay with strict/inspect modes
 
 **Validation Rules:**
 1. `seq` strictly increasing across entire trace
@@ -115,6 +121,234 @@ python src/validate_traces.py --traces data/traces/ --verbose
 6. `content_hash` matches recomputed hash
 
 **Stub Mode Warning:** Traces with `stub_mode: true` are flagged during validation and must NOT be used for evaluation.
+
+---
+
+## Trace Replay Engine
+
+**Paper hook: Section 3.2**
+
+The Trace Replay Engine provides deterministic replay of v2.0.0 traces with virtual time and turn classification. It enables downstream evaluation components (TokenGate, metrics) to consume traces in a consistent, reproducible manner.
+
+**File Organization:**
+- `src/trace_replay_engine.py` - Core library module (importable)
+- `cli/replay_trace.py` - CLI tool for inspection/debugging (runnable)
+- `tests/test_trace_replay_engine.py` - Unit and integration tests
+
+**Note:** `cli/` contains runnable inspection/debug tools; `src/` contains importable library code.
+
+### Architecture
+
+**Two-pass design:**
+1. **Pass 1**: Derive `agent_labels` from `turn_boundary` records only (authoritative source)
+2. **Pass 2**: Classify turns and yield replay events
+
+This ensures determinism: same trace always produces same label set before classification.
+
+### Turn Classification
+
+Turns are classified as either `content_plane` (substantive) or `control_plane` (orchestration):
+
+| Category | Description | Classification Rules |
+|----------|-------------|---------------------|
+| `control_plane` | Speaker selection, orchestration signals | Exact agent label match, TERMINATE sentinel |
+| `content_plane` | Substantive agent content | Everything else (conservative default) |
+
+**Why control_plane exists**: MAC's GroupChat emits short turns for speaker selection (e.g., just "Doctor0"). These carry no semantic content and should be excluded from concept extraction and TokenGate accumulation.
+
+### Classification Rules (Conservative, Exact-Match Only)
+
+| Rule | Condition | Result | `classification_reason` |
+|------|-----------|--------|-------------------------|
+| **Exact Label Match** | `turn_text.strip().lower()` exactly matches derived agent label | `control_plane` | `"exact_label_match:{label}"` |
+| **TERMINATE Sentinel** | `turn_text.strip().upper() == "TERMINATE"` | `control_plane` | `"terminate_sentinel"` |
+| **Empty Turn** | `turn_text.strip() == ""` | `control_plane` | `"empty_turn"` |
+| **Default** | Everything else | `content_plane` | `"default_content"` |
+
+**Design principle**: We never filter unless certain. Partial matches like "Ask Doctor0" remain as content. Empty turns are classified as control_plane to avoid polluting semantic evaluation.
+
+### Agent Labels Derived from Trace (Boundaries Only)
+
+Labels are derived from the trace itself (Pass 1), not from config files:
+1. Scan `turn_boundary` records only (authoritative source for speaker identity)
+2. Collect unique `agent_id` values, normalize to lowercase
+3. Use this frozen set for classification (Pass 2)
+
+**Why boundaries only?** Boundaries are the authoritative source for speaker identity in the schema. Deltas may have missing or inconsistent agent_id values. This makes the derivation rule simpler and more defensible.
+
+### Replay Streams
+
+| Stream | Contents | Use Case |
+|--------|----------|----------|
+| FULL | All events including control_plane | Raw replay, timing analysis |
+| content_plane | content_plane events only | TokenGate, semantic evaluation |
+
+**Critical**: The content_plane stream preserves timing gaps from excluded control_plane turns. Virtual time is NOT compressed. This ensures TokenGate sees realistic inter-turn delays.
+
+### Audit Flags
+
+Suspicious turns (look label-like but don't match derived labels) are:
+- Classified as `content_plane` (conservative)
+- Flagged with `suspicious_label_like_unmatched` for reviewer visibility
+
+Use `--audit` flag in CLI to view flagged turns.
+
+### Usage
+
+**Python API:**
+
+```python
+from pathlib import Path
+from trace_replay_engine import TraceReplayEngine
+
+# Initialize engine
+engine = TraceReplayEngine(Path("data/traces/case-33651373.trace.jsonl.gz"))
+
+# Get metadata
+meta = engine.get_metadata()
+labels = engine.get_derived_agent_labels()
+
+# Replay full stream
+for event in engine.replay_full():
+    print(f"t={event.virtual_time_ms}ms: {event.event_type}")
+
+# Replay content_plane stream only
+for event in engine.replay_content_plane():
+    process_content(event)
+
+# Get classifications
+classifications = engine.get_turn_classifications()
+for turn_id, cls in classifications.items():
+    print(f"Turn {turn_id}: {cls.turn_type} ({cls.classification_reason})")
+
+# Get audit flags
+flags = engine.get_audit_flags()
+for flag in flags:
+    print(f"Turn {flag.turn_id}: {flag.flag_type}")
+```
+
+**CLI Tool:**
+
+```bash
+# Show metadata and timeline
+python cli/replay_trace.py data/traces/case-33651373.trace.jsonl.gz
+
+# Show content_plane stream only
+python cli/replay_trace.py --stream content_plane data/traces/case-33651373.trace.jsonl.gz
+
+# Show turn classifications
+python cli/replay_trace.py --classifications data/traces/case-33651373.trace.jsonl.gz
+
+# Show audit flags
+python cli/replay_trace.py --audit data/traces/case-33651373.trace.jsonl.gz
+
+# Shift timeline to start at t=0
+python cli/replay_trace.py --shift-to-zero data/traces/case-33651373.trace.jsonl.gz
+```
+
+### Timing Semantics
+
+**Virtual Time Derivation:**
+
+| Mode | Formula | Use Case |
+|------|---------|----------|
+| Default | `virtual_time_ms = t_rel_ms` | Preserves anchor semantics |
+| `shift_to_zero=True` | `virtual_time_ms = t_rel_ms - min_t_rel_ms` | Plots starting at t=0 |
+
+**Anchor Semantics:**
+- `t0_emitted_ms`: First `stream_delta` emission (absolute epoch time)
+- `stream_delta.t_rel_ms`: Always >= 0 (by definition of t0)
+- `turn_boundary.t_rel_ms`: May be negative (boundary before first delta)
+
+When `shift_to_zero=True`, the minimum `t_rel_ms` is computed across **all** record types (deltas AND boundaries), ensuring all events shift together while preserving relative timing.
+
+### Replay Validation Guarantees
+
+**Paper hook: Section 3.2**
+
+The replay engine enforces deterministic validation with two modes:
+
+| Mode | Behavior | Use Case |
+|------|----------|----------|
+| **Strict** (`strict_validation=True`) | Violations → Errors → Stops execution | Production evaluation, reviewer verification |
+| **Inspect** (`strict_validation=False`) | Violations → Warnings → Continues execution | Debugging, inspection, known-issue traces |
+
+**Strict Mode Enforces:**
+
+| Check | Severity | Action |
+|-------|----------|--------|
+| `seq` strictly increasing | ERROR | Raise `TraceValidationError` |
+| `t_emitted_ms` non-decreasing (deltas) | ERROR | Raise `TraceValidationError` |
+| `t_rel_ms` consistency (critical for virtual time) | ERROR | Raise `TraceValidationError` |
+| Boundary start/end pairs match | ERROR | Raise `TraceValidationError` |
+| Boundary-time containment (>epsilon) | ERROR | Raise `TraceValidationError` |
+| Turns with deltas but no boundaries | ERROR | Raise `TraceValidationError` |
+| `stub_mode == true` (if `strict_stub_guard=True`) | ERROR | Raise `StubTraceError` |
+
+**Inspect Mode Allows:**
+
+- All strict-mode violations become **warnings** instead of errors
+- Execution continues, enabling analysis of problematic traces
+- Boundary-time violations within epsilon (≤2ms) are always warnings
+- `content_hash` mismatches are always warnings (never errors)
+
+**Design Rationale:** Strict mode ensures data quality for evaluation reproducibility. Inspect mode enables debugging and analysis while surfacing issues via warnings. This aligns with the instrumentation-only policy: traces are frozen artifacts, and validation ensures they meet replay requirements.
+
+### Performance Characteristics
+
+**Memory Usage:**
+
+The replay engine loads one trace into memory (O(n) records where n = number of records in trace).
+
+**Typical Trace Sizes:**
+
+- Per-case traces: ~1,000-5,000 records
+- Compressed size: ~50-200 KB (gzipped JSONL)
+- Memory footprint: ~2-10 MB per trace (uncompressed)
+
+**Scalability:**
+
+For the EXAID evaluation (40 cases), total memory usage is ~80-400 MB, which is well within reasonable limits. The two-pass architecture (label derivation → classification) ensures deterministic behavior at the cost of loading the full trace.
+
+**Future Enhancement:** For very large traces (>100k records), a streaming-only mode could be added that processes records without full in-memory reconstruction. This is not required for the current evaluation scale.
+
+### Empty Turn Policy
+
+Turns with empty or whitespace-only text (`turn_text.strip() == ""`) are classified as `control_plane` with `classification_reason="empty_turn"`. This ensures:
+
+- Empty turns are excluded from semantic evaluation (consistent with control_plane filtering)
+- Timing gaps are still preserved (empty turns don't compress virtual time)
+- Clear auditability (empty turns are explicitly flagged)
+
+**Rationale:** Empty turns carry no semantic content and should not pollute TokenGate accumulation or concept extraction. Classifying them as control_plane is conservative and reduces confusion.
+
+### Integration Points
+
+**TokenGate Calibration:**
+
+```python
+# TokenGate consumes content_plane stream but gets FULL timing
+for event in engine.replay_content_plane():
+    if event.event_type == "delta":
+        tokengate.accumulate(
+            text=event.delta_text,
+            virtual_time_ms=event.virtual_time_ms  # Gaps preserved
+        )
+```
+
+**Metrics Scripts:**
+
+```python
+# M4/M5 (trace coverage) - content_plane only
+content_text = "".join(
+    e.delta_text for e in engine.replay_content_plane() 
+    if e.event_type == "delta"
+)
+
+# Audit classification
+for turn_id, cls in engine.get_turn_classifications().items():
+    print(f"Turn {turn_id}: {cls.turn_type} ({cls.classification_reason})")
+```
 
 ---
 
@@ -579,7 +813,8 @@ evals/
 │       ├── per_case.metrics.jsonl
 │       ├── aggregate.metrics.json
 │       └── figures/               # Generated figures
-├── src/                           # Python modules
+├── src/                           # Python library modules (importable)
+│   ├── trace_replay_engine.py     # Trace replay engine (core library)
 │   ├── trace_text.py              # Canonical trace text (single source)
 │   ├── validate_traces.py         # Trace validation
 │   ├── generate_stoplists.py      # Stoplist generation
@@ -591,7 +826,9 @@ evals/
 │   ├── run_variants.py            # Variant replay engine
 │   ├── compute_metrics.py         # M1-M10 metrics
 │   └── test_concept_extractor.py  # Unit tests
-└── scripts/                       # Orchestration scripts
+├── cli/                           # CLI tools (runnable inspection/debug tools)
+│   └── replay_trace.py            # Trace replay CLI tool
+└── scripts/                       # Orchestration scripts (shell scripts)
     ├── 00_validate.sh
     ├── 01_make_traces.sh
     ├── 02_run_variants.sh
