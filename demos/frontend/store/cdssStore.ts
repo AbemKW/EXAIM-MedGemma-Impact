@@ -70,12 +70,21 @@ function updateCardWithToken(
   set: (partial: Partial<CDSSState> | ((state: CDSSState) => Partial<CDSSState>)) => void
 ): Partial<CDSSState> {
   const newAgents = [...state.agents];
+  const oldFullText = newAgents[cardIndex].fullText;
+  const newFullText = oldFullText + token;
+  
   newAgents[cardIndex] = {
     ...newAgents[cardIndex],
-    fullText: newAgents[cardIndex].fullText + token,
+    fullText: newFullText,
     lastUpdate: new Date(),
   };
-  const wordsInToken = countWords(token);
+  
+  // Count words in the accumulated text (not just the token)
+  // This correctly handles cases where tokens don't align with word boundaries
+  // (e.g., partial words, punctuation-only tokens, multi-word tokens)
+  const oldWordCount = countWords(oldFullText);
+  const newWordCount = countWords(newFullText);
+  const wordsAdded = newWordCount - oldWordCount;
   
   // Track active agent
   const newActiveAgents = new Set(state.activeAgents);
@@ -101,7 +110,7 @@ function updateCardWithToken(
   
   return {
     agents: newAgents,
-    totalWords: state.totalWords + wordsInToken,
+    totalWords: state.totalWords + wordsAdded,
     activeAgents: newActiveAgents,
   };
 }

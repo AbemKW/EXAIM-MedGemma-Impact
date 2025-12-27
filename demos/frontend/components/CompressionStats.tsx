@@ -12,7 +12,7 @@ export default function CompressionStats({ totalWords, summaryWords }: Compressi
     return null;
   }
 
-  // Calculate compression percentage
+  // Calculate compression or expansion percentage
   // Compression = (original - compressed) / original * 100
   // Formula: (totalWords - summaryWords) / totalWords * 100
   // 
@@ -24,27 +24,35 @@ export default function CompressionStats({ totalWords, summaryWords }: Compressi
     ? ((totalWords - summaryWords) / totalWords) * 100
     : 0;
   
-  const compressionPercentage = Math.abs(compressionValue).toFixed(1);
-  const isCompression = compressionValue > 0; // Only show compression if summaries are actually smaller
-
-  // Only display compression stats when actual compression has occurred
-  // When summaries exceed traces (due to structured format overhead), hide the component
-  // to avoid confusing users with explanatory notes
-  if (!isCompression) {
-    return null;
-  }
+  const percentage = Math.abs(compressionValue).toFixed(1);
+  const isCompression = compressionValue > 0;
 
   return (
     <div className="compression-stats">
       <div className="compression-stats-content">
-        <span className="compression-label">EXAID reduced</span>
-        <span className="compression-number">{totalWords.toLocaleString()}</span>
-        <span className="compression-arrow">→</span>
-        <span className="compression-number">{summaryWords.toLocaleString()}</span>
-        <span className="compression-label">words</span>
-        <span className="compression-percentage">
-          ({compressionPercentage}% compression)
-        </span>
+        {isCompression ? (
+          <>
+            <span className="compression-label">EXAID reduced</span>
+            <span className="compression-number">{totalWords.toLocaleString()}</span>
+            <span className="compression-arrow">→</span>
+            <span className="compression-number">{summaryWords.toLocaleString()}</span>
+            <span className="compression-label">words</span>
+            <span className="compression-percentage">
+              ({percentage}% compression)
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="compression-label">EXAID expanded</span>
+            <span className="compression-number">{totalWords.toLocaleString()}</span>
+            <span className="compression-arrow">→</span>
+            <span className="compression-number">{summaryWords.toLocaleString()}</span>
+            <span className="compression-label">words</span>
+            <span className="compression-percentage text-amber-400">
+              ({percentage}% expansion)
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

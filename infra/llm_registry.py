@@ -66,8 +66,8 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
     
     if provider == "google":
         return ChatGoogleGenerativeAI(
-            model=model or os.getenv("LLM_MODEL_NAME", "gemini-2.5-flash-lite"),
-            google_api_key=os.getenv("LLM_API_KEY") or os.getenv("GOOGLE_API_KEY"),
+            model=model or os.getenv("GOOGLE_MODEL_NAME", "gemini-2.5-flash-lite"),
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
             streaming=streaming
         )
     elif provider == "groq":
@@ -119,25 +119,6 @@ class LLMRegistry:
                 config["provider"] = provider
             if model := os.getenv(model_env):
                 config["model"] = model
-            
-            # Backward compatibility: support old env var names
-            if role == "mas":
-                if provider := os.getenv("MAS_LLM_PROVIDER"):
-                    config["provider"] = provider
-                if model := os.getenv("MAS_LLM_MODEL"):
-                    config["model"] = model
-            elif role == "summarizer":
-                # Summarizer uses EXAID_LLM_PROVIDER for backward compatibility
-                if provider := os.getenv("EXAID_LLM_PROVIDER"):
-                    config["provider"] = provider
-                if model := os.getenv("EXAID_LLM_MODEL"):
-                    config["model"] = model
-            elif role == "buffer_agent":
-                # BufferAgent also uses EXAID_LLM_PROVIDER for backward compatibility
-                if provider := os.getenv("EXAID_LLM_PROVIDER"):
-                    config["provider"] = provider
-                if model := os.getenv("EXAID_LLM_MODEL"):
-                    config["model"] = model
             
             self._configs[role] = config
     

@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useSummaries, useTotalWords, useTotalSummaryWords } from '@/store/cdssStore';
 import SummaryCard from './SummaryCard';
 import CompressionStats from './CompressionStats';
+import WordCountComparison from './WordCountComparison';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,25 @@ export default function SummariesPanel() {
   const totalSummaryWords = useTotalSummaryWords();
   const [comparisonMode, setComparisonMode] = useState(false);
   
+  // Calculate compression rate for button display
+  // Show compression if summaries are smaller, expansion if larger
+  const compressionInfo = React.useMemo(() => {
+    if (totalWords === 0) {
+      return null; // Can't calculate without original words
+    }
+    if (totalSummaryWords === 0) {
+      return null; // No summaries yet
+    }
+    const compressionValue = ((totalWords - totalSummaryWords) / totalWords) * 100;
+    const isCompression = compressionValue > 0;
+    const percentage = Math.abs(compressionValue).toFixed(1);
+    return {
+      percentage,
+      isCompression,
+      label: isCompression ? 'compression' : 'expansion'
+    };
+  }, [totalWords, totalSummaryWords]);
+  
   // Get only the spotlight summary (latest/expanded)
   // Prioritize expanded summary, otherwise use the first (newest) summary
   const spotlightSummary = React.useMemo(() => {
@@ -23,6 +43,11 @@ export default function SummariesPanel() {
     return summaries.length > 0 ? summaries[0] : null;
   }, [summaries]);
   
+  // Stable click handler to prevent issues during re-renders
+  const handleComparisonToggle = useCallback(() => {
+    setComparisonMode(prev => !prev);
+  }, []);
+
   // Debug: Log summaries state
   React.useEffect(() => {
     console.log('SummariesPanel - Total summaries:', summaries.length);
@@ -40,10 +65,14 @@ export default function SummariesPanel() {
             <Button
               variant={comparisonMode ? 'default' : 'outline'}
               size="sm"
-              onClick={() => setComparisonMode(!comparisonMode)}
+              onClick={handleComparisonToggle}
               className="text-xs"
             >
-              {comparisonMode ? '✓ Comparison' : 'Comparison'}
+              {comparisonMode 
+                ? compressionInfo !== null
+                  ? `✓ Comparison (${compressionInfo.percentage}% ${compressionInfo.label})`
+                  : '✓ Comparison'
+                : 'Comparison'}
             </Button>
             <Badge variant="secondary" className="text-sm">
               {summaries.length} summar{summaries.length !== 1 ? 'ies' : 'y'}
@@ -63,12 +92,18 @@ export default function SummariesPanel() {
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden px-3 pt-1 pb-1">
             {comparisonMode && (
-              <div className="mb-1 flex-shrink-0">
-                <CompressionStats
+              <>
+                <WordCountComparison
                   totalWords={totalWords}
                   summaryWords={totalSummaryWords}
                 />
-              </div>
+                <div className="mb-1 flex-shrink-0">
+                  <CompressionStats
+                    totalWords={totalWords}
+                    summaryWords={totalSummaryWords}
+                  />
+                </div>
+              </>
             )}
             <div className="mb-0.5 flex-shrink-0">
               <div className="text-xs font-semibold text-teal-400 uppercase tracking-wider flex items-center gap-2">

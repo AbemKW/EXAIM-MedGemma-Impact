@@ -33,12 +33,12 @@ NON-EMPTY FIELD RULE (NO HALLUCINATION)
 - All 6 fields MUST be populated, BUT you must never invent content to fill a field.
 - If a field has no supported delta or allowed sticky-context content, use an explicit placeholder.
   Approved placeholders (choose the best fit; keep very short):
-  - status_action: "No material change in workflow."
-  - key_findings: "No new clinical findings in this window."
-  - differential_rationale: "No differential change in this window."
+  - status_action: "No material change."
+  - key_findings: "No new clinical findings."
+  - differential_rationale: "No differential change."
   - uncertainty_confidence: "Uncertainty unchanged."
-  - recommendation_next_step: "No updated recommendation in this window."
-  - agent_contributions: "Agent attribution unavailable (no agent_id tags found)."
+  - recommendation_next_step: "No updated recommendation."
+  - agent_contributions: "Agent attribution unavailable."
 If the needed information is not present in allowed evidence sources, do not infer it; use a placeholder.
 Only report uncertainty or recommendations if explicitly supported by allowed evidence sources; otherwise use the placeholder.
 
