@@ -5,15 +5,12 @@
 # MAS (Multi-Agent System)
 # Used by: CDSS demo agents (cardiology, internal_medicine, laboratory, orchestrator, radiology)
 # Purpose: Generate reasoning traces from specialized agents
-# mas:
-#   provider: groq  # Default: groq (fast, cost-effective)
-#   model: llama-3.3-70b-versatile  # Default model
-#   streaming: true
-  # Override with: MAS_LLM_PROVIDER, MAS_LLM_MODEL env vars
 mas:
-  provider: openai  # Default: groq (fast, cost-effective)
-  model: gpt-5-nano  # Default model
+  provider: groq  # Default: groq (fast, cost-effective)
+  model: llama-3.3-70b-versatile  # Default model
   streaming: true
+  # Override with: MAS_LLM_PROVIDER, MAS_LLM_MODEL env vars
+
 # Summarizer - Clinical Summary Generation
 # Used by: SummarizerAgent
 # Purpose: Generate structured clinical summaries from agent traces
