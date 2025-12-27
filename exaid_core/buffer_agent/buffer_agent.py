@@ -1,6 +1,21 @@
 from langchain_core.prompts import ChatPromptTemplate
 from infra import get_llm, LLMRole
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
+from exaid_core.utils.prompts import get_buffer_agent_system_prompt, get_buffer_agent_user_prompt
+
+class BufferAnalysis(BaseModel):
+    """Structured analysis of stream state for buffer agent decision-making."""
+    reasoning: str = Field(description="Chain-of-thought analysis of the stream structure. Analyze whether the agent is mid-sentence, mid-list, or has finished a complete reasoning arc.")
+    stream_state: Literal["PREAMBLE", "IN_PROGRESS", "COMPLETE_BLOCK"] = Field(
+        description="State machine for stream completeness. "
+        "PREAMBLE: Setup text like 'I will now...' or 'My plan is...' (Wait). "
+        "IN_PROGRESS: Mid-list, mid-sentence, or stating an action without rationale (Wait). "
+        "COMPLETE_BLOCK: A full reasoning arc (Observation + Interpretation + Plan) is finished."
+    )
+    is_relevant: bool = Field(description="Is this clinically important? Does it add medical reasoning or context that would help the clinician understand the case?")
+    is_novel: bool = Field(description="Is this new vs previous summaries? Does it introduce something not already covered in prior summaries?")
+    final_trigger: bool = Field(description="True ONLY if stream_state is COMPLETE_BLOCK AND is_relevant is True AND is_novel is True. This is the final gate for triggering summarization.")
 
 class TraceData(BaseModel):
     count: int
@@ -8,77 +23,13 @@ class TraceData(BaseModel):
 class BufferAgent:
     def __init__(self):
         self.buffer: list[str] = []
-        self.llm = get_llm(LLMRole.BUFFER_AGENT)
+        # Use a smarter model if available, or the same base model
+        self.base_llm = get_llm(LLMRole.BUFFER_AGENT)
+        # We bind the structured output to force the reasoning step
+        self.llm = self.base_llm.with_structured_output(BufferAnalysis)
         self.flag_prompt = ChatPromptTemplate.from_messages([
-            ("system",
-            "You are acting as a Buffer Agent within EXAID, a middleware system that coordinates multiple LLM-based agents working together on a live clinical case.\n\n"
-
-            "These agents (e.g., CardiologyAgent, LaboratoryAgent) emit verbose, token-by-token reasoning traces in real time — like thoughts unfolding in a stream-of-consciousness style. You receive these traces as they’re generated, without knowing what will come next.\n\n"
-
-            "Your role is to monitor this live stream of traces, maintain an internal rolling buffer of previously seen traces, and decide — for each new trace — whether it should trigger a clinical summary update for the human clinician. You are the gating mechanism that decides *when* a summary is needed.\n\n"
-
-            "You also receive a list of previously generated summaries (what the clinician has already seen). These allow you to evaluate whether the new trace is redundant or novel.\n\n"
-
-            "Important: If the trace buffer is empty, that means **either**:\n"
-            "- A new case is beginning\n"
-            "- A summary was recently triggered and the buffer was flushed\n"
-            "You should still apply the full decision logic based on prior summaries and the incoming trace.\n\n"
-
-            "Your task is to answer: Should this new trace, in combination with the current buffer and prior summaries, trigger a new summary right now?\n\n"
-            "You must reply with exactly 'YES' or 'NO'. You do **not** write the summary — you only decide whether the downstream SummarizerAgent should be called.\n\n"
-
-            "You must base your decision on the following **three-layer filter**:\n\n"
-
-            "========================\n"
-            "**1. COMPLETENESS** – Is this a self-contained reasoning unit?\n"
-            "A trace is complete if it finishes a coherent idea, interpretation, or diagnostic hypothesis. Examples:\n"
-            "- A full interpretation of lab results or vitals\n"
-            "- A concluded diagnostic thought (e.g., 'This could be prerenal AKI due to volume depletion')\n"
-            "- A full medication change rationale or therapeutic proposal\n"
-            "- Reaching a diagnostic boundary (e.g., 'at this point, the likely cause is...')\n\n"
-            "Incomplete examples:\n"
-            "- Starting a list but not finishing\n"
-            "- Raising a possibility without context or reasoning\n"
-            "- Midstream thoughts (e.g., 'and also her BUN...')\n\n"
-
-            "========================\n"
-            "**2. CLINICAL VALUE** – Does this matter to the clinician?\n"
-            "A trace has clinical value if it adds medical reasoning or context that would help the human understand the case. Examples:\n"
-            "- New suspected diagnosis or refined differential\n"
-            "- Change in condition (e.g., worsening kidney function)\n"
-            "- Treatment-related insight (e.g., rationale for adjusting meds)\n"
-            "- Biologically plausible interpretations (e.g., signs of volume overload)\n\n"
-            "Non-valuable examples:\n"
-            "- Repeating obvious facts ('BNP is high') without interpretation\n"
-            "- Mere data reporting without reasoning\n"
-            "- Shallow remarks or filler text\n\n"
-
-            "========================\n"
-            "**3. NOVELTY** – Has this already been conveyed to the clinician?\n"
-            "A trace is novel if it introduces something **not covered in prior summaries**. You must compare the new trace against the summaries list.\n"
-            "Examples of non-novel:\n"
-            "- Reiterating the same diagnosis or lab interpretation\n"
-            "- Adding detail to an already-summarized point (unless the detail changes meaning)\n"
-            "- Stylistic rephrasing of what’s already known\n\n"
-            "========================\n"
-
-            "Only if **all three triggers** are satisfied should you return 'YES'. Otherwise, return 'NO'.\n"
-            "Never guess or speculate — only respond if the trace is complete, clinically meaningful, and new.\n"
-            "You simulate a human resident deciding when to update the attending. Be rigorous. Be concise. Favor clarity.\n\n"
-
-            "You will now be given:\n"
-            "- Previous summaries (already shown to the clinician)\n"
-            "- Current trace buffer (previous reasoning traces not yet summarized)\n"
-            "- The new trace\n\n"
-
-            "Your response must be ONLY: 'YES' or 'NO'.\n\n"
-            "Do not explain your reasoning.\n"
-            "Do not generate the summary.\n\n"),
-            ("user", 
-            "Previous summaries:\n{summaries}\n\n"
-            "Previous traces in buffer:\n{previous_trace}\n\n"
-            "New trace to evaluate:\n{new_trace}\n\n"
-            "Should this trigger summarization? Reply with only 'YES' or 'NO'.")
+            ("system", get_buffer_agent_system_prompt()),
+            ("user", get_buffer_agent_user_prompt())
         ])
         self.traces: dict[str, TraceData] = {}
 
@@ -88,32 +39,33 @@ class BufferAgent:
             self.traces[agent_id] = TraceData(count=0)
         self.traces[agent_id].count += 1
         
-        # Check if buffer was empty before adding this segment
-        was_empty = not self.buffer
-        
-        # Always add the segment to buffer
+        # Add to buffer first
         self.buffer.append(tagged_segment)
         
-        # Always call the LLM to decide if summarization should be triggered
-        # Use empty string for previous_trace if buffer was empty before adding this segment
-        previous_traces = "\n".join(self.buffer[:-1]) if not was_empty else ""
+        # Prepare context
+        # We pass the *rest* of the buffer separate from the *new* segment so the LLM sees the flow
+        buffer_context = "\n".join(self.buffer[:-1]) if len(self.buffer) > 1 else "(Buffer empty)"
         
-        flag_chain = self.flag_prompt | self.llm
-        flag_response = await flag_chain.ainvoke({
-            "summaries": previous_summaries,
-            "previous_trace": previous_traces if previous_traces else "(No previous traces.)",
-            "new_trace": tagged_segment
-        })
-        decision = "YES" in flag_response.content.strip().upper()
+        chain = self.flag_prompt | self.llm
         
-        # Debug logging
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.debug(f"BufferAgent decision for {agent_id}: {decision} (response: {flag_response.content.strip()[:100]})")
-        if decision:
-            logger.info(f"BufferAgent triggered summarization for {agent_id}")
-        
-        return decision
+        try:
+            analysis: BufferAnalysis = await chain.ainvoke({
+                "summaries": previous_summaries,
+                "previous_trace": buffer_context,
+                "new_trace": tagged_segment
+            })
+            
+            should_trigger = analysis.final_trigger
+            
+            # DEBUG: Print the LLM's analysis to verify it's working
+            print(f"DEBUG [{agent_id}]: State={analysis.stream_state} | Trigger={analysis.final_trigger}")
+            
+            return should_trigger
+
+        except Exception as e:
+            # Fallback if structured output fails (fail closed/safe to avoid spam)
+            print(f"Buffer decision failed: {e}")
+            return False
     
     def flush(self) -> list[str]:
         flushed = self.buffer.copy()
