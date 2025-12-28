@@ -856,4 +856,26 @@
     }
   }
   
+  /* Custom select styling */
+  select.custom-select {
+    background-color: oklch(0.13 0 0 / 0.2) !important;
+    color: oklch(0.98 0 0) !important;
+    color-scheme: dark;
+  }
+  
+  select.custom-select option {
+    background-color: oklch(0.13 0 0) !important;
+    color: oklch(0.98 0 0) !important;
+  }
+  
+  select.custom-select:focus option:checked,
+  select.custom-select option:checked {
+    background-color: oklch(0.50 0.12 260 / 0.3) !important;
+    color: oklch(0.98 0 0) !important;
+  }
+  
+  select.custom-select option:hover {
+    background-color: oklch(0.50 0.12 260 / 0.2) !important;
+  }
+  
 }
