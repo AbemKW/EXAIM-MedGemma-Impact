@@ -37,13 +37,14 @@ def _load_default_configs():
     return _DEFAULT_CONFIGS
 
 
-def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: bool = True):
+def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: bool = True, temperature: Optional[float] = None):
     """Factory function to create LLM instances based on provider type.
     
     Args:
         provider: LLM provider name (google, groq, openai)
         model: Model name to use (overrides environment defaults)
         streaming: Whether to enable streaming
+        temperature: Temperature parameter for LLM (None uses provider default)
         
     Returns:
         Configured LLM instance
@@ -65,17 +66,23 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
     provider = provider.lower()
     
     if provider == "google":
-        return ChatGoogleGenerativeAI(
-            model=model or os.getenv("GOOGLE_MODEL_NAME", "gemini-2.5-flash-lite"),
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
-            streaming=streaming
-        )
+        kwargs = {
+            "model": model or os.getenv("GOOGLE_MODEL_NAME", "gemini-2.5-flash-lite"),
+            "google_api_key": os.getenv("GOOGLE_API_KEY"),
+            "streaming": streaming
+        }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        return ChatGoogleGenerativeAI(**kwargs)
     elif provider == "groq":
-        return ChatGroq(
-            api_key=os.getenv("GROQ_API_KEY"),
-            model=model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-            streaming=streaming
-        )
+        kwargs = {
+            "api_key": os.getenv("GROQ_API_KEY"),
+            "model": model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            "streaming": streaming
+        }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        return ChatGroq(**kwargs)
     elif provider == "openai":
         kwargs = {
             "api_key": os.getenv("OPENAI_API_KEY", "NONE"),
@@ -87,6 +94,8 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
             kwargs["model"] = model
         elif openai_model := os.getenv("OPENAI_MODEL"):
             kwargs["model"] = openai_model
+        if temperature is not None:
+            kwargs["temperature"] = temperature
         return ChatOpenAI(**kwargs)
     else:
         raise ValueError(
@@ -149,10 +158,17 @@ class LLMRegistry:
         
         # Create new instance
         config = self._configs[role_str]
+        
+        # Set temperature to 0 for summarizer and buffer_agent
+        temperature = None
+        if role_str in ["summarizer", "buffer_agent"]:
+            temperature = 0.0
+        
         instance = _create_llm_instance(
             provider=config["provider"],
             model=config.get("model"),
-            streaming=config.get("streaming", True)
+            streaming=config.get("streaming", True),
+            temperature=temperature
         )
         
         # Cache and return
