@@ -92,7 +92,11 @@ class EXAID:
             except Exception as e:
                 print(f"Error in trace callback: {e}")
         
-        trigger = await self.buffer_agent.addsegment(id, text)
+        # Prepare previous summaries for buffer agent evaluation
+        all_summaries = self.get_all_summaries()
+        previous_summaries = self._format_summaries_history(all_summaries)
+        
+        trigger = await self.buffer_agent.addsegment(id, text, previous_summaries)
         if trigger:
             agent_buffer = self.buffer_agent.flush()
             buffer_str = "\n".join(agent_buffer)
