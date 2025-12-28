@@ -11,10 +11,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
+from typing import Literal, Optional
+import sys
 
 from demos.cdss_example.cdss import CDSS
 from demos.cdss_example.message_bus import message_queue
+
+# Add evals/src to path for trace replay engine
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "evals" / "src"))
+from trace_replay_engine import TraceReplayEngine, ReplayEvent
+from exaid_core.exaid import EXAID
 
 
 @asynccontextmanager
@@ -93,17 +100,24 @@ MAX_CASE_LENGTH = 100000
 
 
 class CaseRequest(BaseModel):
-    case: str
+    mode: Literal["live_demo", "trace_replay"] = "live_demo"
+    case: Optional[str] = None
+    trace_file: Optional[str] = None
     
-    @field_validator('case')
-    @classmethod
-    def validate_case(cls, v: str) -> str:
-        """Validate case text is not empty and within size limits."""
-        if not v or not v.strip():
-            raise ValueError("Case text cannot be empty")
-        if len(v) > MAX_CASE_LENGTH:
-            raise ValueError(f"Case text exceeds maximum length of {MAX_CASE_LENGTH} characters")
-        return v.strip()
+    @model_validator(mode='after')
+    def validate_request(self):
+        """Validate request based on mode."""
+        if self.mode == "live_demo":
+            if not self.case or not self.case.strip():
+                raise ValueError("Case text cannot be empty for live_demo mode")
+            if len(self.case) > MAX_CASE_LENGTH:
+                raise ValueError(f"Case text exceeds maximum length of {MAX_CASE_LENGTH} characters")
+            self.case = self.case.strip()
+        elif self.mode == "trace_replay":
+            if not self.trace_file or not self.trace_file.strip():
+                raise ValueError("trace_file is required for trace_replay mode")
+            self.trace_file = self.trace_file.strip()
+        return self
 
 
 async def send_token_direct(agent_id: str, token: str):
@@ -396,6 +410,124 @@ async def message_broadcaster():
             logger.error(f"Error in message broadcaster: {e}")
 
 
+@app.get("/api/traces")
+async def list_traces():
+    """List available trace files from evals/data/traces/ directory.
+    
+    Returns list of trace files with case_id extracted from filename.
+    """
+    # Get project root directory
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent  # Go up from server.py -> backend -> demos -> project root
+    traces_dir = project_root / "evals" / "data" / "traces"
+    
+    if not traces_dir.exists():
+        logger.warning(f"Traces directory not found: {traces_dir}")
+        return {"traces": []}
+    
+    traces = []
+    for trace_file in sorted(traces_dir.glob("*.trace.jsonl.gz")):
+        # Extract case_id from filename (e.g., "case-33651373.trace.jsonl.gz" -> "case-33651373")
+        case_id = trace_file.stem.replace(".trace.jsonl", "")
+        traces.append({
+            "case_id": case_id,
+            "file_path": str(trace_file.relative_to(project_root))
+        })
+    
+    return {"traces": traces}
+
+
+async def replay_trace_file(trace_file_path: str):
+    """Replay a trace file and stream events to WebSocket clients.
+    
+    Args:
+        trace_file_path: Path to trace file (relative to project root)
+    """
+    # Get project root directory
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent
+    full_trace_path = project_root / trace_file_path
+    
+    if not full_trace_path.exists():
+        raise HTTPException(status_code=404, detail=f"Trace file not found: {trace_file_path}")
+    
+    # Initialize EXAID for summary generation
+    exaid = EXAID()
+    exaid.register_trace_callback(trace_callback)
+    exaid.register_summary_callback(summary_callback)
+    
+    # Clear active run IDs when starting a new trace replay
+    async with run_ids_lock:
+        active_run_ids.clear()
+    
+    # Initialize trace replay engine
+    try:
+        engine = TraceReplayEngine(
+            full_trace_path,
+            strict_stub_guard=False,  # Allow stub traces for demo
+            shift_to_zero=False  # Preserve original timing
+        )
+    except Exception as e:
+        logger.error(f"Error initializing trace replay engine: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to initialize trace replay: {str(e)}")
+    
+    # Track timing and accumulated text per agent
+    last_time_ms = None
+    current_turn_text: Dict[str, str] = {}  # agent_id -> accumulated text
+    
+    try:
+        # Replay full stream (includes both content_plane and control_plane turns)
+        for event in engine.replay_full():
+            # Handle timing preservation
+            if last_time_ms is not None:
+                delay_ms = max(0, event.virtual_time_ms - last_time_ms)
+                if delay_ms > 0:
+                    await asyncio.sleep(delay_ms / 1000.0)
+            last_time_ms = event.virtual_time_ms
+            
+            if event.event_type == "turn_start":
+                # Send agent_started message (this generates and stores run_id)
+                await send_agent_started(event.agent_id)
+                
+                # Initialize accumulated text for this turn
+                current_turn_text[event.agent_id] = ""
+                
+            elif event.event_type == "delta":
+                # Send token directly to WebSocket
+                await send_token_direct(event.agent_id, event.delta_text)
+                
+                # Accumulate text for EXAID processing
+                if event.agent_id in current_turn_text:
+                    current_turn_text[event.agent_id] += event.delta_text
+                
+            elif event.event_type == "turn_end":
+                # Send accumulated text to EXAID for summary generation
+                accumulated = current_turn_text.get(event.agent_id, "")
+                if accumulated:
+                    try:
+                        # Temporarily remove trace_callback to avoid duplicate token sending
+                        # (we've already sent tokens via send_token_direct during delta events)
+                        had_callback = trace_callback in exaid.trace_callbacks
+                        if had_callback:
+                            exaid.trace_callbacks.remove(trace_callback)
+                        await exaid.received_trace(event.agent_id, accumulated)
+                        # Re-register trace_callback for future turns
+                        if had_callback and trace_callback not in exaid.trace_callbacks:
+                            exaid.register_trace_callback(trace_callback)
+                    except Exception as e:
+                        logger.warning(f"Error processing trace for agent {event.agent_id}: {e}")
+                        # Re-register callback even on error
+                        if trace_callback not in exaid.trace_callbacks:
+                            exaid.register_trace_callback(trace_callback)
+                
+                # Clear accumulated text for this agent
+                current_turn_text[event.agent_id] = ""
+    
+    except Exception as e:
+        logger.error(f"Error during trace replay: {e}")
+        raise HTTPException(status_code=500, detail=f"Trace replay failed: {str(e)}")
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time trace updates.
@@ -428,7 +560,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.post("/api/process-case")
 async def process_case(request: CaseRequest):
-    """Process a clinical case through the CDSS system.
+    """Process a clinical case through the CDSS system or replay a trace file.
+    
+    Routes to either:
+    - Live Demo mode: CDSS graph execution (existing functionality)
+    - Trace Replay mode: Replay frozen trace file
     
     A new CDSS instance is created for each request. The cdss_lock ensures that only
     one request can process at a time, preventing race conditions with the global
@@ -446,17 +582,6 @@ async def process_case(request: CaseRequest):
             should_stop = False
             cancellation_event.clear()
             
-            # Create a new CDSS instance for this request
-            cdss_instance = CDSS()
-            
-            # Register trace callback with EXAID
-            cdss_instance.exaid.register_trace_callback(trace_callback)
-            logger.debug(f"Trace callback registered. Callbacks: {len(cdss_instance.exaid.trace_callbacks)}")
-            
-            # Register summary callback with EXAID
-            cdss_instance.exaid.register_summary_callback(summary_callback)
-            logger.debug(f"Summary callback registered. Callbacks: {len(cdss_instance.exaid.summary_callbacks)}")
-            
             # Clear active run IDs when starting a new case
             async with run_ids_lock:
                 active_run_ids.clear()
@@ -467,49 +592,69 @@ async def process_case(request: CaseRequest):
                 "timestamp": datetime.now().isoformat()
             })
             
-            # Process the case (this will stream traces via callbacks)
-            # request.case is already validated and trimmed by Pydantic validator
-            # Wrap in a cancellable task
-            async def process_with_cancellation():
+            # Route based on mode
+            if request.mode == "live_demo":
+                # Existing CDSS path
+                # Create a new CDSS instance for this request
+                cdss_instance = CDSS()
+                
+                # Register trace callback with EXAID
+                cdss_instance.exaid.register_trace_callback(trace_callback)
+                logger.debug(f"Trace callback registered. Callbacks: {len(cdss_instance.exaid.trace_callbacks)}")
+                
+                # Register summary callback with EXAID
+                cdss_instance.exaid.register_summary_callback(summary_callback)
+                logger.debug(f"Summary callback registered. Callbacks: {len(cdss_instance.exaid.summary_callbacks)}")
+                
+                # Process the case (this will stream traces via callbacks)
+                # request.case is already validated and trimmed by Pydantic validator
+                # Wrap in a cancellable task
+                async def process_with_cancellation():
+                    try:
+                        return await cdss_instance.process_case(request.case)
+                    except asyncio.CancelledError:
+                        logger.info("Case processing was cancelled during execution")
+                        raise
+                    except Exception as e:
+                        # Check if cancellation was requested
+                        if cancellation_event.is_set() or should_stop:
+                            logger.info("Case processing was stopped due to cancellation request")
+                            raise asyncio.CancelledError("Processing stopped by user")
+                        raise
+                
+                cdss_process_task = asyncio.create_task(process_with_cancellation())
+                
                 try:
-                    return await cdss_instance.process_case(request.case)
+                    await cdss_process_task
                 except asyncio.CancelledError:
-                    logger.info("Case processing was cancelled during execution")
-                    raise
-                except Exception as e:
-                    # Check if cancellation was requested
-                    if cancellation_event.is_set() or should_stop:
-                        logger.info("Case processing was stopped due to cancellation request")
-                        raise asyncio.CancelledError("Processing stopped by user")
-                    raise
-            
-            cdss_process_task = asyncio.create_task(process_with_cancellation())
-            
-            try:
-                await cdss_process_task
-            except asyncio.CancelledError:
-                logger.info("Case processing was cancelled")
-                # Send stop message
-                await broadcast_message({
-                    "type": "processing_stopped",
-                    "timestamp": datetime.now().isoformat()
-                })
-                return {
-                    "status": "stopped",
-                    "message": "Case processing was stopped"
-                }
-            
-            # Check if stop was requested
-            if should_stop or cancellation_event.is_set():
-                logger.info("Case processing was stopped")
-                await broadcast_message({
-                    "type": "processing_stopped",
-                    "timestamp": datetime.now().isoformat()
-                })
-                return {
-                    "status": "stopped",
-                    "message": "Case processing was stopped"
-                }
+                    logger.info("Case processing was cancelled")
+                    # Send stop message
+                    await broadcast_message({
+                        "type": "processing_stopped",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    return {
+                        "status": "stopped",
+                        "message": "Case processing was stopped"
+                    }
+                
+                # Check if stop was requested
+                if should_stop or cancellation_event.is_set():
+                    logger.info("Case processing was stopped")
+                    await broadcast_message({
+                        "type": "processing_stopped",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    return {
+                        "status": "stopped",
+                        "message": "Case processing was stopped"
+                    }
+                
+            elif request.mode == "trace_replay":
+                # New trace replay path
+                await replay_trace_file(request.trace_file)
+            else:
+                raise HTTPException(status_code=400, detail=f"Invalid mode: {request.mode}")
             
             # Send completion message
             await broadcast_message({
@@ -521,6 +666,9 @@ async def process_case(request: CaseRequest):
                 "status": "success",
                 "message": "Case processed successfully"
             }
+        except HTTPException:
+            # Re-raise HTTP exceptions (they already have proper status codes)
+            raise
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Error processing case: {error_msg}")

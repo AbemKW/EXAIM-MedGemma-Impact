@@ -33,8 +33,17 @@ export interface ModalState {
   content: string;
 }
 
+export type DemoMode = "live_demo" | "trace_replay";
+
+export interface TraceFile {
+  case_id: string;
+  file_path: string;
+}
+
 export interface CaseRequest {
-  case: string;
+  mode: DemoMode;
+  case?: string;
+  trace_file?: string;
 }
 
 // WebSocket message types
