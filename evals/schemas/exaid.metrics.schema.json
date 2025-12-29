@@ -36,6 +36,7 @@
     },
     "coverage_by_budget": {
       "type": "object",
+      "required": ["ctu_250", "ctu_500", "ctu_1000", "ctu_2000"],
       "properties": {
         "ctu_250": {"type": "number", "minimum": 0, "maximum": 1},
         "ctu_500": {"type": "number", "minimum": 0, "maximum": 1},
@@ -156,6 +157,7 @@
                     "m2_output_ctu_mean": {"type": "number", "minimum": 0},
                     "m3_redundancy": {
                       "type": "object",
+                      "required": ["jaccard_mean", "threshold_rates"],
                       "properties": {
                         "jaccard_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
                         "threshold_rates": {"$ref": "#/$defs/redundancy_threshold_rates"}
@@ -163,6 +165,7 @@
                     },
                     "m4_trace_coverage": {
                       "type": "object",
+                      "required": ["mean", "ci_low", "ci_high"],
                       "properties": {
                         "mean": {"type": "number", "minimum": 0, "maximum": 1},
                         "ci_low": {"type": "number", "minimum": 0, "maximum": 1},
@@ -171,6 +174,7 @@
                     },
                     "m5_unsupported": {
                       "type": "object",
+                      "required": ["global_rate_mean", "per_summary_mean"],
                       "properties": {
                         "global_rate_mean": {"type": "number", "minimum": 0, "maximum": 1},
                         "per_summary_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
@@ -178,6 +182,7 @@
                     },
                     "m6a": {
                       "type": "object",
+                      "required": ["mean", "ci_low", "ci_high"],
                       "properties": {
                         "mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
                         "ci_low": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
@@ -186,6 +191,7 @@
                     },
                     "m6b": {
                       "type": "object",
+                      "required": ["mean", "ci_low", "ci_high"],
                       "properties": {
                         "mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
                         "ci_low": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
@@ -195,6 +201,7 @@
                     "m7b_coverage_by_budget_mean": {"$ref": "#/$defs/coverage_by_budget"},
                     "m8_latency_ms_mean": {
                       "type": "object",
+                      "required": ["summary", "buffer_decision"],
                       "properties": {
                         "summary": {"type": ["number", "null"], "minimum": 0},
                         "buffer_decision": {"type": ["number", "null"], "minimum": 0}
@@ -202,6 +209,7 @@
                     },
                     "m9_usage_ctu_mean": {
                       "type": "object",
+                      "required": ["prompt", "completion", "total", "buffer_decision_count"],
                       "properties": {
                         "prompt": {"type": "number", "minimum": 0},
                         "completion": {"type": "number", "minimum": 0},
@@ -211,6 +219,12 @@
                     },
                     "m10_compliance": {
                       "type": "object",
+                      "required": [
+                        "schema_failure_rate_mean",
+                        "compliance_rate_mean",
+                        "schema_failure_count",
+                        "summary_event_count"
+                      ],
                       "properties": {
                         "schema_failure_rate_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
                         "compliance_rate_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},

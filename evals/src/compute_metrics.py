@@ -158,7 +158,7 @@ class AggregateMetrics:
     m6b_ci_high: Optional[float] = None
     
     # M7b: Coverage vs budget
-    coverage_by_budget_mean: Dict[str, Optional[float]] = field(default_factory=dict)
+    coverage_by_budget_mean: Dict[str, float] = field(default_factory=dict)
     
     # M8: Latency
     summary_latency_mean_ms: Optional[float] = None
@@ -386,17 +386,16 @@ def compute_redundancy(
 
 def compute_redundancy_threshold_rates(
     jaccards: List[float],
-    thresholds: List[float]
+    thresholds: Optional[List[float]] = None
 ) -> Dict[str, Optional[float]]:
     """Compute redundancy rates at each Jaccard threshold."""
-    if not thresholds:
-        return {}
+    resolved_thresholds = thresholds if thresholds is not None else REDUNDANCY_THRESHOLDS
     if not jaccards:
-        return {f"tau_{threshold:.2f}": None for threshold in thresholds}
+        return {f"tau_{threshold:.2f}": None for threshold in resolved_thresholds}
     total = len(jaccards)
     return {
         f"tau_{threshold:.2f}": float(sum(1 for j in jaccards if j >= threshold) / total)
-        for threshold in thresholds
+        for threshold in resolved_thresholds
     }
 
 
@@ -475,7 +474,9 @@ def compute_coverage_by_budget(
     Compute coverage at increasing summary CTU budgets (M7b).
     """
     if not budgets:
-        return {}
+        return {
+            f"ctu_{budget}": 0.0 for budget in BUFFER_COVERAGE_BUDGETS
+        }
     sorted_budgets = sorted(budgets)
     coverage_by_budget: Dict[str, float] = {}
     cumulative_ctu = 0
