@@ -14,6 +14,10 @@ def nearest_rank_percentile(sorted_values: List[float], percentile: float) -> Op
     """
     if not sorted_values:
         return None
+    if percentile <= 0.0:
+        return sorted_values[0]
+    if percentile >= 1.0:
+        return sorted_values[-1]
     n = len(sorted_values)
     idx = int(n * percentile)
     idx = max(0, min(idx, n - 1))
