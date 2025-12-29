@@ -64,7 +64,7 @@ class BufferAgent:
         self.traces[agent_id].count += 1
         
         # Add to buffer first
-        self.buffer.append(tagged_segment)
+        self.buffer.append(new_text)
         
         # Prepare context
         # We pass the *rest* of the buffer separate from the *new* segment so the LLM sees the flow
@@ -76,7 +76,7 @@ class BufferAgent:
             analysis: BufferAnalysis = await chain.ainvoke({
                 "summaries": previous_summaries,
                 "previous_trace": buffer_context,
-                "new_trace": tagged_segment
+                "new_trace": new_text
             })
             
             should_trigger = analysis.final_trigger
