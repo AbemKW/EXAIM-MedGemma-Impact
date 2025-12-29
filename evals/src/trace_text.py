@@ -11,9 +11,15 @@ It MUST be used by:
     - compute_metrics.py for trace concept sets (M4/M5)
     - compute_metrics.py for window reconstruction (M6a/M6b)
     - run_variants.py for buffer hash computation
+    - validate_traces.py for canonical text validation
     
 INVARIANT: No other module may implement trace/window text logic.
 All must import and use build_canonical_trace_text() or build_window_text().
+
+Schema:
+    - Chunk records: record_type == "stream_delta"
+    - Text extraction: Uses "delta_text" field from stream_delta records
+    - Message filtering: event_subtype == "message" (with fallback logic)
 
 Dependencies:
     - Python 3.10+
@@ -72,23 +78,22 @@ def is_chunk_record(record: dict) -> bool:
     
     Schema-robust: checks multiple possible indicators.
     
-    Paper hook: "Chunk records identified by record_type='chunk' or presence
-    of seq+text+agent fields (Section 3.1)"
+    Paper hook: "Chunk records identified by record_type='stream_delta' (Section 3.1)"
     """
     # Primary check: record_type field
-    if record.get("record_type") == "chunk":
+    if record.get("record_type") == "stream_delta":
         return True
     
-    # Secondary check: presence of chunk-specific fields
+    # Secondary check: presence of stream_delta-specific fields
     # (for backwards compatibility with traces that may not have record_type)
     has_seq = "seq" in record or "sequence_num" in record
-    has_text = "text_chunk" in record or "content" in record
+    has_text = "delta_text" in record
     has_agent = "agent_id" in record
     
-    # Must have seq + text + agent to be considered a chunk
+    # Must have seq + delta_text + agent to be considered a stream_delta chunk
     if has_seq and has_text and has_agent:
-        # Exclude if it has record_type that's NOT chunk
-        if "record_type" in record and record["record_type"] != "chunk":
+        # Exclude if it has record_type that's NOT stream_delta
+        if "record_type" in record and record["record_type"] != "stream_delta":
             return False
         return True
     
@@ -211,7 +216,7 @@ def build_canonical_trace_text(
             continue
         
         # Extract text and seq
-        text = chunk.get("text_chunk") or chunk.get("content") or ""
+        text = chunk.get("delta_text") or ""
         seq = chunk.get("seq", chunk.get("sequence_num", 0))
         
         if text.strip():
@@ -262,7 +267,7 @@ def build_window_text(
         if start_seq <= seq <= end_seq:
             is_msg, _ = is_message_chunk(chunk)
             if is_msg:
-                text = chunk.get("text_chunk") or chunk.get("content") or ""
+                text = chunk.get("delta_text") or ""
                 if text.strip():
                     window_texts.append((seq, text))
     
