@@ -97,9 +97,12 @@ See `evals/README.md` for full evaluation documentation.
        if summary:
            print("Updated summary:", summary)
            # Access summary fields
-           print(f"Action: {summary.action}")
-           print(f"Reasoning: {summary.reasoning}")
-           print(f"Agents: {', '.join(summary.agents)}")
+           print(f"Status/Action: {summary.status_action}")
+           print(f"Key Findings: {summary.key_findings}")
+           print(f"Differential/Rationale: {summary.differential_rationale}")
+           print(f"Uncertainty/Confidence: {summary.uncertainty_confidence}")
+           print(f"Recommendation/Next Step: {summary.recommendation_next_step}")
+           print(f"Agent Contributions: {summary.agent_contributions}")
    
    asyncio.run(main())
    ```
@@ -122,9 +125,9 @@ The system is organized around a few small modules:
   - Purpose: Contains the `SummarizerAgent` class, which wraps calls to the LLM (via `infra/llm_registry.py`) and produces structured `AgentSummary` objects from input text.
   - Features:
     - Uses structured output with Pydantic models for consistent summaries
-    - Enforces character limits (action: 100, reasoning: 200, findings: 150, next_steps: 100)
-    - Optimized for medical/clinical reasoning with physician-focused prompts
-    - Returns `AgentSummary` objects with fields: `agents`, `action`, `reasoning`, `findings`, `next_steps`
+    - Enforces evidence-based character limits aligned with clinical documentation research
+    - Optimized for medical/clinical reasoning with SBAR/SOAP-aligned prompts
+    - Returns `AgentSummary` objects with fields: `status_action`, `key_findings`, `differential_rationale`, `uncertainty_confidence`, `recommendation_next_step`, `agent_contributions`
 
 - `exaid_core/buffer_agent/buffer_agent.py` — Intelligent trace buffer
   - Purpose: Implements `BufferAgent`, a buffer that accumulates traces per agent. Uses an LLM-based prompt to decide when to trigger summarization (event-driven, not just a static threshold).
@@ -165,12 +168,13 @@ The system is organized around a few small modules:
 - **LLM-powered event-driven summarization:** The buffer uses an LLM to intelligently decide when to trigger summarization based on trace content, not just a static threshold. Summarization triggers when thoughts complete, topics change, or sufficient context accumulates.
 - **Multi-agent support:** Traces are tagged by agent ID and summarized in context, allowing multiple specialized agents to contribute to a single reasoning workflow.
 - **Streaming token support:** `TokenGate` provides intelligent chunking of streaming tokens with configurable word thresholds (whitespace-delimited), boundary detection, and timeout mechanisms.
-- **Structured summaries:** Summaries are generated as structured `AgentSummary` objects with fields optimized for medical reasoning:
-  - `agents`: List of agent IDs involved
-  - `action`: Brief action statement (max 100 chars)
-  - `reasoning`: Concise reasoning explanation (max 200 chars)
-  - `findings`: Key clinical findings or recommendations (max 150 chars, optional)
-  - `next_steps`: Suggested next actions (max 100 chars, optional)
+- **Structured summaries:** Summaries are generated as structured `AgentSummary` objects with fields optimized for medical reasoning and aligned with SBAR/SOAP documentation standards:
+  - `status_action`: Concise description of system/agent activity (max 150 chars)
+  - `key_findings`: Minimal clinical facts driving the reasoning step (max 180 chars)
+  - `differential_rationale`: Leading diagnostic hypotheses and rationale (max 210 chars)
+  - `uncertainty_confidence`: Model/system uncertainty representation (max 120 chars)
+  - `recommendation_next_step`: Specific diagnostic/therapeutic/follow-up step (max 180 chars)
+  - `agent_contributions`: List of agents and their contributions (max 150 chars)
 - **Character limit enforcement:** Automatic truncation ensures summaries remain concise and physician-friendly.
 - **Medical/clinical focus:** Prompts and summaries are optimized for physician understanding of multi-agent clinical reasoning.
 - **Simple async API:** Add traces and get summaries with a single async method call.
