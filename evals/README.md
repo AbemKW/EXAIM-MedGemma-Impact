@@ -199,7 +199,14 @@ Use `--audit` flag in CLI to view flagged turns.
 
 ```python
 from pathlib import Path
-from trace_replay_engine import TraceReplayEngine
+
+# Import from evals package (if running from repo root)
+from evals.src.trace_replay_engine import TraceReplayEngine
+
+# Alternative: If running from evals/ directory, add src to path first:
+# import sys
+# sys.path.insert(0, "src")
+# from trace_replay_engine import TraceReplayEngine
 
 # Initialize engine
 engine = TraceReplayEngine(Path("data/traces/case-33651373.trace.jsonl.gz"))
