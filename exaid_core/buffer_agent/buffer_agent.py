@@ -12,9 +12,10 @@ class BufferAnalysis(BaseModel):
     should be triggered.
     """
     reasoning: str = Field(
-        description="Chain-of-thought analysis of the stream structure. Analyze whether the agent "
-        "is still refining the same topic, has shifted to a new topic, or has issued a critical alert. "
-        "Consider list markers, transition words, rationale gaps, and topic boundaries."
+        description="Chain-of-thought analysis of the stream structure. Analyze completeness (whether "
+        "this is a self-contained reasoning unit), whether the agent is still refining the same topic, "
+        "has shifted to a new topic, or has issued a critical alert. Consider list markers, transition "
+        "words, rationale gaps, topic boundaries, and whether coherent ideas are finished."
     )
     stream_state: Literal["SAME_TOPIC_CONTINUING", "TOPIC_SHIFT", "CRITICAL_ALERT"] = Field(
         description="State machine for stream completeness based on topic continuity. "
@@ -36,9 +37,19 @@ class BufferAnalysis(BaseModel):
         "new insights (e.g., 'Diagnosis upgraded from possible to likely'). Not Novel: continuing statements, "
         "reiteration of already-summarized findings, status quo confirmations."
     )
+    is_complete: bool = Field(
+        description="Is this a self-contained reasoning unit? A trace is complete if it finishes "
+        "a coherent idea, interpretation, or diagnostic hypothesis. Complete: full interpretation "
+        "of lab results or vitals, concluded diagnostic thought, full medication change rationale, "
+        "reaching a diagnostic boundary. Incomplete: starting a list but not finishing, raising "
+        "a possibility without context, midstream thoughts."
+    )
     final_trigger: bool = Field(
-        description="True ONLY if (stream_state is TOPIC_SHIFT OR CRITICAL_ALERT) AND is_relevant is True "
-        "AND is_novel is True. This is the final gate for triggering summarization."
+        description="True if ANY of these conditions are met: "
+        "1) (is_complete AND is_relevant AND is_novel) OR "
+        "2) (stream_state == TOPIC_SHIFT AND is_relevant AND is_novel) OR "
+        "3) (stream_state == CRITICAL_ALERT). "
+        "This allows triggering on completed thoughts even without topic shift."
     )
 
 class TraceData(BaseModel):
@@ -58,7 +69,7 @@ class BufferAgent:
         self.traces: dict[str, TraceData] = {}
 
     async def addsegment(self, agent_id: str, segment: str, previous_summaries: list[str]) -> bool:
-        tagged_segment = f"| {agent_id} | {segment}"
+        new_text = segment
         if agent_id not in self.traces:
             self.traces[agent_id] = TraceData(count=0)
         self.traces[agent_id].count += 1
@@ -74,6 +85,7 @@ class BufferAgent:
         
         try:
             analysis: BufferAnalysis = await chain.ainvoke({
+                "agent_id": agent_id,
                 "summaries": previous_summaries,
                 "previous_trace": buffer_context,
                 "new_trace": new_text
@@ -82,7 +94,7 @@ class BufferAgent:
             should_trigger = analysis.final_trigger
             
             # DEBUG: Print the LLM's analysis to verify it's working
-            print(f"DEBUG [{agent_id}]: State={analysis.stream_state} | Trigger={analysis.final_trigger}")
+            print(f"DEBUG [{agent_id}]: State={analysis.stream_state} | Complete={analysis.is_complete} | Relevant={analysis.is_relevant} | Novel={analysis.is_novel} | Trigger={analysis.final_trigger}")
             
             return should_trigger
 
