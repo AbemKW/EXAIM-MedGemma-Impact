@@ -10,7 +10,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import yaml
 
-from tokengate_calibration_models import CaseMetrics, Policy, PolicyMetrics
+from .tokengate_calibration_models import CaseMetrics, Policy, PolicyMetrics
 
 
 def resolve_manifest_path(manifest_pattern: str) -> Path:

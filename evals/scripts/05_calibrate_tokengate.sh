@@ -87,7 +87,7 @@ if [ "${EXAID_ALLOW_STUB:-}" = "1" ] || [ "${EXAID_ALLOW_STUB:-}" = "true" ]; th
     echo ""
 fi
 
-python cli/calibrate_tokengate.py \
+python -m evals.cli.calibrate_tokengate \
     --traces data/traces \
     --manifest "$MANIFEST_FILE" \
     --config configs/calibration_sweep.yaml \

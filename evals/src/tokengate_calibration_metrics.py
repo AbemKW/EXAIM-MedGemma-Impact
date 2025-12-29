@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional, Tuple
 
-from tokengate_calibration_models import CaseMetrics, FlushEvent, Policy, PolicyMetrics
+from .tokengate_calibration_models import CaseMetrics, FlushEvent, Policy, PolicyMetrics
 
 
 def compute_case_metrics(

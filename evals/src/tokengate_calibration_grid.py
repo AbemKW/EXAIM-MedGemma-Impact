@@ -2,7 +2,7 @@
 
 from typing import List, Tuple
 
-from tokengate_calibration_models import Policy
+from .tokengate_calibration_models import Policy
 
 
 def generate_policy_grid(config: dict) -> List[Policy]:
