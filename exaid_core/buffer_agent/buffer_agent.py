@@ -5,17 +5,41 @@ from typing import Literal
 from exaid_core.utils.prompts import get_buffer_agent_system_prompt, get_buffer_agent_user_prompt
 
 class BufferAnalysis(BaseModel):
-    """Structured analysis of stream state for buffer agent decision-making."""
-    reasoning: str = Field(description="Chain-of-thought analysis of the stream structure. Analyze whether the agent is mid-sentence, mid-list, or has finished a complete reasoning arc.")
-    stream_state: Literal["PREAMBLE", "IN_PROGRESS", "COMPLETE_BLOCK"] = Field(
-        description="State machine for stream completeness. "
-        "PREAMBLE: Setup text like 'I will now...' or 'My plan is...' (Wait). "
-        "IN_PROGRESS: Mid-list, mid-sentence, or stating an action without rationale (Wait). "
-        "COMPLETE_BLOCK: A full reasoning arc (Observation + Interpretation + Plan) is finished."
+    """Structured analysis of stream state for buffer agent decision-making.
+    
+    Uses a three-state machine to classify stream completeness based on topic continuity,
+    then independently evaluates clinical relevance and novelty to determine if summarization
+    should be triggered.
+    """
+    reasoning: str = Field(
+        description="Chain-of-thought analysis of the stream structure. Analyze whether the agent "
+        "is still refining the same topic, has shifted to a new topic, or has issued a critical alert. "
+        "Consider list markers, transition words, rationale gaps, and topic boundaries."
     )
-    is_relevant: bool = Field(description="Is this clinically important? Does it add medical reasoning or context that would help the clinician understand the case?")
-    is_novel: bool = Field(description="Is this new vs previous summaries? Does it introduce something not already covered in prior summaries?")
-    final_trigger: bool = Field(description="True ONLY if stream_state is COMPLETE_BLOCK AND is_relevant is True AND is_novel is True. This is the final gate for triggering summarization.")
+    stream_state: Literal["SAME_TOPIC_CONTINUING", "TOPIC_SHIFT", "CRITICAL_ALERT"] = Field(
+        description="State machine for stream completeness based on topic continuity. "
+        "SAME_TOPIC_CONTINUING: Agent is still refining, listing, or explaining the same specific clinical issue "
+        "(e.g., mid-list with markers like '1.', 'First,', reasoning loops, adding detail). WAIT - do not trigger. "
+        "TOPIC_SHIFT: Agent explicitly moves to a distinctly different organ system, problem, or section "
+        "(explicit transitions, implicit shifts, conclusions). PROCEED to relevance/novelty checks. "
+        "CRITICAL_ALERT: Immediate life-safety notification (e.g., 'V-Fib detected', 'Code Blue'). PROCEED immediately."
+    )
+    is_relevant: bool = Field(
+        description="Is this clinically important? Does it add medical reasoning or context that would help "
+        "the clinician understand the case? Relevant: new diagnosis, refined differential, specific treatment "
+        "dose/plan, condition changes. Not Relevant: 'thinking out loud', obvious facts without interpretation, "
+        "formatting tokens."
+    )
+    is_novel: bool = Field(
+        description="Is this new vs previous summaries? Does it introduce something not already covered in "
+        "prior summaries? Novel: new values (e.g., 'Creatinine rose to 2.2'), new actions (e.g., 'Start Amiodarone'), "
+        "new insights (e.g., 'Diagnosis upgraded from possible to likely'). Not Novel: continuing statements, "
+        "reiteration of already-summarized findings, status quo confirmations."
+    )
+    final_trigger: bool = Field(
+        description="True ONLY if (stream_state is TOPIC_SHIFT OR CRITICAL_ALERT) AND is_relevant is True "
+        "AND is_novel is True. This is the final gate for triggering summarization."
+    )
 
 class TraceData(BaseModel):
     count: int
