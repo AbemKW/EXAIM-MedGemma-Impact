@@ -34,6 +34,7 @@ import asyncio
 import json
 import sys
 import time
+from statistics import mean
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -57,6 +58,7 @@ from deterministic_io import (
     RunLogBuilder,
     write_run_log_deterministic,
     compute_file_hash,
+    write_json_deterministic,
 )
 from config_loader import (
     load_extractor_config as _load_extractor_config_central,
@@ -138,6 +140,73 @@ def get_llm_model_id(llm) -> Optional[str]:
             if value:
                 return value
     return None
+
+
+def compute_tokengate_config_hash(variant_config: dict) -> str:
+    """Compute deterministic hash of TokenGate config."""
+    token_gate_config = variant_config.get("components", {}).get("token_gate", {})
+    payload = json.dumps(
+        token_gate_config,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False
+    )
+    return compute_text_hash(payload)
+
+
+def compute_trace_dataset_hash(trace_files: list[Path]) -> str:
+    """Compute deterministic hash for trace dataset."""
+    import hashlib
+
+    hasher = hashlib.sha256()
+    for trace_file in sorted(trace_files):
+        file_hash = compute_file_hash(trace_file)
+        payload = f"{trace_file.name}:{file_hash}\n"
+        hasher.update(payload.encode("utf-8"))
+    return f"sha256:{hasher.hexdigest()}"
+
+
+def build_run_summary(
+    variant_id: str,
+    eval_run_id: str,
+    case_results: list[dict]
+) -> dict:
+    """Build per-variant run summary report."""
+    total_cases = len(case_results)
+    failed_cases = [
+        {
+            "case_id": result["case_id"],
+            "reason": result.get("failure_reason", "unknown")
+        }
+        for result in case_results
+        if result["status"] == "failed"
+    ]
+    summary_counts = {
+        result["case_id"]: result.get("summary_count", 0)
+        for result in case_results
+    }
+    durations_ms = [
+        result["duration_ms"]
+        for result in case_results
+        if result.get("duration_ms") is not None
+    ]
+    timing_summary = {
+        "count": len(durations_ms),
+        "min": min(durations_ms) if durations_ms else None,
+        "mean": mean(durations_ms) if durations_ms else None,
+        "max": max(durations_ms) if durations_ms else None
+    }
+
+    return {
+        "variant_id": variant_id,
+        "eval_run_id": eval_run_id,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "total_cases": total_cases,
+        "succeeded": total_cases - len(failed_cases),
+        "failed": failed_cases,
+        "per_case_summary_counts": summary_counts,
+        "timing_ms": timing_summary
+    }
 
 
 
@@ -900,8 +969,9 @@ def execute_run(
     extractor_config: dict,
     stoplists_provenance: dict,
     eval_run_id: str,
+    trace_dataset_hash: str,
     output_dir: Path
-) -> Path:
+) -> tuple[Path, dict]:
     """
     Execute a single run and write output.
     
@@ -916,7 +986,7 @@ def execute_run(
         output_dir: Output directory
         
     Returns:
-        Path to output run log
+        Tuple of output path and run stats
     """
     # Load trace records and replay events
     trace_records = list(iter_trace_records(trace_file))
@@ -1017,7 +1087,7 @@ def execute_run(
     # run_meta record
     run_meta = {
         "schema_name": "exaid.run",
-        "schema_version": "1.4.0",
+        "schema_version": "1.5.0",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "case_id": case_id,
         "variant_id": variant_id,
@@ -1026,6 +1096,8 @@ def execute_run(
         "history_k": ctx.history_k,
         "trigger_policy": variant_config.get("trigger_policy", "unknown"),
         "trace_file_hash": compute_file_hash(trace_file),
+        "trace_dataset_hash": trace_dataset_hash,
+        "tokengate_config_hash": compute_tokengate_config_hash(variant_config),
         "concept_extractor": {
             "spacy_version": "3.7.4",
             "scispacy_version": "0.5.4",
@@ -1119,7 +1191,11 @@ def execute_run(
     # Validate determinism
     timestamps.validate()
     
-    return output_path
+    return output_path, {
+        "summary_count": len(summaries),
+        "decision_count": len(decisions),
+        "flush_count": len(flushes),
+    }
 
 
 # ============================================================================
@@ -1216,18 +1292,48 @@ def main():
     
     if not trace_files:
         print(f"ERROR: No trace files found in {args.traces}")
+        if args.case:
+            variants = [args.variant] if args.variant else ["V0", "V1", "V2", "V3", "V4"]
+            for variant_id in variants:
+                case_results = [{
+                    "case_id": args.case,
+                    "status": "failed",
+                    "summary_count": 0,
+                    "duration_ms": None,
+                    "failure_reason": "missing trace file"
+                }]
+                summary = build_run_summary(variant_id, eval_run_id, case_results)
+                summary_path = args.output / "run_summaries" / f"{eval_run_id}_{variant_id}.json"
+                write_json_deterministic(summary, summary_path)
         return 1
     
     # Filter by case if specified
     if args.case:
         trace_files = [f for f in trace_files if args.case in f.stem]
+
+    if args.case and not trace_files:
+        print(f"ERROR: No trace files found for case {args.case}")
+        for variant_id in variants:
+            case_results = [{
+                "case_id": args.case,
+                "status": "failed",
+                "summary_count": 0,
+                "duration_ms": None,
+                "failure_reason": "missing trace file"
+            }]
+            summary = build_run_summary(variant_id, eval_run_id, case_results)
+            summary_path = args.output / "run_summaries" / f"{eval_run_id}_{variant_id}.json"
+            write_json_deterministic(summary, summary_path)
+        return 1
     
     print(f"Found {len(trace_files)} trace files")
     print(f"Running variants: {', '.join(variants)}")
     print()
-    
+
     # Process each trace file
     total_runs = 0
+    trace_dataset_hash = compute_trace_dataset_hash(trace_files)
+    variant_case_results = {variant_id: [] for variant_id in variants}
     
     for trace_file in trace_files:
         case_id = trace_file.stem.replace(".jsonl", "")
@@ -1239,7 +1345,8 @@ def main():
             variant_config = load_variant_config(variant_id, args.configs)
             
             try:
-                output_path = execute_run(
+                start_time = time.perf_counter()
+                output_path, run_stats = execute_run(
                     case_id=case_id,
                     variant_id=variant_id,
                     trace_file=trace_file,
@@ -1247,15 +1354,31 @@ def main():
                     extractor_config=extractor_config,
                     stoplists_provenance=stoplists_provenance,
                     eval_run_id=eval_run_id,
+                    trace_dataset_hash=trace_dataset_hash,
                     output_dir=args.output
                 )
+                duration_ms = int((time.perf_counter() - start_time) * 1000)
                 total_runs += 1
+                variant_case_results[variant_id].append({
+                    "case_id": case_id,
+                    "status": "succeeded",
+                    "summary_count": run_stats.get("summary_count", 0),
+                    "duration_ms": duration_ms,
+                    "failure_reason": None
+                })
                 
                 if args.verbose:
                     print(f"  {variant_id}: {output_path.name}")
                     
             except Exception as e:
                 print(f"ERROR: {case_id}/{variant_id}: {e}")
+                variant_case_results[variant_id].append({
+                    "case_id": case_id,
+                    "status": "failed",
+                    "summary_count": 0,
+                    "duration_ms": None,
+                    "failure_reason": str(e)
+                })
                 if args.verbose:
                     import traceback
                     traceback.print_exc()
@@ -1265,6 +1388,11 @@ def main():
     print(f"COMPLETE: {total_runs} runs")
     print(f"Output: {args.output}")
     print("=" * 60)
+
+    for variant_id, case_results in variant_case_results.items():
+        summary = build_run_summary(variant_id, eval_run_id, case_results)
+        summary_path = args.output / "run_summaries" / f"{eval_run_id}_{variant_id}.json"
+        write_json_deterministic(summary, summary_path)
     
     return 0
 
