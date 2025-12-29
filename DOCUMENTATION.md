@@ -90,7 +90,7 @@ Generates structured summaries from buffered traces. Features:
 
 ## File-by-File Documentation
 
-### `exaid.py` - Main Orchestrator
+### `exaid_core/exaid.py` - Main Orchestrator
 
 **Purpose**: The central orchestrator class that coordinates trace collection, buffering, and summarization.
 
@@ -122,7 +122,11 @@ The main entry point for processing agent traces. This method:
 async def received_trace(self, id: str, text: str) -> Optional[AgentSummary]:
     """Process a trace from an agent. Returns an AgentSummary if summarization 
     was triggered, None otherwise."""
-    trigger = await self.buffer_agent.addsegment(id, text)
+    # Prepare previous summaries for buffer agent evaluation
+    all_summaries = self.get_all_summaries()
+    previous_summaries = self._format_summaries_history(all_summaries)
+    
+    trigger = await self.buffer_agent.addsegment(id, text, previous_summaries)
     if trigger:
         agent_buffer = self.buffer_agent.flush()
         buffer_str = "\n".join(agent_buffer)
@@ -158,19 +162,21 @@ Filters summaries to return only those involving a specific agent ID.
 
 Returns the total number of traces received from a specific agent.
 
-#### `async received_streamed_tokens(agent_id: str, token_generator: AsyncIterator[str]) -> Optional[AgentSummary]`
+#### `async on_new_token(agent_id: str, token: str) -> Optional[AgentSummary]`
 
-Processes streaming tokens from an agent using TokenGate for intelligent chunking. This method:
-1. Receives tokens from an async iterator
+Processes a single streaming token from an agent using TokenGate for intelligent chunking. This method:
+1. Receives a single token string
 2. Uses TokenGate to accumulate tokens into meaningful chunks
 3. Processes chunks through BufferAgent when ready
-4. Returns the last summary generated, if any
+4. Returns the summary generated, if any
 
 **Parameters**:
 - `agent_id` (str): Agent identifier
-- `token_generator` (AsyncIterator[str]): Async iterator yielding token strings
+- `token` (str): Single token string (not an async iterator)
 
-**Returns**: Last `AgentSummary` generated, or `None` if no summary was triggered
+**Returns**: `AgentSummary` if summarization was triggered, or `None` otherwise
+
+**Note**: This method processes tokens one at a time. For streaming scenarios, call this method repeatedly for each token in the stream.
 
 **Helper Methods**:
 
@@ -179,66 +185,99 @@ Processes streaming tokens from an agent using TokenGate for intelligent chunkin
 
 ---
 
-### `agents/buffer_agent.py` - Intelligent Trace Buffer
+### `exaid_core/buffer_agent/buffer_agent.py` - Intelligent Trace Buffer
 
 **Purpose**: Buffers traces per agent and uses an LLM to intelligently decide when summarization should be triggered based on trace content rather than simple thresholds.
 
 **Key Components**:
 
 ```python
+class BufferAnalysis(BaseModel):
+    """Structured analysis of stream state for buffer agent decision-making."""
+    reasoning: str
+    stream_state: Literal["SAME_TOPIC_CONTINUING", "TOPIC_SHIFT", "CRITICAL_ALERT"]
+    is_relevant: bool
+    is_novel: bool
+    final_trigger: bool
+
 class TraceData(BaseModel):
     count: int
 
 class BufferAgent:
     def __init__(self):
         self.buffer: list[str] = []
-        self.llm = llm
+        self.base_llm = get_llm(LLMRole.BUFFER_AGENT)
+        self.llm = self.base_llm.with_structured_output(BufferAnalysis)
+        self.flag_prompt = ChatPromptTemplate.from_messages([...])
         self.traces: dict[str, TraceData] = {}
 ```
 
 **Core Methods**:
 
-#### `addsegment(agent_id: str, segment: str) -> bool`
+#### `addsegment(agent_id: str, segment: str, previous_summaries: list[str]) -> bool`
 
-Adds a trace segment to the buffer and determines if summarization should be triggered.
+**Parameters**:
+- `agent_id`: Identifier for the agent generating the trace
+- `segment`: The trace text segment to add to the buffer
+- `previous_summaries`: List of string-formatted previous summaries for novelty comparison
+
+Adds a trace segment to the buffer and determines if summarization should be triggered using a structured state machine approach.
 
 **Process**:
 1. Tags the segment with agent ID: `| {agent_id} | {segment}`
 2. Records the trace count in `traces` dictionary
 3. Adds the tagged segment to the buffer
-4. Uses an LLM prompt to evaluate if summarization should trigger (even for first trace)
+4. Uses an LLM with structured output to evaluate stream state, relevance, and novelty
 5. Returns `True` if summarization should be triggered, `False` otherwise
 
-**LLM Trigger Logic**:
-The buffer uses a prompt that asks the LLM to reply with "YES" or "NO" based on:
-- Completion of thoughts or reasoning steps
-- Topic or focus changes
-- Sufficient accumulated context
-- Natural pauses or conclusions
+**Structured Output Model**:
+The buffer uses a `BufferAnalysis` Pydantic model that decouples three evaluation dimensions:
+
+- **Stream State** (`stream_state`): Three-state machine based on topic continuity:
+  - `SAME_TOPIC_CONTINUING`: Agent is still refining, listing, or explaining the same clinical issue (wait)
+  - `TOPIC_SHIFT`: Agent moves to a different organ system, problem, or section (proceed to checks)
+  - `CRITICAL_ALERT`: Immediate life-safety notification (proceed immediately)
+
+- **Relevance** (`is_relevant`): Independent evaluation of clinical importance
+  - Relevant: New diagnosis, refined differential, specific treatment dose/plan, condition changes
+  - Not Relevant: "Thinking out loud", obvious facts without interpretation, formatting tokens
+
+- **Novelty** (`is_novel`): Independent evaluation against previous summaries
+  - Novel: New values, new actions, new insights not already covered
+  - Not Novel: Continuing statements, reiteration, status quo confirmations
+
+- **Final Trigger** (`final_trigger`): Only `True` when `(stream_state == TOPIC_SHIFT OR CRITICAL_ALERT) AND is_relevant AND is_novel`
 
 **Code Snippet**:
 ```python
-async def addsegment(self, agent_id: str, segment: str) -> bool:
+class BufferAnalysis(BaseModel):
+    reasoning: str  # Chain-of-thought analysis
+    stream_state: Literal["SAME_TOPIC_CONTINUING", "TOPIC_SHIFT", "CRITICAL_ALERT"]
+    is_relevant: bool
+    is_novel: bool
+    final_trigger: bool  # True only if all conditions met
+
+async def addsegment(self, agent_id: str, segment: str, previous_summaries: list[str]) -> bool:
     tagged_segment = f"| {agent_id} | {segment}"
     if agent_id not in self.traces:
         self.traces[agent_id] = TraceData(count=0)
     self.traces[agent_id].count += 1
     
-    # Check if buffer was empty before adding this segment
-    was_empty = not self.buffer
-    
-    # Always add the segment to buffer
+    # Add to buffer first
     self.buffer.append(tagged_segment)
     
-    # Always call the LLM to decide if summarization should be triggered
-    previous_traces = "\n".join(self.buffer[:-1]) if not was_empty else ""
+    # Prepare context: rest of buffer separate from new segment
+    buffer_context = "\n".join(self.buffer[:-1]) if len(self.buffer) > 1 else "(Buffer empty)"
     
-    flag_chain = self.flag_prompt | self.llm
-    flag_response = await flag_chain.ainvoke({
-        "previous_trace": previous_traces if previous_traces else "(No previous traces - this is the first trace)",
+    # Invoke LLM with structured output
+    chain = self.flag_prompt | self.llm
+    analysis: BufferAnalysis = await chain.ainvoke({
+        "summaries": previous_summaries,
+        "previous_trace": buffer_context,
         "new_trace": tagged_segment
     })
-    return "YES" in flag_response.content.strip().upper()
+    
+    return analysis.final_trigger
 ```
 
 #### `peek() -> list[str]`
@@ -254,17 +293,28 @@ Returns a copy of the buffer and clears it. Called after summarization is trigge
 Returns the total number of traces received from a specific agent.
 
 **Prompt Template**:
+The buffer agent uses a structured prompt that instructs the LLM to analyze stream state, relevance, and novelty independently. The prompt template is defined in `exaid_core/utils/prompts.py` and includes:
+
+- **Stream State Detection**: Classifies the stream into one of three states based on topic continuity:
+  - `SAME_TOPIC_CONTINUING`: Agent is still refining the same clinical issue (wait)
+  - `TOPIC_SHIFT`: Agent moves to a different topic or concludes a thought (proceed)
+  - `CRITICAL_ALERT`: Immediate life-safety notification (proceed immediately)
+
+- **Relevance Detection**: Evaluates if the content is clinically important
+
+- **Novelty Detection**: Compares against previous summaries to determine if information is new
+
+- **Final Trigger Logic**: Only triggers when `(TOPIC_SHIFT OR CRITICAL_ALERT) AND is_relevant AND is_novel`
+
+The prompt uses structured output via Pydantic to ensure consistent, parseable responses:
+
 ```python
 self.flag_prompt = ChatPromptTemplate.from_messages([
-    ("system",
-    "You are monitoring the reasoning streams of multiple AI agents. "
-    "Your task is to decide if the new reasoning trace should trigger summarization. "
-    "Reply with EXACTLY 'YES' (all caps) if ANY of these conditions are met:\n"
-    "- The new trace completes a thought or reasoning step\n"
-    "- The topic or focus has changed from previous traces\n"
-    "- Enough context has accumulated to warrant a summary\n"
-    "- The reasoning has reached a natural pause or conclusion\n\n"
-    "Reply with EXACTLY 'NO' (all caps) if the new trace is just continuing the same line of reasoning without completion.\n"
+    ("system", get_buffer_agent_system_prompt()),
+    ("user", get_buffer_agent_user_prompt())
+])
+self.llm = self.base_llm.with_structured_output(BufferAnalysis)
+```
     "Be decisive - prefer YES when in doubt, as summaries help track agent progress."),
     ("user", "Previous traces in buffer:\n{previous_trace}\n\nNew trace to evaluate:\n{new_trace}\n\nShould this trigger summarization? Reply with only 'YES' or 'NO'."),
 ])
@@ -272,7 +322,7 @@ self.flag_prompt = ChatPromptTemplate.from_messages([
 
 ---
 
-### `agents/summarizer_agent.py` - Summary Generator
+### `exaid_core/summarizer_agent/summarizer_agent.py` - Summary Generator
 
 **Purpose**: Generates structured summaries from buffered traces using an LLM with structured output.
 
@@ -342,28 +392,9 @@ self.summarize_prompt = ChatPromptTemplate.from_messages([
 
 ---
 
-### `agents/base_agent.py` - Base Agent Interface
-
-**Purpose**: Abstract base class defining the interface for agents that can be integrated with EXAID.
-
-**Code**:
-```python
-from abc import ABC, abstractmethod
-
-class BaseAgent(ABC):
-    def __init__(self, agent_id: str):
-        self.agent_id = agent_id
-    
-    @abstractmethod
-    async def act(self, input: str) -> str:
-        pass
-```
-
-**Usage**: Agents that integrate with EXAID should inherit from `BaseAgent` and implement the `act()` method. This provides a consistent interface for agent integration, though EXAID can also work with agents that don't inherit from this class as long as they can send traces via `received_trace()`.
-
 ---
 
-### `schema/agent_summary.py` - Summary Data Model
+### `exaid_core/schema/agent_summary.py` - Summary Data Model
 
 **Purpose**: Defines the structured data model for agent summaries using Pydantic.
 
@@ -410,7 +441,7 @@ class AgentSummary(BaseModel):
 
 ---
 
-### `agents/token_gate.py` - Token Streaming Pre-Buffer
+### `exaid_core/token_gate/token_gate.py` - Token Streaming Pre-Buffer
 
 **Purpose**: A lightweight, syntax-aware pre-buffer that regulates token flow into BufferAgent for streaming scenarios. It does not interpret meaning - it only decides when enough structure has accumulated to pass tokens upstream for semantic evaluation.
 
@@ -465,24 +496,24 @@ Check if timers have expired and flush if needed. Should be called periodically 
 
 ---
 
-### `llm.py` - LLM Client Configuration
+### `infra/llm_registry.py` - LLM Client Configuration
 
-**Purpose**: Centralized configuration for the LLM client used throughout EXAID. Supports multiple LLM providers through environment variable-based configuration.
+**Purpose**: Centralized LLM management with role-based configuration. Supports multiple LLM providers through environment variable-based configuration with YAML defaults.
 
 **Architecture**:
-The module provides a factory function `_create_llm_instance()` that creates LLM instances based on provider type, allowing seamless switching between Google Gemini, Groq, and OpenAI (or OpenAI-compatible) providers without code changes.
+The module provides role-based LLM configuration using `LLMRole` enum (MAS, SUMMARIZER, BUFFER_AGENT) and a factory function `_create_llm_instance()` that creates LLM instances based on provider type, allowing seamless switching between Google Gemini, Groq, and OpenAI (or OpenAI-compatible) providers without code changes.
 
-**LLM Instances**:
-- `llm`: Default LLM for general use (configurable, defaults to Gemini Flash)
-- `groq_llm`: Groq-specific LLM instance without streaming (for compatibility)
-- `mas_llm`: Multi-Agent System LLM (configurable, defaults to Groq with streaming)
-- `exaid_llm`: EXAID LLM for strong reasoning (configurable, defaults to Gemini Pro with streaming)
+**LLM Roles**:
+- `LLMRole.MAS`: Multi-Agent System LLM (configurable, defaults to Groq)
+- `LLMRole.SUMMARIZER`: Summarizer LLM (configurable, defaults to Gemini Pro)
+- `LLMRole.BUFFER_AGENT`: Buffer Agent LLM (configurable, defaults to Gemini Pro)
 
 **Configuration**:
+- Role-based provider selection via `get_llm(role)` function
+- YAML configuration file (`infra/model_configs.yaml`) with environment variable overrides
 - Provider selection via environment variables
-- No commented code alternatives
 - Clean, maintainable configuration
-- Each LLM instance can use a different provider
+- Each role can use a different provider
 
 **Environment Variables**:
 
@@ -506,19 +537,19 @@ The module provides a factory function `_create_llm_instance()` that creates LLM
 - `OPENAI_MODEL`: Model name (optional)
 
 **Usage**: Imported by:
-- `BufferAgent` uses `exaid_llm` for trigger decisions
-- `SummarizerAgent` uses `exaid_llm` for summary generation
-- Demo agents use `mas_llm` for multi-agent reasoning
+- `BufferAgent` uses `get_llm(LLMRole.BUFFER_AGENT)` for trigger decisions
+- `SummarizerAgent` uses `get_llm(LLMRole.SUMMARIZER)` for summary generation
+- Demo agents use `get_llm(LLMRole.MAS)` for multi-agent reasoning
 
 **Note**: For production use, always use environment variables for sensitive information. Create a `.env` file in the project root.
 
 ---
 
-### `cdss_demo/` - Clinical Decision Support System Demo
+### `demos/cdss_example/` - Clinical Decision Support System Demo
 
 **Purpose**: Complete demonstration of EXAID integrated with a multi-agent clinical decision support system using LangGraph for workflow orchestration.
 
-#### `cdss_demo/cdss.py` - CDSS Orchestrator
+#### `demos/cdss_example/cdss.py` - CDSS Orchestrator
 
 **Purpose**: Orchestrates the clinical decision support system workflow using LangGraph.
 
@@ -563,7 +594,7 @@ Get summaries for a specific agent.
 
 Reset the CDSS system (creates new EXAID instance).
 
-#### `cdss_demo/demo_cdss.py` - Example Clinical Cases
+#### `demos/cdss_example/demo_cdss.py` - Example Clinical Cases
 
 **Purpose**: Demonstrates CDSS usage with complete clinical case workflows.
 
@@ -582,7 +613,7 @@ Reset the CDSS system (creates new EXAID instance).
 └─ Next Steps: Order ECG, cardiac enzymes, chest X-ray
 ```
 
-#### `cdss_demo/agents/` - Specialized Medical Agents
+#### `demos/cdss_example/agents/` - Specialized Medical Agents
 
 **Purpose**: Specialized agents for clinical decision support.
 
@@ -590,7 +621,7 @@ Reset the CDSS system (creates new EXAID instance).
 - **CardiologyAgent**: Provides cardiology-specific analysis
 - **LaboratoryAgent**: Analyzes laboratory results and findings
 
-#### `cdss_demo/graph/` - LangGraph Workflow
+#### `demos/cdss_example/graph/` - LangGraph Workflow
 
 **Purpose**: Defines the LangGraph workflow for multi-agent clinical reasoning.
 
@@ -763,25 +794,43 @@ Get the total number of traces received from an agent.
 
 **Returns**: Trace count (int)
 
-#### `async received_streamed_tokens(agent_id: str, token_generator: AsyncIterator[str]) -> Optional[AgentSummary]`
+#### `async on_new_token(agent_id: str, token: str) -> Optional[AgentSummary]`
 
-Process streaming tokens from an agent using TokenGate for intelligent chunking.
+Processes a single streaming token from an agent using TokenGate for intelligent chunking. This method:
+1. Receives a single token string
+2. Uses TokenGate to accumulate tokens into meaningful chunks
+3. Processes chunks through BufferAgent when ready
+4. Returns the summary generated, if any
 
 **Parameters**:
 - `agent_id` (str): Agent identifier
-- `token_generator` (AsyncIterator[str]): Async iterator yielding token strings
+- `token` (str): Single token string (not an async iterator)
 
-**Returns**: Last `AgentSummary` generated, or `None` if no summary was triggered
+**Returns**: `AgentSummary` if summarization was triggered, or `None` otherwise
+
+**Note**: This method processes tokens one at a time. For streaming scenarios, call this method repeatedly for each token in the stream.
 
 ### BufferAgent Class
 
-#### `async addsegment(agent_id: str, segment: str) -> bool`
+#### `async addsegment(agent_id: str, segment: str, previous_summaries: list[str]) -> bool`
 
-Add a trace segment and determine if summarization should trigger.
+Add a trace segment and determine if summarization should trigger using structured state machine analysis.
 
 **Parameters**:
 - `agent_id` (str): Agent identifier
 - `segment` (str): Trace text segment from token gate
+- `previous_summaries` (list[str]): List of string-formatted previous summaries for novelty comparison
+
+**Returns**:
+- `bool`: `True` if summarization should be triggered, `False` otherwise
+
+**Process**:
+Uses structured output (`BufferAnalysis`) to evaluate three independent dimensions:
+1. **Stream State**: Classifies as `SAME_TOPIC_CONTINUING`, `TOPIC_SHIFT`, or `CRITICAL_ALERT`
+2. **Relevance**: Determines if content is clinically important
+3. **Novelty**: Compares against previous summaries to detect new information
+
+Only triggers when `(TOPIC_SHIFT OR CRITICAL_ALERT) AND is_relevant AND is_novel`
 
 **Returns**: `True` if summarization should trigger, `False` otherwise
 
@@ -976,22 +1025,25 @@ asyncio.run(main())
 import asyncio
 from exaid_core import EXAID
 
-async def token_stream():
-    """Simulate a token stream"""
-    tokens = ["Patient", " presents", " with", " chest", " pain", ".", " ", "History", " of", " hypertension", "."]
-    for token in tokens:
-        yield token
-        await asyncio.sleep(0.1)  # Simulate streaming delay
-
 async def main():
     exaid = EXAID()
     
-    # Process streaming tokens
-    summary = await exaid.received_streamed_tokens("DoctorAgent", token_stream())
+    # Simulate streaming tokens
+    tokens = ["Patient", " presents", " with", " chest", " pain", ".", " ", "History", " of", " hypertension", "."]
     
-    if summary:
-        print(f"Action: {summary.action}")
-        print(f"Reasoning: {summary.reasoning}")
+    # Process each token individually
+    for token in tokens:
+        summary = await exaid.on_new_token("DoctorAgent", token)
+        if summary:
+            print(f"Status/Action: {summary.status_action}")
+            print(f"Key Findings: {summary.key_findings}")
+            print(f"Differential/Rationale: {summary.differential_rationale}")
+        await asyncio.sleep(0.1)  # Simulate streaming delay
+    
+    # Flush any remaining tokens
+    final_summary = await exaid.flush_agent("DoctorAgent")
+    if final_summary:
+        print(f"Final summary: {final_summary.status_action}")
 
 asyncio.run(main())
 ```
@@ -1000,8 +1052,8 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from cdss_demo.cdss import CDSS
-from cdss_demo.schema.clinical_case import ClinicalCase
+from demos.cdss_example.cdss import CDSS
+from demos.cdss_example.schema.clinical_case import ClinicalCase
 
 async def main():
     cdss = CDSS()

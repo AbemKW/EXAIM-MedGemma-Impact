@@ -263,7 +263,7 @@ def trace_callback(agent_id: str, token: str):
     async operations. We send tokens directly without queuing to ensure
     token-by-token delivery.
     
-    Every token from every agent that uses received_streamed_tokens() will
+    Every token from every agent that uses on_new_token() will
     trigger this callback, ensuring all tokens are captured and displayed.
     """
     # Schedule immediate async send without blocking

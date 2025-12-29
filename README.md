@@ -81,7 +81,7 @@ See `evals/README.md` for full evaluation documentation.
 5. **Run the CDSS demo:**
 
    ```bash
-   python cdss_demo/demo_cdss.py
+   python demos/cdss_example/demo_cdss.py
    ```
 
 6. **Use the EXAID class in your code:**
@@ -109,24 +109,24 @@ See `evals/README.md` for full evaluation documentation.
 
 The system is organized around a few small modules:
 
-- `exaid.py` — EXAID orchestrator class
+- `exaid_core/exaid.py` — EXAID orchestrator class
   - Purpose: Collects traces from agents, buffers them, and produces summaries using an LLM. Maintains a list of all summaries.
   - Key methods:
     - `received_trace(agent_id, text)` — Call this to add a trace for an agent. If a summary is triggered, it returns the new `AgentSummary` object.
-    - `received_streamed_tokens(agent_id, token_generator)` — Process streaming tokens from an agent using TokenGate for intelligent chunking.
+    - `on_new_token(agent_id, token)` — Process a single streaming token from an agent using TokenGate for intelligent chunking.
     - `get_all_summaries()` — Returns all summaries as a list of `AgentSummary` objects.
     - `get_summaries_by_agent(agent_id)` — Returns summaries involving a specific agent.
     - `get_agent_trace_count(agent_id)` — Returns the number of traces received from an agent.
 
-- `agents/summarizer_agent.py` — Summarization wrapper
-  - Purpose: Contains the `SummarizerAgent` class, which wraps calls to the LLM (via `llm.py`) and produces structured `AgentSummary` objects from input text.
+- `exaid_core/summarizer_agent/summarizer_agent.py` — Summarization wrapper
+  - Purpose: Contains the `SummarizerAgent` class, which wraps calls to the LLM (via `infra/llm_registry.py`) and produces structured `AgentSummary` objects from input text.
   - Features:
     - Uses structured output with Pydantic models for consistent summaries
     - Enforces character limits (action: 100, reasoning: 200, findings: 150, next_steps: 100)
     - Optimized for medical/clinical reasoning with physician-focused prompts
     - Returns `AgentSummary` objects with fields: `agents`, `action`, `reasoning`, `findings`, `next_steps`
 
-- `agents/buffer_agent.py` — Intelligent trace buffer
+- `exaid_core/buffer_agent/buffer_agent.py` — Intelligent trace buffer
   - Purpose: Implements `BufferAgent`, a buffer that accumulates traces per agent. Uses an LLM-based prompt to decide when to trigger summarization (event-driven, not just a static threshold).
   - Features:
     - LLM-powered trigger logic that evaluates trace content
@@ -134,7 +134,7 @@ The system is organized around a few small modules:
     - Tags traces with agent IDs for multi-agent tracking
     - Tracks trace counts per agent
 
-- `agents/token_gate.py` — Token streaming pre-buffer
+- `exaid_core/token_gate/token_gate.py` — Token streaming pre-buffer
   - Purpose: A lightweight, syntax-aware pre-buffer that regulates token flow into BufferAgent for streaming scenarios.
   - Features:
     - Configurable word thresholds (min/max words, whitespace-delimited)
@@ -142,17 +142,13 @@ The system is organized around a few small modules:
     - Silence timer and max wait timeout
     - Per-agent text buffering
 
-- `agents/base_agent.py` — Base agent interface
-  - Purpose: Abstract base class (`BaseAgent`) defining the interface for agents that can be integrated with EXAID.
-  - Key method: `act(input: str) -> str` — Abstract method that agents must implement.
-
-- `llm.py` — LLM client configuration
-  - Purpose: Holds LLM client instances used for summarization and trigger decisions. Uses environment variables for provider selection.
+- `infra/llm_registry.py` — LLM client configuration
+  - Purpose: Holds LLM client instances used for summarization and trigger decisions. Uses environment variables for provider selection with role-based configuration.
   - Supports multiple providers: Google Gemini, Groq, OpenAI, and OpenAI-compatible endpoints.
   - Provider selection via environment variables: `LLM_PROVIDER`, `MAS_LLM_PROVIDER`, `EXAID_LLM_PROVIDER`
   - Provides different LLM instances optimized for different use cases (speed vs. reasoning quality)
 
-- `cdss_demo/` — Clinical Decision Support System demo
+- `demos/cdss_example/` — Clinical Decision Support System demo
   - Purpose: Complete demonstration of EXAID integrated with a multi-agent clinical decision support system using LangGraph.
   - Components:
     - `cdss.py` — CDSS orchestrator class
@@ -187,52 +183,58 @@ The system is organized around a few small modules:
 - Configure LLM settings via environment variables (`.env` file). EXAID supports Google Gemini, Groq, and OpenAI providers.
 - Switch between providers by changing environment variables—no code changes needed.
 - The system uses async/await patterns throughout, so ensure you're running within an async context when calling methods.
-- For streaming scenarios, use `received_streamed_tokens()` which leverages `TokenGate` for intelligent chunking.
+- For streaming scenarios, use `on_new_token()` which processes tokens one at a time and leverages `TokenGate` for intelligent chunking.
 - The CDSS demo showcases integration with LangGraph for complex multi-agent workflows.
 
 ## Project Structure
 
 ```
 ExAID/
-├── exaid.py                 # Main orchestrator class
-├── llm.py                   # LLM client configuration
-├── requirements.txt         # Python dependencies
-├── README.md                # This file
-├── DOCUMENTATION.md         # Comprehensive documentation
-├── agents/
-│   ├── base_agent.py       # Abstract base class for agents
-│   ├── buffer_agent.py     # Intelligent trace buffer with LLM triggers
-│   ├── summarizer_agent.py # Summarization logic with structured output
-│   └── token_gate.py       # Token streaming pre-buffer
-├── schema/
-│   └── agent_summary.py    # AgentSummary Pydantic model
-└── cdss_demo/              # Clinical Decision Support System demo
-    ├── cdss.py             # CDSS orchestrator
-    ├── demo_cdss.py        # Example clinical cases
-    ├── agents/             # Specialized medical agents
-    │   ├── orchestrator_agent.py
-    │   ├── cardiology_agent.py
-    │   └── laboratory_agent.py
-    ├── graph/              # LangGraph workflow
-    │   ├── cdss_graph.py
-    │   ├── nodes.py
-    │   └── edges.py
-    └── schema/             # Clinical data models
-        ├── clinical_case.py
-        └── graph_state.py
+├── exaid_core/             # Core EXAID package
+│   ├── exaid.py            # Main orchestrator class
+│   ├── buffer_agent/       # Intelligent trace buffer
+│   │   └── buffer_agent.py
+│   ├── summarizer_agent/   # Summarization logic
+│   │   └── summarizer_agent.py
+│   ├── token_gate/         # Token streaming pre-buffer
+│   │   └── token_gate.py
+│   ├── schema/             # Data models
+│   │   └── agent_summary.py
+│   └── utils/              # Utility functions
+│       └── prompts.py
+├── infra/                  # Infrastructure
+│   ├── llm_registry.py     # LLM client configuration
+│   └── model_configs.yaml  # LLM model configurations
+├── demos/                  # Demo applications
+│   └── cdss_example/       # Clinical Decision Support System demo
+│       ├── cdss.py         # CDSS orchestrator
+│       ├── demo_cdss.py    # Example clinical cases
+│       ├── agents/         # Specialized medical agents
+│       │   ├── orchestrator_agent.py
+│       │   ├── cardiology_agent.py
+│       │   └── laboratory_agent.py
+│       ├── graph/          # LangGraph workflow
+│       │   ├── cdss_graph.py
+│       │   ├── nodes.py
+│       │   └── edges.py
+│       └── schema/         # Clinical data models
+│           ├── clinical_case.py
+│           └── graph_state.py
+├── requirements.txt        # Python dependencies
+├── README.md               # This file
+└── DOCUMENTATION.md        # Comprehensive documentation
 ```
 
 ## Files Summary
 
-- `exaid.py`: Orchestrator class that collects traces, buffers them, and records summaries. Provides methods for trace processing, streaming token handling, and summary retrieval.
-- `agents/summarizer_agent.py`: Summarization logic with structured output. Defines `SummarizerAgent` class that generates `AgentSummary` objects.
-- `agents/buffer_agent.py`: `BufferAgent` implementation with LLM-based trigger logic for event-driven summarization.
-- `agents/token_gate.py`: Token streaming pre-buffer that regulates token flow with configurable thresholds and timers.
-- `agents/base_agent.py`: Abstract base class (`BaseAgent`) defining the interface for agents that can integrate with EXAID.
-- `schema/agent_summary.py`: Pydantic model defining the structured `AgentSummary` format.
-- `llm.py`: LLM client configuration using LangChain's `ChatOpenAI` (supports environment variables for configuration).
-- `cdss_demo/cdss.py`: CDSS orchestrator that integrates EXAID with LangGraph for clinical decision support workflows.
-- `cdss_demo/demo_cdss.py`: Example usage demonstrating complete clinical case workflows with multiple specialized agents.
+- `exaid_core/exaid.py`: Orchestrator class that collects traces, buffers them, and records summaries. Provides methods for trace processing, streaming token handling, and summary retrieval.
+- `exaid_core/summarizer_agent/summarizer_agent.py`: Summarization logic with structured output. Defines `SummarizerAgent` class that generates `AgentSummary` objects.
+- `exaid_core/buffer_agent/buffer_agent.py`: `BufferAgent` implementation with LLM-based trigger logic for event-driven summarization.
+- `exaid_core/token_gate/token_gate.py`: Token streaming pre-buffer that regulates token flow with configurable thresholds and timers.
+- `exaid_core/schema/agent_summary.py`: Pydantic model defining the structured `AgentSummary` format.
+- `infra/llm_registry.py`: LLM client configuration with role-based setup using LangChain (supports environment variables for configuration).
+- `demos/cdss_example/cdss.py`: CDSS orchestrator that integrates EXAID with LangGraph for clinical decision support workflows.
+- `demos/cdss_example/demo_cdss.py`: Example usage demonstrating complete clinical case workflows with multiple specialized agents.
 - `requirements.txt`: Project dependencies (LangChain, LangGraph, Pydantic, python-dotenv, etc.).
 
 ## License
