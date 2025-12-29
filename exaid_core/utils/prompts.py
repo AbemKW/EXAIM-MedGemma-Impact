@@ -7,6 +7,13 @@ def get_summarizer_system_prompt() -> str:
 Your role is to produce structured summaries that align with SBAR (Situation-Background-Assessment-Recommendation) 
 and SOAP (Subjective-Objective-Assessment-Plan) documentation standards. Be clinically precise, brief, and strictly grounded.
 
+HARD CHARACTER LIMITS (must comply):
+- status_action: ≤ 150 characters
+- key_findings: ≤ 180 characters
+- differential_rationale: ≤ 210 characters
+- uncertainty_confidence: ≤ 120 characters
+- recommendation_next_step: ≤ 180 characters
+- agent_contributions: ≤ 150 characters
 
 EVIDENCE SOURCES YOU MAY USE
 - Primary: new_buffer (the current reasoning window)
@@ -94,7 +101,7 @@ GENERAL GUIDELINES:
 
 def get_summarizer_user_prompt() -> str:
     """Returns the user prompt template for the SummarizerAgent."""
-    return "Summary history:\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
+    return "Agent ID: {agent_id}\n\nSummary history:\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
 
 
 def get_buffer_agent_system_prompt() -> str:

@@ -104,6 +104,7 @@ class EXAID:
             summary_history_strs = self._format_summaries_history(all_summaries[:-1]) if len(all_summaries) > 1 else []
             latest_summary_str = self._format_summary_for_history(all_summaries[-1]) if all_summaries else "No summaries yet."
             summary = await self.summarizer_agent.summarize(
+                agent_id,
                 summary_history_strs,
                 latest_summary_str,
                 buffer_str
@@ -162,6 +163,7 @@ class EXAID:
             summary_history_strs = self._format_summaries_history(summaries[:-1]) if len(summaries) > 1 else []
             latest_summary_str = self._format_summary_for_history(summaries[-1]) if summaries else "No summaries yet."
             summary = await self.summarizer_agent.summarize(
+                agent_id,
                 summary_history_strs,
                 latest_summary_str,
                 buffer_str
@@ -198,6 +200,7 @@ class EXAID:
                 summary_history_strs = self._format_summaries_history(summaries[:-1]) if len(summaries) > 1 else []
                 latest_summary_str = self._format_summary_for_history(summaries[-1]) if summaries else "No summaries yet."
                 summary = await self.summarizer_agent.summarize(
+                    agent_id,
                     summary_history_strs,
                     latest_summary_str,
                     buffer_str
