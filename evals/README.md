@@ -810,7 +810,7 @@ Schema failures must be handled correctly for M6a/M6b faithfulness metrics:
 **Reporting:**
 - `faithfulness_valid_event_count` - Events included in M6a/M6b means
 - `excluded_from_faithfulness_count` - Events excluded (schema failures)
-- `schema_failures` - Total schema failure count (for M10)
+- `schema_failures` - Total schema failure count (used for M10 compliance)
 
 **Coverage penalty:** Schema-failed events contribute empty concept sets, penalizing recall.
 
@@ -843,18 +843,17 @@ V3 uses fixed CTU intervals calibrated from V0:
 
 | Metric | Description | Computation |
 |--------|-------------|-------------|
-| **M1** | Compression ratio | `1 - (summary_ctu / trace_ctu)` |
-| **M2** | Summary count | Number of summary events |
-| **M3** | Redundancy | Jaccard similarity on CUI sets between consecutive summaries |
+| **M1** | Update counts | Number of summary events |
+| **M2** | Output volume | Total summary CTU |
+| **M3** | Redundancy | Jaccard similarity thresholds between consecutive summaries |
 | **M4** | Trace coverage | `|summary_cuis ∩ trace_cuis| / |trace_cuis|` |
-| **M5a** | Unsupported global | `|summary_cuis - trace_cuis| / |summary_cuis|` |
-| **M5b** | Unsupported per-summary | Mean per-summary unsupported rate |
+| **M5** | Unsupported content | Global and per-summary unsupported rates |
 | **M6a** | Window-groundedness | Unsupported fraction vs window |
 | **M6b** | Contract-groundedness | Unsupported fraction vs window+latest_summary |
-| **M7** | Mean latency | Mean summary generation latency (ms) |
-| **M8** | LLM usage | Total prompt + completion CTU |
-| **M9** | BufferAgent overhead | Decision count and CTU |
-| **M10** | Schema failure rate | `schema_failures / summary_count` |
+| **M7b** | Coverage vs budget | Coverage at CTU budgets (250/500/1000/2000) |
+| **M8** | Latency | Mean summary and BufferAgent latency (ms) |
+| **M9** | LLM usage | Total prompt + completion CTU (summaries + BufferAgent) |
+| **M10** | Compliance | `1 - (schema_failures / summary_count)` |
 
 ### M6b Reconstruction
 

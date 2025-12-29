@@ -1,185 +1,274 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://exaid.ai/schemas/exaid.metrics.schema.json",
-  "title": "EXAID Metrics Record",
-  "description": "Schema for computed evaluation metrics records",
-  "type": "object",
-  "required": [
-    "schema_name",
-    "schema_version",
-    "metric_id",
-    "variant_id",
-    "computed_at"
+  "title": "EXAID Metrics Records",
+  "description": "Schema for per-case and aggregate EXAID metric outputs.",
+  "oneOf": [
+    {"$ref": "#/$defs/per_case_record"},
+    {"$ref": "#/$defs/aggregate_report"}
   ],
-  "properties": {
-    "schema_name": {
-      "type": "string",
-      "const": "exaid.metrics",
-      "description": "Schema identifier for validation routing"
-    },
-    "schema_version": {
-      "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "Semantic version of the schema"
-    },
-    "metric_id": {
-      "type": "string",
-      "pattern": "^met-[a-z0-9-]+$",
-      "description": "Unique metric record identifier"
-    },
-    "variant_id": {
-      "type": "string",
-      "pattern": "^V[0-9]+$",
-      "description": "Summarizer variant identifier"
-    },
-    "computed_at": {
-      "type": "string",
-      "format": "date-time",
-      "description": "ISO 8601 timestamp when metrics were computed"
-    },
-    "case_count": {
-      "type": "integer",
-      "minimum": 0,
-      "description": "Number of cases included in this metric computation"
-    },
-    "coverage": {
+  "$defs": {
+    "schema_header": {
       "type": "object",
-      "description": "Concept coverage metrics",
+      "required": ["schema_name", "schema_version", "metrics_type"],
       "properties": {
-        "mean": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
+        "schema_name": {
+          "type": "string",
+          "const": "exaid.metrics"
         },
-        "std": {
-          "type": "number",
-          "minimum": 0
+        "schema_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
         },
-        "median": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "min": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "max": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
+        "metrics_type": {
+          "type": "string",
+          "enum": ["per_case", "aggregate"]
         }
       }
     },
-    "redundancy": {
+    "redundancy_threshold_rates": {
       "type": "object",
-      "description": "Redundancy metrics at different tau thresholds",
       "properties": {
-        "tau_0.85": {
-          "type": "object",
-          "properties": {
-            "mean": {"type": "number"},
-            "std": {"type": "number"}
-          }
-        },
-        "tau_0.90": {
-          "type": "object",
-          "properties": {
-            "mean": {"type": "number"},
-            "std": {"type": "number"}
-          }
-        },
-        "tau_0.95": {
-          "type": "object",
-          "properties": {
-            "mean": {"type": "number"},
-            "std": {"type": "number"}
-          }
-        }
+        "tau_0.85": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "tau_0.90": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "tau_0.95": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
       }
     },
-    "token_budget": {
+    "coverage_by_budget": {
       "type": "object",
-      "description": "Coverage at different token budget levels",
       "properties": {
-        "B_250": {
-          "type": "object",
-          "properties": {
-            "coverage_mean": {"type": "number"},
-            "coverage_std": {"type": "number"}
-          }
-        },
-        "B_500": {
-          "type": "object",
-          "properties": {
-            "coverage_mean": {"type": "number"},
-            "coverage_std": {"type": "number"}
-          }
-        },
-        "B_1000": {
-          "type": "object",
-          "properties": {
-            "coverage_mean": {"type": "number"},
-            "coverage_std": {"type": "number"}
-          }
-        },
-        "B_2000": {
-          "type": "object",
-          "properties": {
-            "coverage_mean": {"type": "number"},
-            "coverage_std": {"type": "number"}
-          }
-        }
+        "ctu_250": {"type": "number", "minimum": 0, "maximum": 1},
+        "ctu_500": {"type": "number", "minimum": 0, "maximum": 1},
+        "ctu_1000": {"type": "number", "minimum": 0, "maximum": 1},
+        "ctu_2000": {"type": "number", "minimum": 0, "maximum": 1}
       }
     },
-    "timing": {
-      "type": "object",
-      "description": "Timing statistics across all runs",
-      "properties": {
-        "mean_run_ms": {
-          "type": "number",
-          "minimum": 0
-        },
-        "total_compute_ms": {
-          "type": "integer",
-          "minimum": 0
+    "per_case_record": {
+      "allOf": [
+        {"$ref": "#/$defs/schema_header"},
+        {
+          "type": "object",
+          "required": [
+            "schema_name",
+            "schema_version",
+            "metrics_type",
+            "case_id",
+            "variant_id",
+            "m1_update_count",
+            "m2_output_ctu",
+            "m3_redundancy_jaccard_mean",
+            "m3_redundancy_threshold_rates",
+            "m4_trace_coverage",
+            "m4_trace_cui_count",
+            "m4_summary_cui_count",
+            "m5_unsupported_global_rate",
+            "m5_unsupported_per_summary_mean",
+            "m6a_mean",
+            "m6b_mean",
+            "faithfulness_valid_event_count",
+            "excluded_from_faithfulness_count",
+            "m7b_coverage_by_budget",
+            "m8_summary_latency_ms_mean",
+            "m8_buffer_decision_latency_ms_mean",
+            "m9_prompt_ctu_total",
+            "m9_completion_ctu_total",
+            "m9_total_llm_ctu",
+            "m9_buffer_decision_count",
+            "m10_schema_failure_count",
+            "m10_schema_failure_rate",
+            "m10_compliance_rate"
+          ],
+          "properties": {
+            "metrics_type": {"const": "per_case"},
+            "case_id": {"type": "string"},
+            "variant_id": {"type": "string", "pattern": "^V[0-9]+$"},
+            "m1_update_count": {"type": "integer", "minimum": 0},
+            "m2_output_ctu": {"type": "integer", "minimum": 0},
+            "m3_redundancy_jaccard_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+            "m3_redundancy_threshold_rates": {"$ref": "#/$defs/redundancy_threshold_rates"},
+            "m4_trace_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+            "m4_trace_cui_count": {"type": "integer", "minimum": 0},
+            "m4_summary_cui_count": {"type": "integer", "minimum": 0},
+            "m5_unsupported_global_rate": {"type": "number", "minimum": 0, "maximum": 1},
+            "m5_unsupported_per_summary_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+            "m6a_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+            "m6b_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+            "faithfulness_valid_event_count": {"type": "integer", "minimum": 0},
+            "excluded_from_faithfulness_count": {"type": "integer", "minimum": 0},
+            "m7b_coverage_by_budget": {"$ref": "#/$defs/coverage_by_budget"},
+            "m8_summary_latency_ms_mean": {"type": ["number", "null"], "minimum": 0},
+            "m8_buffer_decision_latency_ms_mean": {"type": ["number", "null"], "minimum": 0},
+            "m9_prompt_ctu_total": {"type": "integer", "minimum": 0},
+            "m9_completion_ctu_total": {"type": "integer", "minimum": 0},
+            "m9_total_llm_ctu": {"type": "integer", "minimum": 0},
+            "m9_buffer_decision_count": {"type": "integer", "minimum": 0},
+            "m10_schema_failure_count": {"type": "integer", "minimum": 0},
+            "m10_schema_failure_rate": {"type": "number", "minimum": 0, "maximum": 1},
+            "m10_compliance_rate": {"type": "number", "minimum": 0, "maximum": 1}
+          }
         }
-      }
+      ]
+    },
+    "aggregate_report": {
+      "allOf": [
+        {"$ref": "#/$defs/schema_header"},
+        {
+          "type": "object",
+          "required": [
+            "schema_name",
+            "schema_version",
+            "metrics_type",
+            "computed_at",
+            "bootstrap_samples",
+            "seed",
+            "variants"
+          ],
+          "properties": {
+            "metrics_type": {"const": "aggregate"},
+            "computed_at": {"type": "string", "format": "date-time"},
+            "bootstrap_samples": {"type": "integer", "minimum": 0},
+            "seed": {"type": "integer"},
+            "variants": {
+              "type": "object",
+              "patternProperties": {
+                "^V[0-9]+$": {
+                  "type": "object",
+                  "required": [
+                    "n_cases",
+                    "m1_update_count_mean",
+                    "m2_output_ctu_mean",
+                    "m3_redundancy",
+                    "m4_trace_coverage",
+                    "m5_unsupported",
+                    "m6a",
+                    "m6b",
+                    "m7b_coverage_by_budget_mean",
+                    "m8_latency_ms_mean",
+                    "m9_usage_ctu_mean",
+                    "m10_compliance",
+                    "faithfulness_valid_event_count",
+                    "excluded_from_faithfulness_count",
+                    "schema_failures"
+                  ],
+                  "properties": {
+                    "n_cases": {"type": "integer", "minimum": 0},
+                    "m1_update_count_mean": {"type": "number", "minimum": 0},
+                    "m2_output_ctu_mean": {"type": "number", "minimum": 0},
+                    "m3_redundancy": {
+                      "type": "object",
+                      "properties": {
+                        "jaccard_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+                        "threshold_rates": {"$ref": "#/$defs/redundancy_threshold_rates"}
+                      }
+                    },
+                    "m4_trace_coverage": {
+                      "type": "object",
+                      "properties": {
+                        "mean": {"type": "number", "minimum": 0, "maximum": 1},
+                        "ci_low": {"type": "number", "minimum": 0, "maximum": 1},
+                        "ci_high": {"type": "number", "minimum": 0, "maximum": 1}
+                      }
+                    },
+                    "m5_unsupported": {
+                      "type": "object",
+                      "properties": {
+                        "global_rate_mean": {"type": "number", "minimum": 0, "maximum": 1},
+                        "per_summary_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+                      }
+                    },
+                    "m6a": {
+                      "type": "object",
+                      "properties": {
+                        "mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+                        "ci_low": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+                        "ci_high": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+                      }
+                    },
+                    "m6b": {
+                      "type": "object",
+                      "properties": {
+                        "mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+                        "ci_low": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+                        "ci_high": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+                      }
+                    },
+                    "m7b_coverage_by_budget_mean": {"$ref": "#/$defs/coverage_by_budget"},
+                    "m8_latency_ms_mean": {
+                      "type": "object",
+                      "properties": {
+                        "summary": {"type": ["number", "null"], "minimum": 0},
+                        "buffer_decision": {"type": ["number", "null"], "minimum": 0}
+                      }
+                    },
+                    "m9_usage_ctu_mean": {
+                      "type": "object",
+                      "properties": {
+                        "prompt": {"type": "number", "minimum": 0},
+                        "completion": {"type": "number", "minimum": 0},
+                        "total": {"type": "number", "minimum": 0},
+                        "buffer_decision_count": {"type": "number", "minimum": 0}
+                      }
+                    },
+                    "m10_compliance": {
+                      "type": "object",
+                      "properties": {
+                        "schema_failure_rate_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+                        "compliance_rate_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+                        "schema_failure_count": {"type": "integer", "minimum": 0},
+                        "summary_event_count": {"type": "integer", "minimum": 0}
+                      }
+                    },
+                    "faithfulness_valid_event_count": {"type": "integer", "minimum": 0},
+                    "excluded_from_faithfulness_count": {"type": "integer", "minimum": 0},
+                    "schema_failures": {"type": "integer", "minimum": 0}
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   },
   "examples": [
     {
       "schema_name": "exaid.metrics",
-      "schema_version": "1.0.0",
-      "metric_id": "met-v3-20241219",
+      "schema_version": "2.0.0",
+      "metrics_type": "per_case",
+      "case_id": "case-001",
       "variant_id": "V3",
-      "computed_at": "2024-12-19T14:00:00Z",
-      "case_count": 100,
-      "coverage": {
-        "mean": 0.73,
-        "std": 0.12,
-        "median": 0.75,
-        "min": 0.45,
-        "max": 0.92
+      "m1_update_count": 12,
+      "m2_output_ctu": 820,
+      "m3_redundancy_jaccard_mean": 0.18,
+      "m3_redundancy_threshold_rates": {
+        "tau_0.85": 0.05,
+        "tau_0.90": 0.03,
+        "tau_0.95": 0.01
       },
-      "redundancy": {
-        "tau_0.85": {"mean": 0.15, "std": 0.08},
-        "tau_0.90": {"mean": 0.10, "std": 0.05},
-        "tau_0.95": {"mean": 0.05, "std": 0.03}
+      "m4_trace_coverage": 0.72,
+      "m4_trace_cui_count": 510,
+      "m4_summary_cui_count": 320,
+      "m5_unsupported_global_rate": 0.08,
+      "m5_unsupported_per_summary_mean": 0.10,
+      "m6a_mean": 0.12,
+      "m6b_mean": 0.05,
+      "faithfulness_valid_event_count": 12,
+      "excluded_from_faithfulness_count": 0,
+      "m7b_coverage_by_budget": {
+        "ctu_250": 0.42,
+        "ctu_500": 0.58,
+        "ctu_1000": 0.73,
+        "ctu_2000": 0.82
       },
-      "token_budget": {
-        "B_250": {"coverage_mean": 0.45, "coverage_std": 0.10},
-        "B_500": {"coverage_mean": 0.62, "coverage_std": 0.08},
-        "B_1000": {"coverage_mean": 0.73, "coverage_std": 0.06},
-        "B_2000": {"coverage_mean": 0.82, "coverage_std": 0.05}
-      },
-      "timing": {
-        "mean_run_ms": 2500,
-        "total_compute_ms": 250000
-      }
+      "m8_summary_latency_ms_mean": 430.0,
+      "m8_buffer_decision_latency_ms_mean": 110.0,
+      "m9_prompt_ctu_total": 6100,
+      "m9_completion_ctu_total": 1200,
+      "m9_total_llm_ctu": 7300,
+      "m9_buffer_decision_count": 14,
+      "m10_schema_failure_count": 1,
+      "m10_schema_failure_rate": 0.083,
+      "m10_compliance_rate": 0.917
     }
   ]
 }
-
-
