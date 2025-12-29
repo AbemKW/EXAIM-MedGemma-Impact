@@ -19,15 +19,16 @@ Usage:
     python run_variants.py --variant V3 --case case-33651373
 
 Dependencies:
-    - trace_text.py (canonical text construction)
+    - trace_replay_engine.py (content-plane replay)
     - deterministic_utils.py (timestamps, IDs)
     - deterministic_io.py (gzip/JSON writing)
 """
 
 import argparse
-import hashlib
+import asyncio
 import json
 import sys
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -39,12 +40,7 @@ import yaml
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from trace_text import (
-    build_canonical_trace_text,
-    build_window_text,
-    load_trace_chunks_for_case,
-    TraceParsingStats,
-)
+from trace_replay_engine import TraceReplayEngine, iter_trace_records, ReplayEvent
 from deterministic_utils import (
     DeterministicTimestamps,
     compute_ctu,
@@ -62,6 +58,10 @@ from config_loader import (
     load_variant_config as _load_variant_config_central,
     get_stoplists_provenance,
 )
+from exaid_core.buffer_agent.buffer_agent import BufferAgent, BufferAnalysis
+from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
+from exaid_core.schema.agent_summary import AgentSummary
+from exaid_core.token_gate.token_gate import ManualClock, TokenGate
 
 
 # ============================================================================
@@ -89,6 +89,52 @@ def load_extractor_config(configs_dir: Path) -> dict:
     drift-proof evaluation with resolved stoplist paths (Section 6.1)"
     """
     return _load_extractor_config_central(configs_dir, resolve_paths=True, include_hashes=True)
+
+
+def run_async(coro):
+    """Run an async coroutine from sync code."""
+    return asyncio.run(coro)
+
+
+def format_summary_for_history(summary: AgentSummary) -> str:
+    """Format summary for history prompts."""
+    parts = [
+        f"Status/Action: {summary.status_action}",
+        f"Key Findings: {summary.key_findings}",
+        f"Differential/Rationale: {summary.differential_rationale}",
+        f"Uncertainty/Confidence: {summary.uncertainty_confidence}",
+        f"Recommendation/Next: {summary.recommendation_next_step}",
+        f"Agent Contributions: {summary.agent_contributions}",
+    ]
+    return " | ".join(parts)
+
+
+def build_summary_semantics_text(summary: AgentSummary) -> str:
+    """Concatenate summary fields for semantics text (exclude agent_contributions)."""
+    return " ".join([
+        summary.status_action,
+        summary.key_findings,
+        summary.differential_rationale,
+        summary.uncertainty_confidence,
+        summary.recommendation_next_step,
+    ])
+
+
+def event_time_ms(t0_emitted_ms: int, event: ReplayEvent) -> int:
+    """Convert replay virtual time to absolute emitted time."""
+    return int(t0_emitted_ms + event.virtual_time_ms)
+
+
+def get_llm_model_id(llm) -> Optional[str]:
+    """Best-effort extraction of model identifier from a LangChain LLM."""
+    for attr in ("model_name", "model", "model_id"):
+        if hasattr(llm, attr):
+            value = getattr(llm, attr)
+            if value:
+                return value
+    return None
+
+
 
 
 # ============================================================================
@@ -148,7 +194,11 @@ class RunContext:
     variant_id: str
     trace_file: Path
     trace_chunks: list[dict]
+    replay_events: list[ReplayEvent]
+    turn_bounds: dict[int, tuple[int, int]]
     timestamps: DeterministicTimestamps
+    clock: ManualClock
+    t0_emitted_ms: int
     history_k: int = 3
     mas_run_id: str = ""
     eval_run_id: str = ""
@@ -161,6 +211,9 @@ class RunContext:
     # Latest summary for M6b reconstruction
     latest_summary_event_id: Optional[str] = None
     latest_summary_text: str = ""
+    summaries: list[AgentSummary] = field(default_factory=list)
+    buffer_window_start_seq: Optional[int] = None
+    buffer_window_end_seq: Optional[int] = None
 
 
 # ============================================================================
@@ -179,6 +232,8 @@ class VariantPipeline(ABC):
         self.config = config
         self.variant_id = config.get("variant_id", "V?")
         self.trigger_policy = config.get("trigger_policy", "unknown")
+        self.buffer_agent = BufferAgent()
+        self.summarizer_agent = SummarizerAgent()
     
     @abstractmethod
     def run(self, ctx: RunContext) -> tuple[list, list, list]:
@@ -193,48 +248,73 @@ class VariantPipeline(ABC):
         """
         pass
     
-    def generate_stub_summary(
+    def generate_summary(
         self,
         ctx: RunContext,
         start_seq: int,
         end_seq: int,
-        input_text: str
+        input_text: str,
+        agent_id: str
     ) -> SummaryResult:
         """
-        Generate a stub summary (to be replaced with real EXAID integration).
+        Generate a summary using the real SummarizerAgent.
         
         Args:
             ctx: Run context
             start_seq: Start of window
             end_seq: End of window
             input_text: Input text for summarization
+            agent_id: Agent identifier
         """
         event_index = ctx.summary_count
         ctx.summary_count += 1
         
         event_id = generate_event_id(ctx.case_id, ctx.variant_id, event_index)
         timestamp = ctx.timestamps.get_window_timestamp(end_seq)
-        
-        # Stub summary content
-        summary_content = {
-            "status_action": f"[STUB] Processing chunks {start_seq}-{end_seq}",
-            "key_findings": "[STUB] Placeholder findings",
-            "differential_rationale": "[STUB] Placeholder rationale",
-            "uncertainty_confidence": "[STUB] Moderate confidence",
-            "recommendation_next_step": "[STUB] Continue analysis",
-            "agent_contributions": "[STUB] Analysis complete"
-        }
-        
-        # Concatenate summary sections for concept extraction
-        summary_semantics_text = " ".join([
-            summary_content.get("status_action", ""),
-            summary_content.get("key_findings", ""),
-            summary_content.get("differential_rationale", ""),
-            summary_content.get("uncertainty_confidence", ""),
-            summary_content.get("recommendation_next_step", ""),
-            summary_content.get("agent_contributions", ""),
+
+        summary_history_strs = [
+            format_summary_for_history(summary) for summary in ctx.summaries[:-1]
+        ] if len(ctx.summaries) > 1 else []
+        latest_summary_str = (
+            format_summary_for_history(ctx.summaries[-1])
+            if ctx.summaries
+            else "No summaries yet."
+        )
+
+        prompt_text = "\n".join([
+            ",\n".join(summary_history_strs),
+            latest_summary_str,
+            input_text
         ])
-        
+
+        start_time = time.perf_counter()
+        summary = run_async(
+            self.summarizer_agent.summarize(
+                agent_id,
+                summary_history_strs,
+                latest_summary_str,
+                input_text
+            )
+        )
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+        if summary is None:
+            summary = AgentSummary(
+                status_action="",
+                key_findings="",
+                differential_rationale="",
+                uncertainty_confidence="",
+                recommendation_next_step="",
+                agent_contributions=""
+            )
+
+        ctx.summaries.append(summary)
+        if hasattr(summary, "model_dump"):
+            summary_content = summary.model_dump()
+        else:
+            summary_content = summary.dict()
+        summary_semantics_text = build_summary_semantics_text(summary)
+
         result = SummaryResult(
             event_index=event_index,
             event_id=event_id,
@@ -249,13 +329,13 @@ class VariantPipeline(ABC):
             latest_summary_event_id=ctx.latest_summary_event_id,
             new_buffer_text_hash=compute_text_hash(input_text),
             llm_usage={
-                "prompt_ctu": compute_ctu(input_text),
+                "prompt_ctu": compute_ctu(prompt_text),
                 "completion_ctu": compute_ctu(summary_semantics_text),
                 "provider_prompt_tokens": None,
                 "provider_completion_tokens": None,
-                "model_id": "stub"
+                "model_id": get_llm_model_id(self.summarizer_agent.base_llm)
             },
-            latency_ms=100  # Stub latency
+            latency_ms=latency_ms
         )
         
         # Update context for next summary
@@ -263,6 +343,104 @@ class VariantPipeline(ABC):
         ctx.latest_summary_text = summary_semantics_text
         
         return result
+
+    def evaluate_buffer_agent(
+        self,
+        ctx: RunContext,
+        agent_id: str,
+        segment_text: str,
+        disable_novelty: bool
+    ) -> tuple[bool, BufferDecisionResult]:
+        """Run BufferAgent on a segment and build a decision result."""
+        decision_index = ctx.decision_count
+        ctx.decision_count += 1
+
+        summary_history = [
+            format_summary_for_history(summary) for summary in ctx.summaries
+        ]
+        buffer_context = "\n".join(self.buffer_agent.buffer) if self.buffer_agent.buffer else "(Buffer empty)"
+
+        prompt_text = "\n".join([
+            f"agent_id: {agent_id}",
+            "summaries:",
+            "\n".join(summary_history),
+            f"previous_trace: {buffer_context}",
+            f"new_trace: {segment_text}"
+        ])
+
+        start_time = time.perf_counter()
+        should_trigger = run_async(
+            self.buffer_agent.addsegment(agent_id, segment_text, summary_history)
+        )
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+        analysis: BufferAnalysis | None = self.buffer_agent.get_last_analysis(agent_id)
+
+        if analysis is None:
+            filter_results = {
+                "completeness_passed": None,
+                "value_passed": None,
+                "novelty_passed": None if disable_novelty else None
+            }
+        else:
+            filter_results = {
+                "completeness_passed": analysis.is_complete,
+                "value_passed": analysis.is_relevant,
+                "novelty_passed": None if disable_novelty else analysis.is_novel
+            }
+
+        if analysis is not None and disable_novelty:
+            should_trigger = (
+                analysis.stream_state == "CRITICAL_ALERT"
+                or (
+                    analysis.stream_state == "TOPIC_SHIFT"
+                    and analysis.is_relevant
+                )
+                or (
+                    analysis.is_complete
+                    and analysis.is_relevant
+                )
+            )
+
+        if analysis is not None:
+            if hasattr(analysis, "model_dump"):
+                completion_payload = json.dumps(analysis.model_dump())
+            else:
+                completion_payload = json.dumps(analysis.dict())
+        else:
+            completion_payload = ""
+
+        decision = BufferDecisionResult(
+            decision_index=decision_index,
+            decision_id=generate_decision_id(ctx.case_id, ctx.variant_id, decision_index),
+            start_seq=ctx.buffer_window_start_seq or 0,
+            end_seq=ctx.buffer_window_end_seq or 0,
+            timestamp=ctx.timestamps.get_window_timestamp(ctx.buffer_window_end_seq or 0),
+            input_ctu=compute_ctu(buffer_context + "\n" + segment_text),
+            decision="summarize" if should_trigger else "buffer",
+            filter_results=filter_results,
+            llm_usage={
+                "prompt_ctu": compute_ctu(prompt_text),
+                "completion_ctu": compute_ctu(completion_payload),
+                "provider_prompt_tokens": None,
+                "provider_completion_tokens": None,
+                "model_id": get_llm_model_id(self.buffer_agent.base_llm)
+            },
+            latency_ms=latency_ms
+        )
+
+        return should_trigger, decision
+
+    def create_token_gate(self, ctx: RunContext) -> TokenGate:
+        """Create a TokenGate with deterministic clock and config."""
+        token_gate_config = self.config.get("components", {}).get("token_gate", {})
+        return TokenGate(
+            min_words=token_gate_config.get("min_words", 35),
+            max_words=token_gate_config.get("max_words", 90),
+            boundary_cues=token_gate_config.get("boundary_cues", ".?!\n"),
+            silence_timer=token_gate_config.get("silence_timer", 15),
+            max_wait_timeout=token_gate_config.get("max_wait_timeout", 40),
+            clock=ctx.clock
+        )
 
 
 # ============================================================================
@@ -281,84 +459,117 @@ class V0_FullEXAID(VariantPipeline):
         summaries = []
         decisions = []
         flushes = []
-        
-        # TokenGate parameters (word thresholds)
-        min_words = self.config.get("components", {}).get("token_gate", {}).get("min_words", 35)
-        max_words = self.config.get("components", {}).get("token_gate", {}).get("max_words", 90)
-        
-        # Simulate TokenGate accumulation
-        accumulated_text = ""
-        accumulated_ctu = 0
-        window_start = 0
-        
-        for chunk in ctx.trace_chunks:
-            seq = chunk.get("seq", chunk.get("sequence_num", 0))
-            text = chunk.get("text_chunk") or chunk.get("content") or ""
-            chunk_ctu = compute_ctu(text)
-            
-            accumulated_text += " " + text
-            accumulated_ctu += chunk_ctu
-            
-            # Check TokenGate threshold
-            if accumulated_ctu >= min_words:
-                # TokenGate flush
+
+        token_gate = self.create_token_gate(ctx)
+        token_gate_state = {}
+
+        for event in ctx.replay_events:
+            if event.event_type != "delta":
+                continue
+
+            seq = event.seq
+            text = event.delta_text or ""
+            if not text:
+                continue
+
+            agent_id = event.agent_id
+            ctx.clock.set_time(
+                datetime.fromtimestamp(
+                    event_time_ms(ctx.t0_emitted_ms, event) / 1000,
+                    tz=timezone.utc
+                )
+            )
+
+            state = token_gate_state.setdefault(agent_id, {"window_start": None, "last_seq": None})
+            if not token_gate.buffers.get(agent_id):
+                state["window_start"] = seq
+                state["last_seq"] = None
+
+            previous_last_seq = state["last_seq"]
+            flushed_text = run_async(token_gate.add_token(agent_id, text))
+
+            if flushed_text:
+                flush_reason = token_gate.get_last_flush_reason(agent_id) or "threshold"
+                if flush_reason == "silence_timer":
+                    flush_start = state["window_start"] if state["window_start"] is not None else seq
+                    flush_end = previous_last_seq if previous_last_seq is not None else seq
+                    state["window_start"] = seq
+                    state["last_seq"] = seq
+                else:
+                    flush_start = state["window_start"] if state["window_start"] is not None else seq
+                    flush_end = seq
+                    state["window_start"] = None
+                    state["last_seq"] = None
+
                 flush = TokenGateFlushResult(
                     flush_index=ctx.flush_count,
-                    start_seq=window_start,
-                    end_seq=seq,
-                    timestamp=ctx.timestamps.get_window_timestamp(seq),
-                    accumulated_ctu=accumulated_ctu,
-                    trigger_reason="threshold",
-                    text_hash=compute_text_hash(accumulated_text)
+                    start_seq=flush_start,
+                    end_seq=flush_end,
+                    timestamp=ctx.timestamps.get_window_timestamp(flush_end),
+                    accumulated_ctu=compute_ctu(flushed_text),
+                    trigger_reason=flush_reason,
+                    text_hash=compute_text_hash(flushed_text)
                 )
                 flushes.append(flush)
                 ctx.flush_count += 1
-                
-                # BufferAgent decision (stub: always summarize)
-                decision = BufferDecisionResult(
-                    decision_index=ctx.decision_count,
-                    decision_id=generate_decision_id(ctx.case_id, ctx.variant_id, ctx.decision_count),
-                    start_seq=window_start,
-                    end_seq=seq,
-                    timestamp=ctx.timestamps.get_window_timestamp(seq),
-                    input_ctu=accumulated_ctu,
-                    decision="summarize",
-                    filter_results={
-                        "completeness_passed": True,
-                        "value_passed": True,
-                        "novelty_passed": True
-                    },
-                    llm_usage={
-                        "prompt_ctu": accumulated_ctu,
-                        "completion_ctu": 5,
-                        "provider_prompt_tokens": None,
-                        "provider_completion_tokens": None,
-                        "model_id": "stub"
-                    },
-                    latency_ms=50
+
+                if not self.buffer_agent.buffer:
+                    ctx.buffer_window_start_seq = flush_start
+                ctx.buffer_window_end_seq = flush_end
+
+                should_trigger, decision = self.evaluate_buffer_agent(
+                    ctx, agent_id, flushed_text, disable_novelty=False
                 )
                 decisions.append(decision)
-                ctx.decision_count += 1
-                
-                # Generate summary
-                summary = self.generate_stub_summary(
-                    ctx, window_start, seq, accumulated_text
-                )
-                summaries.append(summary)
-                
-                # Reset accumulator
-                accumulated_text = ""
-                accumulated_ctu = 0
-                window_start = seq + 1
-        
-        # Handle remaining accumulated text
-        if accumulated_ctu > 0:
-            last_seq = ctx.trace_chunks[-1].get("seq", 0) if ctx.trace_chunks else 0
-            summary = self.generate_stub_summary(
-                ctx, window_start, last_seq, accumulated_text
-            )
-            summaries.append(summary)
-        
+
+                if should_trigger:
+                    buffer_text = "\n".join(self.buffer_agent.flush())
+                    summary = self.generate_summary(
+                        ctx, ctx.buffer_window_start_seq or flush_start, ctx.buffer_window_end_seq or flush_end, buffer_text, agent_id
+                    )
+                    summaries.append(summary)
+                    ctx.buffer_window_start_seq = None
+                    ctx.buffer_window_end_seq = None
+            else:
+                if token_gate.buffers.get(agent_id):
+                    state["last_seq"] = seq
+
+        for agent_id, state in token_gate_state.items():
+            if token_gate.buffers.get(agent_id):
+                flushed_text = run_async(token_gate.flush(agent_id, reason="end_of_trace"))
+                if flushed_text:
+                    flush_start = state["window_start"] if state["window_start"] is not None else 0
+                    flush_end = state["last_seq"] if state["last_seq"] is not None else flush_start
+                    flush = TokenGateFlushResult(
+                        flush_index=ctx.flush_count,
+                        start_seq=flush_start,
+                        end_seq=flush_end,
+                        timestamp=ctx.timestamps.get_window_timestamp(flush_end),
+                        accumulated_ctu=compute_ctu(flushed_text),
+                        trigger_reason="end_of_trace",
+                        text_hash=compute_text_hash(flushed_text)
+                    )
+                    flushes.append(flush)
+                    ctx.flush_count += 1
+
+                    if not self.buffer_agent.buffer:
+                        ctx.buffer_window_start_seq = flush_start
+                    ctx.buffer_window_end_seq = flush_end
+
+                    should_trigger, decision = self.evaluate_buffer_agent(
+                        ctx, agent_id, flushed_text, disable_novelty=False
+                    )
+                    decisions.append(decision)
+
+                    if should_trigger:
+                        buffer_text = "\n".join(self.buffer_agent.flush())
+                        summary = self.generate_summary(
+                            ctx, ctx.buffer_window_start_seq or flush_start, ctx.buffer_window_end_seq or flush_end, buffer_text, agent_id
+                        )
+                        summaries.append(summary)
+                        ctx.buffer_window_start_seq = None
+                        ctx.buffer_window_end_seq = None
+
         return summaries, decisions, flushes
 
 
@@ -376,30 +587,56 @@ class V1_TurnEnd(VariantPipeline):
         flushes = []
         
         accumulated_text = ""
-        window_start = 0
+        window_start: Optional[int] = None
+        last_agent_id = "unknown"
+        last_seq_seen: Optional[int] = None
+        current_turn_id: Optional[int] = None
         
-        for chunk in ctx.trace_chunks:
-            seq = chunk.get("seq", chunk.get("sequence_num", 0))
-            text = chunk.get("text_chunk") or chunk.get("content") or ""
-            is_turn_end = chunk.get("is_turn_end", False)
-            
-            accumulated_text += " " + text
-            
-            # Only trigger on turn end
-            if is_turn_end and accumulated_text.strip():
-                summary = self.generate_stub_summary(
-                    ctx, window_start, seq, accumulated_text
+        for event in ctx.replay_events:
+            if event.event_type == "turn_start":
+                current_turn_id = event.turn_id
+                bounds = ctx.turn_bounds.get(event.turn_id)
+                window_start = bounds[0] if bounds else event.seq
+                accumulated_text = ""
+                last_seq_seen = None
+                last_agent_id = event.agent_id
+                continue
+
+            if event.event_type == "delta":
+                if current_turn_id is None:
+                    current_turn_id = event.turn_id
+                    bounds = ctx.turn_bounds.get(event.turn_id)
+                    window_start = bounds[0] if bounds else event.seq
+                accumulated_text += event.delta_text or ""
+                last_agent_id = event.agent_id
+                last_seq_seen = event.seq
+                continue
+
+            if event.event_type == "turn_end":
+                if not accumulated_text:
+                    current_turn_id = None
+                    window_start = None
+                    last_seq_seen = None
+                    continue
+
+                bounds = ctx.turn_bounds.get(event.turn_id)
+                end_seq = bounds[1] if bounds else (last_seq_seen or event.seq)
+                start_seq = window_start if window_start is not None else end_seq
+                summary = self.generate_summary(
+                    ctx, start_seq, end_seq, accumulated_text, last_agent_id
                 )
                 summaries.append(summary)
-                
+
                 accumulated_text = ""
-                window_start = seq + 1
+                window_start = None
+                last_seq_seen = None
+                current_turn_id = None
         
         # Handle remaining text
-        if accumulated_text.strip():
-            last_seq = ctx.trace_chunks[-1].get("seq", 0) if ctx.trace_chunks else 0
-            summary = self.generate_stub_summary(
-                ctx, window_start, last_seq, accumulated_text
+        if accumulated_text and last_seq_seen is not None:
+            start_seq = window_start if window_start is not None else last_seq_seen
+            summary = self.generate_summary(
+                ctx, start_seq, last_seq_seen, accumulated_text, last_agent_id
             )
             summaries.append(summary)
         
@@ -418,52 +655,91 @@ class V2_NoBuffer(VariantPipeline):
         summaries = []
         decisions = []
         flushes = []
-        
-        min_words = self.config.get("components", {}).get("token_gate", {}).get("min_words", 35)
-        
-        accumulated_text = ""
-        accumulated_ctu = 0
-        window_start = 0
-        
-        for chunk in ctx.trace_chunks:
-            seq = chunk.get("seq", chunk.get("sequence_num", 0))
-            text = chunk.get("text_chunk") or chunk.get("content") or ""
-            chunk_ctu = compute_ctu(text)
-            
-            accumulated_text += " " + text
-            accumulated_ctu += chunk_ctu
-            
-            if accumulated_ctu >= min_words:
-                # TokenGate flush
+
+        token_gate = self.create_token_gate(ctx)
+        token_gate_state = {}
+
+        for event in ctx.replay_events:
+            if event.event_type != "delta":
+                continue
+
+            seq = event.seq
+            text = event.delta_text or ""
+            if not text:
+                continue
+
+            agent_id = event.agent_id
+            ctx.clock.set_time(
+                datetime.fromtimestamp(
+                    event_time_ms(ctx.t0_emitted_ms, event) / 1000,
+                    tz=timezone.utc
+                )
+            )
+
+            state = token_gate_state.setdefault(agent_id, {"window_start": None, "last_seq": None})
+            if not token_gate.buffers.get(agent_id):
+                state["window_start"] = seq
+                state["last_seq"] = None
+
+            previous_last_seq = state["last_seq"]
+            flushed_text = run_async(token_gate.add_token(agent_id, text))
+
+            if flushed_text:
+                flush_reason = token_gate.get_last_flush_reason(agent_id) or "threshold"
+                if flush_reason == "silence_timer":
+                    flush_start = state["window_start"] if state["window_start"] is not None else seq
+                    flush_end = previous_last_seq if previous_last_seq is not None else seq
+                    state["window_start"] = seq
+                    state["last_seq"] = seq
+                else:
+                    flush_start = state["window_start"] if state["window_start"] is not None else seq
+                    flush_end = seq
+                    state["window_start"] = None
+                    state["last_seq"] = None
+
                 flush = TokenGateFlushResult(
                     flush_index=ctx.flush_count,
-                    start_seq=window_start,
-                    end_seq=seq,
-                    timestamp=ctx.timestamps.get_window_timestamp(seq),
-                    accumulated_ctu=accumulated_ctu,
-                    trigger_reason="threshold",
-                    text_hash=compute_text_hash(accumulated_text)
+                    start_seq=flush_start,
+                    end_seq=flush_end,
+                    timestamp=ctx.timestamps.get_window_timestamp(flush_end),
+                    accumulated_ctu=compute_ctu(flushed_text),
+                    trigger_reason=flush_reason,
+                    text_hash=compute_text_hash(flushed_text)
                 )
                 flushes.append(flush)
                 ctx.flush_count += 1
-                
-                # Skip BufferAgent, go directly to summarizer
-                summary = self.generate_stub_summary(
-                    ctx, window_start, seq, accumulated_text
+
+                summary = self.generate_summary(
+                    ctx, flush_start, flush_end, flushed_text, agent_id
                 )
                 summaries.append(summary)
-                
-                accumulated_text = ""
-                accumulated_ctu = 0
-                window_start = seq + 1
-        
-        if accumulated_ctu > 0:
-            last_seq = ctx.trace_chunks[-1].get("seq", 0) if ctx.trace_chunks else 0
-            summary = self.generate_stub_summary(
-                ctx, window_start, last_seq, accumulated_text
-            )
-            summaries.append(summary)
-        
+            else:
+                if token_gate.buffers.get(agent_id):
+                    state["last_seq"] = seq
+
+        for agent_id, state in token_gate_state.items():
+            if token_gate.buffers.get(agent_id):
+                flushed_text = run_async(token_gate.flush(agent_id, reason="end_of_trace"))
+                if flushed_text:
+                    flush_start = state["window_start"] if state["window_start"] is not None else 0
+                    flush_end = state["last_seq"] if state["last_seq"] is not None else flush_start
+                    flush = TokenGateFlushResult(
+                        flush_index=ctx.flush_count,
+                        start_seq=flush_start,
+                        end_seq=flush_end,
+                        timestamp=ctx.timestamps.get_window_timestamp(flush_end),
+                        accumulated_ctu=compute_ctu(flushed_text),
+                        trigger_reason="end_of_trace",
+                        text_hash=compute_text_hash(flushed_text)
+                    )
+                    flushes.append(flush)
+                    ctx.flush_count += 1
+
+                    summary = self.generate_summary(
+                        ctx, flush_start, flush_end, flushed_text, agent_id
+                    )
+                    summaries.append(summary)
+
         return summaries, decisions, flushes
 
 
@@ -486,57 +762,68 @@ class V3_NoTokenGate(VariantPipeline):
         accumulated_text = ""
         accumulated_ctu = 0
         window_start = 0
+        last_agent_id = "unknown"
+        last_seq_seen: Optional[int] = None
         
-        for chunk in ctx.trace_chunks:
-            seq = chunk.get("seq", chunk.get("sequence_num", 0))
-            text = chunk.get("text_chunk") or chunk.get("content") or ""
+        for event in ctx.replay_events:
+            if event.event_type != "delta":
+                continue
+
+            seq = event.seq
+            text = event.delta_text or ""
+            if not text:
+                continue
+
+            if not accumulated_text:
+                window_start = seq
+            last_agent_id = event.agent_id
             chunk_ctu = compute_ctu(text)
+            last_seq_seen = seq
             
-            accumulated_text += " " + text
+            accumulated_text += text
             accumulated_ctu += chunk_ctu
             
             if accumulated_ctu >= chunk_size_ctu:
-                # BufferAgent decision (stub)
-                decision = BufferDecisionResult(
-                    decision_index=ctx.decision_count,
-                    decision_id=generate_decision_id(ctx.case_id, ctx.variant_id, ctx.decision_count),
-                    start_seq=window_start,
-                    end_seq=seq,
-                    timestamp=ctx.timestamps.get_window_timestamp(seq),
-                    input_ctu=accumulated_ctu,
-                    decision="summarize",
-                    filter_results={
-                        "completeness_passed": True,
-                        "value_passed": True,
-                        "novelty_passed": True
-                    },
-                    llm_usage={
-                        "prompt_ctu": accumulated_ctu,
-                        "completion_ctu": 5,
-                        "provider_prompt_tokens": None,
-                        "provider_completion_tokens": None,
-                        "model_id": "stub"
-                    },
-                    latency_ms=50
+                if not self.buffer_agent.buffer:
+                    ctx.buffer_window_start_seq = window_start
+                ctx.buffer_window_end_seq = seq
+
+                should_trigger, decision = self.evaluate_buffer_agent(
+                    ctx, last_agent_id, accumulated_text, disable_novelty=False
                 )
                 decisions.append(decision)
-                ctx.decision_count += 1
-                
-                summary = self.generate_stub_summary(
-                    ctx, window_start, seq, accumulated_text
-                )
-                summaries.append(summary)
+
+                if should_trigger:
+                    buffer_text = "\n".join(self.buffer_agent.flush())
+                    summary = self.generate_summary(
+                        ctx, ctx.buffer_window_start_seq or window_start, ctx.buffer_window_end_seq or seq, buffer_text, last_agent_id
+                    )
+                    summaries.append(summary)
+                    ctx.buffer_window_start_seq = None
+                    ctx.buffer_window_end_seq = None
                 
                 accumulated_text = ""
                 accumulated_ctu = 0
                 window_start = seq + 1
         
-        if accumulated_ctu > 0:
-            last_seq = ctx.trace_chunks[-1].get("seq", 0) if ctx.trace_chunks else 0
-            summary = self.generate_stub_summary(
-                ctx, window_start, last_seq, accumulated_text
+        if accumulated_ctu > 0 and last_seq_seen is not None:
+            if not self.buffer_agent.buffer:
+                ctx.buffer_window_start_seq = window_start
+            ctx.buffer_window_end_seq = last_seq_seen
+
+            should_trigger, decision = self.evaluate_buffer_agent(
+                ctx, last_agent_id, accumulated_text, disable_novelty=False
             )
-            summaries.append(summary)
+            decisions.append(decision)
+
+            if should_trigger:
+                buffer_text = "\n".join(self.buffer_agent.flush())
+                summary = self.generate_summary(
+                    ctx, ctx.buffer_window_start_seq or window_start, ctx.buffer_window_end_seq or last_seq_seen, buffer_text, last_agent_id
+                )
+                summaries.append(summary)
+                ctx.buffer_window_start_seq = None
+                ctx.buffer_window_end_seq = None
         
         return summaries, decisions, flushes
 
@@ -553,76 +840,117 @@ class V4_NoNovelty(VariantPipeline):
         summaries = []
         decisions = []
         flushes = []
-        
-        min_words = self.config.get("components", {}).get("token_gate", {}).get("min_words", 35)
-        
-        accumulated_text = ""
-        accumulated_ctu = 0
-        window_start = 0
-        
-        for chunk in ctx.trace_chunks:
-            seq = chunk.get("seq", chunk.get("sequence_num", 0))
-            text = chunk.get("text_chunk") or chunk.get("content") or ""
-            chunk_ctu = compute_ctu(text)
-            
-            accumulated_text += " " + text
-            accumulated_ctu += chunk_ctu
-            
-            if accumulated_ctu >= min_words:
+
+        token_gate = self.create_token_gate(ctx)
+        token_gate_state = {}
+
+        for event in ctx.replay_events:
+            if event.event_type != "delta":
+                continue
+
+            seq = event.seq
+            text = event.delta_text or ""
+            if not text:
+                continue
+
+            agent_id = event.agent_id
+            ctx.clock.set_time(
+                datetime.fromtimestamp(
+                    event_time_ms(ctx.t0_emitted_ms, event) / 1000,
+                    tz=timezone.utc
+                )
+            )
+
+            state = token_gate_state.setdefault(agent_id, {"window_start": None, "last_seq": None})
+            if not token_gate.buffers.get(agent_id):
+                state["window_start"] = seq
+                state["last_seq"] = None
+
+            previous_last_seq = state["last_seq"]
+            flushed_text = run_async(token_gate.add_token(agent_id, text))
+
+            if flushed_text:
+                flush_reason = token_gate.get_last_flush_reason(agent_id) or "threshold"
+                if flush_reason == "silence_timer":
+                    flush_start = state["window_start"] if state["window_start"] is not None else seq
+                    flush_end = previous_last_seq if previous_last_seq is not None else seq
+                    state["window_start"] = seq
+                    state["last_seq"] = seq
+                else:
+                    flush_start = state["window_start"] if state["window_start"] is not None else seq
+                    flush_end = seq
+                    state["window_start"] = None
+                    state["last_seq"] = None
+
                 flush = TokenGateFlushResult(
                     flush_index=ctx.flush_count,
-                    start_seq=window_start,
-                    end_seq=seq,
-                    timestamp=ctx.timestamps.get_window_timestamp(seq),
-                    accumulated_ctu=accumulated_ctu,
-                    trigger_reason="threshold",
-                    text_hash=compute_text_hash(accumulated_text)
+                    start_seq=flush_start,
+                    end_seq=flush_end,
+                    timestamp=ctx.timestamps.get_window_timestamp(flush_end),
+                    accumulated_ctu=compute_ctu(flushed_text),
+                    trigger_reason=flush_reason,
+                    text_hash=compute_text_hash(flushed_text)
                 )
                 flushes.append(flush)
                 ctx.flush_count += 1
-                
-                # BufferAgent with novelty DISABLED
-                decision = BufferDecisionResult(
-                    decision_index=ctx.decision_count,
-                    decision_id=generate_decision_id(ctx.case_id, ctx.variant_id, ctx.decision_count),
-                    start_seq=window_start,
-                    end_seq=seq,
-                    timestamp=ctx.timestamps.get_window_timestamp(seq),
-                    input_ctu=accumulated_ctu,
-                    decision="summarize",
-                    filter_results={
-                        "completeness_passed": True,
-                        "value_passed": True,
-                        "novelty_passed": None  # DISABLED
-                    },
-                    llm_usage={
-                        "prompt_ctu": accumulated_ctu,
-                        "completion_ctu": 5,
-                        "provider_prompt_tokens": None,
-                        "provider_completion_tokens": None,
-                        "model_id": "stub"
-                    },
-                    latency_ms=50
+
+                if not self.buffer_agent.buffer:
+                    ctx.buffer_window_start_seq = flush_start
+                ctx.buffer_window_end_seq = flush_end
+
+                should_trigger, decision = self.evaluate_buffer_agent(
+                    ctx, agent_id, flushed_text, disable_novelty=True
                 )
                 decisions.append(decision)
-                ctx.decision_count += 1
-                
-                summary = self.generate_stub_summary(
-                    ctx, window_start, seq, accumulated_text
-                )
-                summaries.append(summary)
-                
-                accumulated_text = ""
-                accumulated_ctu = 0
-                window_start = seq + 1
-        
-        if accumulated_ctu > 0:
-            last_seq = ctx.trace_chunks[-1].get("seq", 0) if ctx.trace_chunks else 0
-            summary = self.generate_stub_summary(
-                ctx, window_start, last_seq, accumulated_text
-            )
-            summaries.append(summary)
-        
+
+                if should_trigger:
+                    buffer_text = "\n".join(self.buffer_agent.flush())
+                    summary = self.generate_summary(
+                        ctx, ctx.buffer_window_start_seq or flush_start, ctx.buffer_window_end_seq or flush_end, buffer_text, agent_id
+                    )
+                    summaries.append(summary)
+                    ctx.buffer_window_start_seq = None
+                    ctx.buffer_window_end_seq = None
+            else:
+                if token_gate.buffers.get(agent_id):
+                    state["last_seq"] = seq
+
+        for agent_id, state in token_gate_state.items():
+            if token_gate.buffers.get(agent_id):
+                flushed_text = run_async(token_gate.flush(agent_id, reason="end_of_trace"))
+                if flushed_text:
+                    flush_start = state["window_start"] if state["window_start"] is not None else 0
+                    flush_end = state["last_seq"] if state["last_seq"] is not None else flush_start
+                    flush = TokenGateFlushResult(
+                        flush_index=ctx.flush_count,
+                        start_seq=flush_start,
+                        end_seq=flush_end,
+                        timestamp=ctx.timestamps.get_window_timestamp(flush_end),
+                        accumulated_ctu=compute_ctu(flushed_text),
+                        trigger_reason="end_of_trace",
+                        text_hash=compute_text_hash(flushed_text)
+                    )
+                    flushes.append(flush)
+                    ctx.flush_count += 1
+
+                    if not self.buffer_agent.buffer:
+                        ctx.buffer_window_start_seq = flush_start
+                    ctx.buffer_window_end_seq = flush_end
+
+                    should_trigger, decision = self.evaluate_buffer_agent(
+                        ctx, agent_id, flushed_text, disable_novelty=True
+                    )
+                    decisions.append(decision)
+
+                    if should_trigger:
+                        buffer_text = "\n".join(self.buffer_agent.flush())
+                        summary = self.generate_summary(
+                            ctx, ctx.buffer_window_start_seq or flush_start, ctx.buffer_window_end_seq or flush_end, buffer_text, agent_id
+                        )
+                        summaries.append(summary)
+                        ctx.buffer_window_start_seq = None
+                        ctx.buffer_window_end_seq = None
+
         return summaries, decisions, flushes
 
 
@@ -677,25 +1005,46 @@ def execute_run(
     Returns:
         Path to output run log
     """
-    # Load trace chunks
-    trace_chunks = load_trace_chunks_for_case(trace_file)
-    
-    if not trace_chunks:
-        raise ValueError(f"No chunks found in {trace_file}")
-    
-    # Initialize deterministic timestamps
-    timestamps = DeterministicTimestamps(trace_chunks)
-    
-    # Extract mas_run_id from first chunk if available
-    mas_run_id = trace_chunks[0].get("mas_run_id", "mas-unknown")
+    # Load trace records and replay events
+    trace_records = list(iter_trace_records(trace_file))
+    delta_records = [
+        record for record in trace_records
+        if record.get("record_type") == "stream_delta"
+    ]
+    if not delta_records:
+        raise ValueError(f"No stream_delta records found in {trace_file}")
+
+    # Initialize deterministic timestamps from delta records
+    timestamps = DeterministicTimestamps(delta_records)
+
+    # Initialize deterministic clock for TokenGate timers
+    clock = ManualClock(
+        datetime.fromtimestamp(timestamps.run_start_time / 1000, tz=timezone.utc)
+    )
+
+    replay_engine = TraceReplayEngine(trace_file)
+    replay_events = list(replay_engine.replay_content_plane())
+    if not replay_events:
+        raise ValueError(f"No content_plane replay events in {trace_file}")
+
+    turn_bounds = {
+        turn_id: (cls.start_seq, cls.end_seq)
+        for turn_id, cls in replay_engine.get_turn_classifications().items()
+    }
+    meta = replay_engine.get_metadata()
+    mas_run_id = meta.mas_run_id
     
     # Create run context
     ctx = RunContext(
         case_id=case_id,
         variant_id=variant_id,
         trace_file=trace_file,
-        trace_chunks=trace_chunks,
+        trace_chunks=delta_records,
+        replay_events=replay_events,
+        turn_bounds=turn_bounds,
         timestamps=timestamps,
+        clock=clock,
+        t0_emitted_ms=meta.t0_emitted_ms,
         history_k=variant_config.get("summarizer", {}).get("history_k", 3),
         mas_run_id=mas_run_id,
         eval_run_id=eval_run_id,

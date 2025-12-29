@@ -162,6 +162,8 @@ One record per generated summary.
 }
 ```
 
+`summary_semantics_text` concatenates clinician-facing fields for concept extraction and **excludes** `agent_contributions` to avoid inflating semantic metrics.
+
 ### M6b Reconstruction
 
 **Paper hook: Section 5.1**
@@ -353,4 +355,3 @@ python src/validate_logs.py data/runs/V0/*.jsonl.gz --schema schemas/exaid.run.s
 Readers should check `schema_version` and handle:
 - Single-record format (v1.2.x and earlier)
 - Multi-record JSONL format (v1.3.0+)
-
