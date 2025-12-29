@@ -76,7 +76,7 @@ class EXAID:
         """Converts a list of AgentSummary objects to string representations for prompt history."""
         return [self._format_summary_for_history(s) for s in summaries]
 
-    async def received_trace(self, id: str, text: str) -> Optional[AgentSummary]:
+    async def received_trace(self, agent_id: str, text: str) -> Optional[AgentSummary]:
         """
         Processes a trace for the given agent ID and text, triggering summarization if appropriate.
 
@@ -88,7 +88,7 @@ class EXAID:
         for callback in self.trace_callbacks:
             try:
                 # Send the entire text as a single "token" for non-streaming traces
-                callback(id, text)
+                callback(agent_id, text)
             except Exception as e:
                 print(f"Error in trace callback: {e}")
         
@@ -96,7 +96,7 @@ class EXAID:
         all_summaries = self.get_all_summaries()
         previous_summaries = self._format_summaries_history(all_summaries)
         
-        trigger = await self.buffer_agent.addsegment(id, text, previous_summaries)
+        trigger = await self.buffer_agent.addsegment(agent_id, text, previous_summaries)
         if trigger:
             agent_buffer = self.buffer_agent.flush()
             buffer_str = "\n".join(agent_buffer)

@@ -106,7 +106,7 @@ class EXAID:
 
 **Core Methods**:
 
-#### `received_trace(id: str, text: str) -> Optional[AgentSummary]`
+#### `received_trace(agent_id: str, text: str) -> Optional[AgentSummary]`
 
 The main entry point for processing agent traces. This method:
 
@@ -119,7 +119,7 @@ The main entry point for processing agent traces. This method:
 
 **Code Snippet**:
 ```python
-async def received_trace(self, id: str, text: str) -> Optional[AgentSummary]:
+async def received_trace(self, agent_id: str, text: str) -> Optional[AgentSummary]:
     """Process a trace from an agent. Returns an AgentSummary if summarization 
     was triggered, None otherwise."""
     # Prepare previous summaries for buffer agent evaluation
@@ -789,7 +789,7 @@ asyncio.run(main())
 
 Initialize EXAID instance.
 
-#### `async received_trace(id: str, text: str) -> Optional[AgentSummary]`
+#### `async received_trace(agent_id: str, text: str) -> Optional[AgentSummary]`
 
 Process a trace from an agent.
 
