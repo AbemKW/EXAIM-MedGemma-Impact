@@ -5,6 +5,21 @@ from typing import Dict, List, Optional, Tuple
 from .tokengate_calibration_models import CaseMetrics, FlushEvent, Policy, PolicyMetrics
 
 
+def nearest_rank_percentile(sorted_values: List[float], percentile: float) -> Optional[float]:
+    """
+    Return the nearest-rank percentile for a sorted list.
+
+    This uses a discrete index (nearest-rank) rather than interpolation to match
+    existing calibration semantics and avoid external dependencies.
+    """
+    if not sorted_values:
+        return None
+    n = len(sorted_values)
+    idx = int(n * percentile)
+    idx = max(0, min(idx, n - 1))
+    return sorted_values[idx]
+
+
 def compute_case_metrics(
     case_id: str,
     policy_id: str,
@@ -48,8 +63,8 @@ def compute_case_metrics(
         sorted_sizes = sorted(chunk_sizes)
         n = len(sorted_sizes)
         metrics.chunk_size_p50 = sorted_sizes[n // 2] if n > 0 else None
-        metrics.chunk_size_p90 = sorted_sizes[int(n * 0.9)] if n > 0 else None
-        metrics.chunk_size_p95 = sorted_sizes[int(n * 0.95)] if n > 0 else None
+        metrics.chunk_size_p90 = nearest_rank_percentile(sorted_sizes, 0.9)
+        metrics.chunk_size_p95 = nearest_rank_percentile(sorted_sizes, 0.95)
         metrics.chunk_size_max = max(chunk_sizes)
 
     # Worst wait times (time between flushes)
@@ -61,8 +76,7 @@ def compute_case_metrics(
 
         if wait_times:
             sorted_waits = sorted(wait_times)
-            n = len(sorted_waits)
-            metrics.worst_wait_ms = sorted_waits[int(n * 0.95)] if n > 0 else None
+            metrics.worst_wait_ms = nearest_rank_percentile(sorted_waits, 0.95)
             metrics.worst_wait_max_ms = max(wait_times)
 
     # Spam percentage (policy-relative)
@@ -107,7 +121,7 @@ def aggregate_policy_metrics(policy: Policy, case_metrics_list: List[CaseMetrics
         sorted_ttff = sorted(ttff_content_values)
         n = len(sorted_ttff)
         policy_metrics.ttff_content_p50_ms = sorted_ttff[n // 2]
-        policy_metrics.ttff_content_p95_ms = sorted_ttff[int(n * 0.95)]
+        policy_metrics.ttff_content_p95_ms = nearest_rank_percentile(sorted_ttff, 0.95)
 
     ttff_trace_values = [
         m.ttff_trace_ms for m in case_metrics_list if m.ttff_trace_ms is not None
@@ -135,8 +149,7 @@ def aggregate_policy_metrics(policy: Policy, case_metrics_list: List[CaseMetrics
     chunk_size_p90s = [m.chunk_size_p90 for m in case_metrics_list if m.chunk_size_p90 is not None]
     if chunk_size_p90s:
         sorted_p90s = sorted(chunk_size_p90s)
-        n = len(sorted_p90s)
-        policy_metrics.chunk_size_p90 = sorted_p90s[int(n * 0.9)] if n > 0 else None
+        policy_metrics.chunk_size_p90 = nearest_rank_percentile(sorted_p90s, 0.9)
 
     chunk_size_p95s = [m.chunk_size_p95 for m in case_metrics_list if m.chunk_size_p95 is not None]
     if chunk_size_p95s:
@@ -151,8 +164,7 @@ def aggregate_policy_metrics(policy: Policy, case_metrics_list: List[CaseMetrics
     worst_waits = [m.worst_wait_ms for m in case_metrics_list if m.worst_wait_ms is not None]
     if worst_waits:
         sorted_waits = sorted(worst_waits)
-        n = len(sorted_waits)
-        policy_metrics.worst_wait_p95_ms = sorted_waits[int(n * 0.95)] if n > 0 else None
+        policy_metrics.worst_wait_p95_ms = nearest_rank_percentile(sorted_waits, 0.95)
         policy_metrics.worst_wait_max_ms = max(worst_waits)
 
     # Aggregate spam percentage

@@ -75,7 +75,7 @@ def verify_trace_hashes(
                 )
                 log("  This may indicate the trace file was modified after manifest creation.")
                 log("  Continuing calibration, but results may not be reproducible.")
-        except Exception as exc:
+        except (OSError, gzip.BadGzipFile, UnicodeDecodeError) as exc:
             log(f"WARNING: Failed to verify hash for {case_id}: {exc}")
 
 
@@ -160,8 +160,7 @@ def generate_calibration_run_id(
     exaid_commit: str,
 ) -> str:
     """Generate deterministic calibration run ID."""
-    hash8 = lambda h: h[:8]
-    return f"calib_{hash8(trace_dataset_hash)}_{hash8(config_hash)}_{hash8(exaid_commit)}"
+    return f"calib_{trace_dataset_hash[:8]}_{config_hash[:8]}_{exaid_commit[:8]}"
 
 
 def write_config_copy(output_path: Path, config: dict) -> None:

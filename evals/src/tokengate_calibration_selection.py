@@ -292,10 +292,9 @@ def select_pareto_utopia(
     ]  # TTFF and flush_count: lower is better; chunk_size: higher is better
 
     # Determine active dimensions (exclude dropped metrics)
-    active_dimensions = []
-    for i, metric_name in enumerate(metric_order):
-        if metric_name not in dropped_metrics:
-            active_dimensions.append(i)
+    active_dimensions = [
+        i for i, metric_name in enumerate(metric_order) if metric_name not in dropped_metrics
+    ]
 
     if not active_dimensions:
         # All metrics dropped - use lexicographic fallback
@@ -320,25 +319,27 @@ def select_pareto_utopia(
     points = []
     for pm in survivor_metrics:
         goodness_vector = []
-        for i, metric_name in enumerate(metric_order):
-            if i in active_dimensions:
-                value = getattr(pm, metric_name, None)
-                if value is None:
-                    # Skip policies with missing values
-                    break
+        missing_metric = False
+        for i in active_dimensions:
+            metric_name = metric_order[i]
+            value = getattr(pm, metric_name, None)
+            if value is None:
+                # Skip policies with missing values for active metrics.
+                missing_metric = True
+                break
 
-                bounds = computed_bounds[metric_name]
-                if metric_name == "ttff_content_p50_ms":
-                    lo = bounds["lo_ms"]
-                    hi = bounds["hi_ms"]
-                else:
-                    lo = bounds["lo"]
-                    hi = bounds["hi"]
+            bounds = computed_bounds[metric_name]
+            if metric_name == "ttff_content_p50_ms":
+                lo = bounds["lo_ms"]
+                hi = bounds["hi_ms"]
+            else:
+                lo = bounds["lo"]
+                hi = bounds["hi"]
 
-                goodness = normalize_to_goodness(value, lo, hi, metric_lower_is_better[i])
-                goodness_vector.append(goodness)
+            goodness = normalize_to_goodness(value, lo, hi, metric_lower_is_better[i])
+            goodness_vector.append(goodness)
 
-        if len(goodness_vector) == len(active_dimensions):
+        if not missing_metric:
             points.append((pm, goodness_vector))
 
     if not points:
@@ -380,8 +381,6 @@ def select_pareto_utopia(
 
     # Compute dimension-normalized Euclidean distance to utopia
     k = len(active_dimensions)
-    utopia = [1.0] * k  # Utopia point: all goodness values = 1.0
-
     distances = []
     for pm, goodness_vec in frontier:
         # Dimension-normalized distance: sqrt(mean((1 - goodness_i)^2))
@@ -455,39 +454,38 @@ def compute_utopia_distances_for_all(
     metric_lower_is_better = [True, True, False]
 
     # Determine active dimensions
-    active_dimensions = []
-    for i, metric_name in enumerate(metric_order):
-        if metric_name not in dropped_metrics:
-            active_dimensions.append(i)
+    active_dimensions = [
+        i for i, metric_name in enumerate(metric_order) if metric_name not in dropped_metrics
+    ]
 
     if not active_dimensions:
         # All metrics dropped - return empty list
         return []
 
     k = len(active_dimensions)
-    utopia = [1.0] * k
-
     distances = []
     for pm in survivor_metrics:
         goodness_vector = []
-        for i, metric_name in enumerate(metric_order):
-            if i in active_dimensions:
-                value = getattr(pm, metric_name, None)
-                if value is None:
-                    break
+        missing_metric = False
+        for i in active_dimensions:
+            metric_name = metric_order[i]
+            value = getattr(pm, metric_name, None)
+            if value is None:
+                missing_metric = True
+                break
 
-                bounds = computed_bounds[metric_name]
-                if metric_name == "ttff_content_p50_ms":
-                    lo = bounds["lo_ms"]
-                    hi = bounds["hi_ms"]
-                else:
-                    lo = bounds["lo"]
-                    hi = bounds["hi"]
+            bounds = computed_bounds[metric_name]
+            if metric_name == "ttff_content_p50_ms":
+                lo = bounds["lo_ms"]
+                hi = bounds["hi_ms"]
+            else:
+                lo = bounds["lo"]
+                hi = bounds["hi"]
 
-                goodness = normalize_to_goodness(value, lo, hi, metric_lower_is_better[i])
-                goodness_vector.append(goodness)
+            goodness = normalize_to_goodness(value, lo, hi, metric_lower_is_better[i])
+            goodness_vector.append(goodness)
 
-        if len(goodness_vector) == k:
+        if not missing_metric:
             # Compute dimension-normalized distance
             squared_diffs = [(1.0 - goodness_vector[i]) ** 2 for i in range(k)]
             distance = math.sqrt(sum(squared_diffs) / k)
