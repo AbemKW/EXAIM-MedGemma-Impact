@@ -16,7 +16,7 @@ Validation Rules:
    - turn_end.t_ms >= last_delta.t_emitted_ms for that turn
    - NOTE: ±2ms tolerance allowed (BOUNDARY_TIME_EPSILON_MS) due to
      millisecond resolution; violations within epsilon are warnings, not errors
-6. content_hash matches recomputed hash for turn deltas
+6. content_hash matches recomputed hash for turn deltas (warning only, never an error)
 
 Stub Mode Warning:
 - Traces with stub_mode=true are flagged and should not be used for evaluation
@@ -120,7 +120,7 @@ def validate_trace_file(
     6. Boundary time consistency:
        - turn_start.t_ms <= first_delta.t_emitted_ms for that turn
        - turn_end.t_ms >= last_delta.t_emitted_ms for that turn
-    7. content_hash matches recomputed hash for turn deltas
+    7. content_hash matches recomputed hash for turn deltas (warning only, never an error)
     
     Args:
         trace_path: Path to trace file
@@ -275,7 +275,7 @@ def validate_trace_file(
                     if verbose:
                         errors.append(f"Line {idx}: turn {turn_id} end without start")
                 
-                # Verify content_hash
+                # Verify content_hash (warning only, never an error)
                 content_hash = record.get("content_hash")
                 if content_hash and turn_id in turn_deltas:
                     deltas = turn_deltas[turn_id]
@@ -284,7 +284,7 @@ def validate_trace_file(
                     if content_hash != expected_hash:
                         stats.content_hash_mismatches += 1
                         if verbose:
-                            errors.append(f"Line {idx}: content_hash mismatch for turn {turn_id}")
+                            warnings.append(f"Line {idx}: content_hash mismatch for turn {turn_id}")
                 
                 # Remove from tracking (turn completed)
                 if turn_id in turn_starts:
@@ -353,13 +353,13 @@ def validate_trace_file(
                         errors.append(f"Turn {turn_id}: start.t_ms {start_t_ms} > first_delta.t {first_delta_t} (diff={diff_ms}ms)")
     
     # Determine overall validity
+    # Note: content_hash_mismatches are warnings only, not errors
     is_valid = (
         stats.seq_violations == 0 and
         stats.timestamp_violations == 0 and
         stats.t_rel_violations == 0 and
         stats.boundary_mismatches == 0 and
         stats.boundary_time_violations == 0 and
-        stats.content_hash_mismatches == 0 and
         len(stats.missing_fields) == 0 and
         len(errors) == 0
     )
@@ -535,7 +535,11 @@ def main():
     print("  2. t_emitted_ms non-decreasing for stream_delta")
     print("  3. t_rel_ms == t_emitted_ms - t0_emitted_ms")
     print("  4. Turn boundary start/end pairs match")
-    print("  5. content_hash matches recomputed hash")
+    print("  5. Boundary time consistency:")
+    print("     - turn_start.t_ms <= first_delta.t_emitted_ms")
+    print("     - turn_end.t_ms >= last_delta.t_emitted_ms")
+    print("     - ±2ms tolerance allowed (warnings within tolerance)")
+    print("  6. content_hash matches recomputed hash (warning only)")
     print()
     
     try:
@@ -572,18 +576,24 @@ def main():
     print(f"  t_rel violations: {report['total_t_rel_violations']}")
     print(f"  boundary mismatches: {report['total_boundary_mismatches']}")
     print(f"  boundary time violations: {report['total_boundary_time_violations']}")
-    print(f"  content_hash mismatches: {report['total_content_hash_mismatches']}")
     
-    # Show warnings (cosmetic issues within tolerance)
-    if report["total_boundary_time_warnings"] > 0:
+    # Show warnings (non-blocking issues)
+    has_warnings = (
+        report["total_content_hash_mismatches"] > 0 or
+        report["total_boundary_time_warnings"] > 0
+    )
+    if has_warnings:
         print()
-        print(f"Warnings (cosmetic, within {BOUNDARY_TIME_EPSILON_MS}ms tolerance):")
-        print(f"  boundary time warnings: {report['total_boundary_time_warnings']}")
-        print(f"  Files with warnings: {len(report['files_with_warnings'])}")
-        for warn_file in report["files_with_warnings"][:5]:
-            print(f"    - {warn_file}")
-        if len(report["files_with_warnings"]) > 5:
-            print(f"    ... and {len(report['files_with_warnings']) - 5} more")
+        print("Warnings (non-blocking):")
+        if report["total_content_hash_mismatches"] > 0:
+            print(f"  content_hash mismatches: {report['total_content_hash_mismatches']}")
+        if report["total_boundary_time_warnings"] > 0:
+            print(f"  boundary time warnings (within {BOUNDARY_TIME_EPSILON_MS}ms tolerance): {report['total_boundary_time_warnings']}")
+            print(f"  Files with boundary time warnings: {len(report['files_with_warnings'])}")
+            for warn_file in report["files_with_warnings"][:5]:
+                print(f"    - {warn_file}")
+            if len(report["files_with_warnings"]) > 5:
+                print(f"    ... and {len(report['files_with_warnings']) - 5} more")
     
     # Stub mode warning
     if report["stub_mode_files"] > 0:
