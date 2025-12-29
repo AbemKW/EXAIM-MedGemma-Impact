@@ -141,13 +141,32 @@ def validate_file(
                 
                 # Validate the record
                 validation_errors = list(validator.iter_errors(record))
-                if validation_errors:
+                extra_errors = []
+                if (
+                    record_schema == "exaid.run"
+                    and record.get("record_type") == "summary_event"
+                ):
+                    required_summary_fields = [
+                        "trigger_type",
+                        "summary_history_event_ids",
+                        "summarizer_input_hash",
+                        "limits_ok",
+                        "failure_mode",
+                    ]
+                    for field in required_summary_fields:
+                        if field not in record:
+                            extra_errors.append(
+                                f"Line {line_num}: {field}: missing required field"
+                            )
+
+                if validation_errors or extra_errors:
                     invalid_count += 1
                     for error in validation_errors:
                         path = ".".join(str(p) for p in error.absolute_path)
                         errors.append(
                             f"Line {line_num}: {path or 'root'}: {error.message}"
                         )
+                    errors.extend(extra_errors)
                 else:
                     valid_count += 1
                     if verbose:
@@ -299,5 +318,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
 
