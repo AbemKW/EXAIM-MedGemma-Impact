@@ -103,7 +103,22 @@ def get_buffer_agent_system_prompt() -> str:
 Your goal is to prevent "jittery" updates. You must only interrupt the doctor with a summary when a **coherent clinical topic is fully addressed**.
 
 **YOUR CORE TASK:**
-Analyze the "New trace" in the context of the "Buffer". Determine the stream state using a three-state machine, then independently evaluate relevance and novelty.
+Analyze the "New trace" in the context of the "Buffer". You will be informed which agent's traces you are analyzing. Evaluate completeness, determine the stream state using a three-state machine, then independently evaluate relevance and novelty.
+
+**COMPLETENESS DETECTION (is_complete):**
+
+Evaluate independently: Is this a self-contained reasoning unit?
+
+A trace is complete if it finishes a coherent idea, interpretation, or diagnostic hypothesis. Examples:
+- A full interpretation of lab results or vitals
+- A concluded diagnostic thought (e.g., "This could be prerenal AKI due to volume depletion")
+- A full medication change rationale or therapeutic proposal
+- Reaching a diagnostic boundary (e.g., "at this point, the likely cause is...")
+
+Incomplete examples:
+- Starting a list but not finishing
+- Raising a possibility without context or reasoning
+- Midstream thoughts (e.g., "and also her BUN...")
 
 **STREAM STATE DETECTION (stream_state):**
 
@@ -113,7 +128,7 @@ You must classify the stream into one of three states based on **Topic Continuit
    - **Reasoning Loop**: The agent is explaining the "Why" after stating a "What".
    - **Lists**: The agent uses markers like "1.", "First,", "Additionally," or implies a multi-step plan.
    - **Refinement**: The agent adds detail to the current topic (e.g., "Also, monitor K+..." while discussing Diuretics).
-   - **Status**: WAIT - do not trigger. Let the buffer accumulate.
+   - **Status**: WAIT - do not trigger based on topic alone. However, if COMPLETENESS is satisfied along with relevance and novelty, triggering is allowed even in this state.
 
 2. **TOPIC_SHIFT** - The agent explicitly moves to a **distinctly different** organ system, problem, or section:
    - **Explicit Transition**: "Moving to...", "Next, regarding the arrhythmia...", "Now assessing renal function..."
@@ -142,14 +157,30 @@ Evaluate independently: Is this clinically important?
   - **New Insight**: E.g. "Diagnosis upgraded from possible to likely" (Confidence change).
 
 **FINAL TRIGGER (final_trigger):**
-Set to True ONLY if:
-1. (stream_state == "TOPIC_SHIFT" OR stream_state == "CRITICAL_ALERT") 
-   AND
-2. is_relevant == True 
-   AND
-3. is_novel == True
+Set to True if ANY of these conditions are met:
+
+**Path 1: COMPLETENESS + CLINICAL VALUE + NOVELTY**
+- is_complete == True 
+  AND
+- is_relevant == True 
+  AND
+- is_novel == True
+
+**Path 2: TOPIC_SHIFT + CLINICAL VALUE + NOVELTY**
+- stream_state == "TOPIC_SHIFT"
+  AND
+- is_relevant == True 
+  AND
+- is_novel == True
+
+**Path 3: CRITICAL_ALERT**
+- stream_state == "CRITICAL_ALERT"
+- (Triggers immediately regardless of other criteria)
+
+This dual-path approach allows triggering on completed thoughts even when the topic hasn't shifted, preventing the "wait too long" failure mode while preserving smart pacing.
 
 **INPUTS:**
+- Agent ID: The identifier of the agent whose traces you are analyzing (e.g., "Laboratory Agent", "Cardiology Agent").
 - Previous Summaries: What the user already knows.
 - Current Buffer: The unspoken thoughts accumulating right now.
 - New Trace: The latest sentence(s) added to the buffer.
@@ -158,7 +189,9 @@ Set to True ONLY if:
 
 def get_buffer_agent_user_prompt() -> str:
     """Returns the user prompt template for the BufferAgent."""
-    return """Previous Summaries:
+    return """Agent ID: {agent_id}
+
+Previous Summaries:
 {summaries}
 
 Current Buffer (Unsummarized Context):
@@ -167,5 +200,5 @@ Current Buffer (Unsummarized Context):
 New Trace (Latest Segment):
 {new_trace}
 
-Analyze the stream state, relevance, and novelty. Provide structured analysis."""
+Analyze completeness, stream state, relevance, and novelty. Provide structured analysis."""
 

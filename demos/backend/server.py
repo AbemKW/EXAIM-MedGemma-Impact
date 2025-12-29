@@ -476,8 +476,9 @@ async def replay_trace_file(trace_file_path: str):
     current_turn_text: Dict[str, str] = {}  # agent_id -> accumulated text
     
     try:
-        # Replay full stream (includes both content_plane and control_plane turns)
-        for event in engine.replay_full():
+        # Replay content_plane stream only (excludes control_plane turns like orchestrator summaries)
+        # This ensures EXAID only processes actual agent reasoning traces, not internal MAS coordination
+        for event in engine.replay_content_plane():
             # Handle timing preservation
             if last_time_ms is not None:
                 delay_ms = max(0, event.virtual_time_ms - last_time_ms)
@@ -489,39 +490,53 @@ async def replay_trace_file(trace_file_path: str):
                 # Send agent_started message (this generates and stores run_id)
                 await send_agent_started(event.agent_id)
                 
-                # Initialize accumulated text for this turn
-                current_turn_text[event.agent_id] = ""
-                
             elif event.event_type == "delta":
                 # Send token directly to WebSocket
                 await send_token_direct(event.agent_id, event.delta_text)
                 
-                # Accumulate text for EXAID processing
-                if event.agent_id in current_turn_text:
-                    current_turn_text[event.agent_id] += event.delta_text
+                # Process token through EXAID immediately to match live streaming behavior
+                # This allows TokenGate to accumulate and flush chunks naturally during the stream
+                # Summaries will be generated at the same points as in live mode
+                try:
+                    # Temporarily remove trace_callback to avoid duplicate token sending
+                    # (we've already sent tokens via send_token_direct above)
+                    had_callback = trace_callback in exaid.trace_callbacks
+                    if had_callback:
+                        exaid.trace_callbacks.remove(trace_callback)
+                    
+                    # Process each character through TokenGate
+                    for char in event.delta_text:
+                        await exaid.on_new_token(event.agent_id, char)
+                    
+                    # Re-register trace_callback for future deltas
+                    if had_callback and trace_callback not in exaid.trace_callbacks:
+                        exaid.register_trace_callback(trace_callback)
+                except Exception as e:
+                    logger.warning(f"Error processing delta token for agent {event.agent_id}: {e}")
+                    # Re-register callback even on error
+                    if trace_callback not in exaid.trace_callbacks:
+                        exaid.register_trace_callback(trace_callback)
                 
             elif event.event_type == "turn_end":
-                # Send accumulated text to EXAID for summary generation
-                accumulated = current_turn_text.get(event.agent_id, "")
-                if accumulated:
-                    try:
-                        # Temporarily remove trace_callback to avoid duplicate token sending
-                        # (we've already sent tokens via send_token_direct during delta events)
-                        had_callback = trace_callback in exaid.trace_callbacks
-                        if had_callback:
-                            exaid.trace_callbacks.remove(trace_callback)
-                        await exaid.received_trace(event.agent_id, accumulated)
-                        # Re-register trace_callback for future turns
-                        if had_callback and trace_callback not in exaid.trace_callbacks:
-                            exaid.register_trace_callback(trace_callback)
-                    except Exception as e:
-                        logger.warning(f"Error processing trace for agent {event.agent_id}: {e}")
-                        # Re-register callback even on error
-                        if trace_callback not in exaid.trace_callbacks:
-                            exaid.register_trace_callback(trace_callback)
-                
-                # Clear accumulated text for this agent
-                current_turn_text[event.agent_id] = ""
+                # Flush any remaining buffer for this agent
+                # This ensures any final content is processed even if TokenGate hasn't flushed yet
+                try:
+                    # Temporarily remove trace_callback to avoid duplicate token sending
+                    had_callback = trace_callback in exaid.trace_callbacks
+                    if had_callback:
+                        exaid.trace_callbacks.remove(trace_callback)
+                    
+                    # Flush any remaining buffer
+                    await exaid.flush_agent(event.agent_id)
+                    
+                    # Re-register trace_callback for future turns
+                    if had_callback and trace_callback not in exaid.trace_callbacks:
+                        exaid.register_trace_callback(trace_callback)
+                except Exception as e:
+                    logger.warning(f"Error flushing agent {event.agent_id} at turn_end: {e}")
+                    # Re-register callback even on error
+                    if trace_callback not in exaid.trace_callbacks:
+                        exaid.register_trace_callback(trace_callback)
     
     except Exception as e:
         logger.error(f"Error during trace replay: {e}")
