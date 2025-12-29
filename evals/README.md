@@ -630,13 +630,13 @@ evals/data/calibration/calib_<hash8>_<hash8>_<hash8>/
    - Timer flush percentage, timer under-minimum percentage
 
 5. **Constraint Filters**: Hard requirements (reject violating policies)
-   - `ttff_content_p95_ms ≤ 30000 ms`
+   - `ttff_content_p95_ms ≤ derived` (3× global p95 time-to-reach-min_words)
    - `spam_pct_mean ≤ 10%`
    - `timer_under_min_pct_mean ≤ 20%`
    - `chunk_size_p50 ≥ 0.6 * min_words` (policy-relative)
    - `chunk_size_p50 ≥ 50 words` (absolute minimum, cost constraint)
-   - `chunk_size_p95 ≤ 150 words`
-   - `worst_wait_p95_ms ≤ 60000 ms`
+   - `chunk_size_p95 ≤ 180 words`
+   - `worst_wait_p95_ms ≤ derived` (1.5× max_wait_timeout_ms upper bound)
    - `flush_count_mean ≤ 100` (cost constraint: limits BufferAgent calls per case)
 
 6. **Selection Rule**: 3-objective Pareto frontier + utopia-distance selection

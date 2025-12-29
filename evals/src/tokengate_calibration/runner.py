@@ -1,6 +1,7 @@
 """Orchestrate TokenGate calibration runs."""
 
 import asyncio
+import math
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -39,6 +40,7 @@ from .metrics import (
     compute_all_normalization_bounds,
     compute_case_metrics,
     compute_spam_sensitivity,
+    nearest_rank_percentile,
 )
 from .models import CaseMetrics, FlushEvent, Policy, PolicyMetrics
 from .selection import (
@@ -260,6 +262,116 @@ async def run_calibration(
     trace_entries, mas_run_id = load_manifest_entries(manifest_path)
     if not trace_entries:
         raise ValueError(f"No trace entries found in manifest: {manifest_path}")
+
+    def compute_time_to_min_words_p95(
+        min_words_values: List[int],
+    ) -> Optional[float]:
+        durations_by_min_words = {min_words: [] for min_words in min_words_values}
+
+        for trace_entry in trace_entries:
+            trace_file = traces_dir / trace_entry["file"]
+            if not trace_file.exists():
+                log(f"WARNING: Trace file not found for derived constraints: {trace_file}")
+                continue
+
+            try:
+                engine = TraceReplayEngine(
+                    trace_file,
+                    strict_stub_guard=not allow_stub,
+                    strict_validation=config.get("safety", {}).get("strict_validation", True),
+                )
+                events = list(engine.replay_content_plane())
+            except (StubTraceError, TraceValidationError) as exc:
+                log(f"WARNING: Skipping trace for derived constraints ({trace_file}): {exc}")
+                continue
+
+            per_agent_state = {}
+
+            for event in events:
+                agent_id = event.agent_id
+                if agent_id not in per_agent_state:
+                    per_agent_state[agent_id] = {
+                        "start_ms": None,
+                        "word_count": 0,
+                        "reached": set(),
+                    }
+                state = per_agent_state[agent_id]
+
+                if event.event_type == "delta" and event.delta_text:
+                    if state["start_ms"] is None:
+                        state["start_ms"] = event.virtual_time_ms
+
+                    state["word_count"] += len(event.delta_text.split())
+
+                    for min_words in min_words_values:
+                        if min_words in state["reached"]:
+                            continue
+                        if state["word_count"] >= min_words and state["start_ms"] is not None:
+                            duration_ms = event.virtual_time_ms - state["start_ms"]
+                            durations_by_min_words[min_words].append(duration_ms)
+                            state["reached"].add(min_words)
+
+                elif event.event_type == "turn_end":
+                    per_agent_state[agent_id] = {
+                        "start_ms": None,
+                        "word_count": 0,
+                        "reached": set(),
+                    }
+
+        per_min_p95 = []
+        for min_words, durations in durations_by_min_words.items():
+            if not durations:
+                log(f"WARNING: No durations for min_words={min_words} in derived constraints.")
+                continue
+            sorted_durations = sorted(durations)
+            p95 = nearest_rank_percentile(sorted_durations, 0.95)
+            if p95 is not None:
+                per_min_p95.append(p95)
+
+        if not per_min_p95:
+            return None
+
+        return max(per_min_p95)
+
+    def apply_derived_constraints() -> None:
+        derived = config.get("derived_constraints", {})
+        constraints = config.setdefault("constraints", {})
+
+        ttff_config = derived.get("ttff_content_p95_ms", {})
+        if ttff_config.get("enabled", False):
+            safety_factor = float(ttff_config.get("safety_factor", 3.0))
+            min_words_values = config.get("parameter_grid", {}).get("min_words", [])
+            if not min_words_values:
+                log("WARNING: No min_words values to derive ttff_content_p95_ms.")
+                max_p95 = None
+            else:
+                max_p95 = compute_time_to_min_words_p95(min_words_values)
+            if max_p95 is None:
+                log("WARNING: Unable to derive ttff_content_p95_ms; leaving as configured.")
+            else:
+                derived_value = int(math.ceil(max_p95 * safety_factor))
+                constraints["ttff_content_p95_ms"] = derived_value
+                log(
+                    f"Derived ttff_content_p95_ms={derived_value} "
+                    f"(max p95={max_p95:.1f}ms, safety_factor={safety_factor})"
+                )
+
+        worst_wait_config = derived.get("worst_wait_p95_ms", {})
+        if worst_wait_config.get("enabled", False):
+            safety_factor = float(worst_wait_config.get("safety_factor", 1.5))
+            max_wait_values = config.get("parameter_grid", {}).get("max_wait_timeout_ms", [])
+            if max_wait_values:
+                base = max(max_wait_values)
+                derived_value = int(math.ceil(base * safety_factor))
+                constraints["worst_wait_p95_ms"] = derived_value
+                log(
+                    f"Derived worst_wait_p95_ms={derived_value} "
+                    f"(max_wait_timeout_ms={base}, safety_factor={safety_factor})"
+                )
+            else:
+                log("WARNING: No max_wait_timeout_ms values to derive worst_wait_p95_ms.")
+
+    apply_derived_constraints()
 
     # Compute reproducibility hashes
     trace_dataset_hash = compute_trace_dataset_hash(manifest_path)
