@@ -1,0 +1,118 @@
+parameter_grid:
+  min_words:
+  - 30
+  - 40
+  - 50
+  - 60
+  - 70
+  max_words:
+  - 80
+  - 100
+  - 120
+  - 140
+  - 160
+  silence_timer_ms:
+  - 1000
+  - 1500
+  - 2000
+  - 2500
+  - 3000
+  max_wait_timeout_ms:
+  - 4000
+  - 5000
+  - 6000
+  - 7000
+  - 8000
+  boundary_cues: '.?!
+
+    '
+validity_constraints:
+  min_words_lt_max_words: true
+  max_wait_gte_silence: true
+  min_gap_between_min_max: 10
+constraints:
+  ttff_content_p95_ms: 4479
+  spam_pct_mean: 10.0
+  timer_under_min_pct_mean: 20.0
+  chunk_size_p50_min_ratio: 0.6
+  chunk_size_p95_max: 180
+  worst_wait_p95_ms: 12000
+  flush_count_mean: 100
+  chunk_size_p50_min: 50
+derived_constraints:
+  ttff_content_p95_ms:
+    enabled: true
+    safety_factor: 3.0
+  worst_wait_p95_ms:
+    enabled: true
+    safety_factor: 1.5
+selection:
+  pareto:
+    x_metric: ttff_content_p50_ms
+    y_metric: chunk_size_p50
+    knee_detection_method: curvature
+  weighted_score:
+    enabled: true
+    weights:
+      ttff_content_p50_ms: 0.25
+      flush_count_mean: 0.15
+      chunk_size_p50: 0.3
+      spam_pct_mean: 0.15
+      worst_wait_p95_ms: 0.15
+    normalization_bounds:
+      chunk_size_p50:
+        lower: 30
+        upper: 160
+      flush_count_mean:
+        lower: 40
+        upper: 100
+      ttff_content_p50_ms:
+        lower: 500
+        upper: 3000
+      spam_pct_mean:
+        lower: 0
+        upper: 10
+      worst_wait_p95_ms:
+        lower: 2000
+        upper: 12000
+spam:
+  alpha_default: 0.7
+  alpha_sensitivity:
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  exclude_end_of_trace: true
+reproducibility:
+  run_id_format: calib_{trace_dataset_hash8}_{config_hash8}_{exaid_commit8}
+  hash_truncate: 8
+safety:
+  strict_stub_guard: true
+  verify_trace_hashes: true
+  strict_validation: true
+  max_replay_failure_rate: 0.05
+  verify_determinism: true
+output:
+  base_dir: data/calibration
+  artifacts:
+  - calibration_results.csv
+  - calibration_per_case.jsonl
+  - calibration_summary.json
+  - chosen_tokengate_params.yaml
+  - calibration_report.md
+  - calibration_config.yaml
+  - spam_sensitivity.json
+  - pareto_plot.png
+literature_sources:
+  min_words_range:
+    note: Larger chunks for 'bucket not pipe' behavior (30-70 words)
+    sources: []
+  max_words_range:
+    note: Typical sentence ranges and practical chunk sizes (80-160 words)
+    sources: []
+  silence_timer_range:
+    note: Streaming pause thresholds from prior studies (1-3s)
+    sources: []
+  max_wait_timeout_range:
+    note: Absolute upper bound to flush accumulated chunks (4-8s)
+    sources: []
