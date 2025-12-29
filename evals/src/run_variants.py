@@ -273,12 +273,17 @@ class VariantPipeline(ABC):
         event_id = generate_event_id(ctx.case_id, ctx.variant_id, event_index)
         timestamp = ctx.timestamps.get_window_timestamp(end_seq)
 
+        summary_history = ctx.summaries
+        latest_summary = summary_history[-1] if summary_history else None
+        history_slice = summary_history[:-1]
+        if ctx.history_k:
+            history_slice = history_slice[-ctx.history_k:]
         summary_history_strs = [
-            format_summary_for_history(summary) for summary in ctx.summaries[:-1]
-        ] if len(ctx.summaries) > 1 else []
+            format_summary_for_history(summary) for summary in history_slice
+        ]
         latest_summary_str = (
-            format_summary_for_history(ctx.summaries[-1])
-            if ctx.summaries
+            format_summary_for_history(latest_summary)
+            if latest_summary
             else "No summaries yet."
         )
 
@@ -358,8 +363,11 @@ class VariantPipeline(ABC):
         decision_index = ctx.decision_count
         ctx.decision_count += 1
 
+        summary_history = ctx.summaries
+        if ctx.history_k:
+            summary_history = summary_history[-ctx.history_k:]
         summary_history = [
-            format_summary_for_history(summary) for summary in ctx.summaries
+            format_summary_for_history(summary) for summary in summary_history
         ]
         buffer_context = "\n".join(self.buffer_agent.buffer) if self.buffer_agent.buffer else "(Buffer empty)"
 
