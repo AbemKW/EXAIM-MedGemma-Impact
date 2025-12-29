@@ -7,7 +7,12 @@ from exaid_core.utils.prompts import get_summarizer_system_prompt, get_summarize
 class SummarizerAgent:
     def __init__(self):
         self.base_llm = get_llm(LLMRole.SUMMARIZER)
-        self.llm = self.base_llm.with_structured_output(schema=AgentSummary)
+        self.llm = self.base_llm.with_structured_output(
+                schema=AgentSummary,
+                method="json_schema",
+                strict=True
+        )
+
         self.summarize_prompt = ChatPromptTemplate.from_messages([    
             ("system", get_summarizer_system_prompt()),
             ("user", get_summarizer_user_prompt()),
