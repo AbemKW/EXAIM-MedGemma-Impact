@@ -2,7 +2,7 @@
 
 from typing import Callable, List, Optional, Tuple
 
-from tokengate_calibration_models import PolicyMetrics
+from .tokengate_calibration_models import PolicyMetrics
 
 
 def normalize_value(value: float, lower: float, upper: float, invert: bool = False) -> float:

@@ -12,11 +12,11 @@ repo_root = Path(__file__).parent.parent.parent.resolve()
 if (repo_root / "exaid_core").exists():
     sys.path.insert(0, str(repo_root))
 
-from trace_replay_engine import TraceReplayEngine, StubTraceError, TraceValidationError
+from .trace_replay_engine import TraceReplayEngine, StubTraceError, TraceValidationError
 from exaid_core.token_gate.token_gate import TokenGate, ManualClock
 
-from tokengate_calibration_grid import filter_valid_policies, generate_policy_grid
-from tokengate_calibration_io import (
+from .tokengate_calibration_grid import filter_valid_policies, generate_policy_grid
+from .tokengate_calibration_io import (
     compute_config_hash,
     compute_trace_dataset_hash,
     generate_calibration_run_id,
@@ -33,15 +33,15 @@ from tokengate_calibration_io import (
     write_spam_sensitivity_json,
     write_summary_json,
 )
-from tokengate_calibration_metrics import (
+from .tokengate_calibration_metrics import (
     aggregate_policy_metrics,
     check_constraints,
     compute_all_normalization_bounds,
     compute_case_metrics,
     compute_spam_sensitivity,
 )
-from tokengate_calibration_models import CaseMetrics, FlushEvent, Policy, PolicyMetrics
-from tokengate_calibration_selection import (
+from .tokengate_calibration_models import CaseMetrics, FlushEvent, Policy, PolicyMetrics
+from .tokengate_calibration_selection import (
     compute_utopia_distances_for_all,
     compute_weighted_score,
     select_pareto_utopia,

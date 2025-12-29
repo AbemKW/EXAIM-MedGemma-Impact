@@ -6,7 +6,7 @@ CLI wrapper responsibilities: argument parsing, entrypoint wiring, and user-faci
 logging, while reusable calibration logic lives in evals/src/* modules.
 
 Usage:
-    python cli/calibrate_tokengate.py \
+    python -m evals.cli.calibrate_tokengate \
         --traces data/traces/ \
         --manifest data/manifests/exaid_traces_*.manifest.jsonl \
         --config configs/calibration_sweep.yaml \
@@ -14,13 +14,9 @@ Usage:
 """
 
 import argparse
-import sys
 from pathlib import Path
 
-# Add src to path for imports (in case run from different directory)
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from tokengate_calibration_runner import run_calibration_sync
+from ..src.tokengate_calibration_runner import run_calibration_sync
 
 
 def main() -> None:

@@ -583,7 +583,7 @@ docker compose -f docker-compose.evals.yml run --rm evals scripts/05_calibrate_t
 
 # Or use Python directly
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python cli/calibrate_tokengate.py \
+  python -m evals.cli.calibrate_tokengate \
     --traces data/traces/ \
     --manifest data/manifests/exaid_traces_*.manifest.jsonl \
     --config configs/calibration_sweep.yaml \
