@@ -341,7 +341,11 @@ async def run_calibration(
         if ttff_config.get("enabled", False):
             safety_factor = float(ttff_config.get("safety_factor", 3.0))
             min_words_values = config.get("parameter_grid", {}).get("min_words", [])
-            max_p95 = compute_time_to_min_words_p95(min_words_values)
+            if not min_words_values:
+                log("WARNING: No min_words values to derive ttff_content_p95_ms.")
+                max_p95 = None
+            else:
+                max_p95 = compute_time_to_min_words_p95(min_words_values)
             if max_p95 is None:
                 log("WARNING: Unable to derive ttff_content_p95_ms; leaving as configured.")
             else:
