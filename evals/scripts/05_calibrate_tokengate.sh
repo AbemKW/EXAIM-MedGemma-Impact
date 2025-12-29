@@ -87,6 +87,7 @@ if [ "${EXAID_ALLOW_STUB:-}" = "1" ] || [ "${EXAID_ALLOW_STUB:-}" = "true" ]; th
     echo ""
 fi
 
+# Run TokenGate calibration via the evals.cli.calibrate_tokengate module
 python -m evals.cli.calibrate_tokengate \
     --traces data/traces \
     --manifest "$MANIFEST_FILE" \
