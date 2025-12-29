@@ -154,6 +154,12 @@ class SummaryResult:
     start_seq: int
     end_seq: int
     timestamp: str
+    trigger_type: str
+    summary_history_event_ids: list[str]
+    summarizer_input_hash: str
+    summarizer_input_text: Optional[str]
+    limits_ok: bool
+    failure_mode: Optional[str]
     schema_ok: bool
     schema_error: Optional[str]
     summary_semantics_text: str
@@ -218,6 +224,7 @@ class RunContext:
     latest_summary_event_id: Optional[str] = None
     latest_summary_text: str = ""
     summaries: list[AgentSummary] = field(default_factory=list)
+    summary_event_ids: list[str] = field(default_factory=list)
     buffer_window_start_seq: Optional[int] = None
     buffer_window_end_seq: Optional[int] = None
 
@@ -260,7 +267,8 @@ class VariantPipeline(ABC):
         start_seq: int,
         end_seq: int,
         input_text: str,
-        agent_id: str
+        agent_id: str,
+        trigger_type: str
     ) -> SummaryResult:
         """
         Generate a summary using the real SummarizerAgent.
@@ -279,10 +287,22 @@ class VariantPipeline(ABC):
         timestamp = ctx.timestamps.get_window_timestamp(end_seq)
 
         summary_history = ctx.summaries
+        summary_event_ids = ctx.summary_event_ids
         latest_summary = summary_history[-1] if summary_history else None
-        history_slice = summary_history[:-1]
-        if ctx.history_k:
-            history_slice = history_slice[-ctx.history_k:]
+        latest_summary_event_id = summary_event_ids[-1] if summary_event_ids else None
+        history_limit = max(ctx.history_k - 1, 0)
+        if latest_summary:
+            history_slice = summary_history[:-1]
+            history_event_ids = summary_event_ids[:-1]
+        else:
+            history_slice = summary_history
+            history_event_ids = summary_event_ids
+        if history_limit:
+            history_slice = history_slice[-history_limit:]
+            history_event_ids = history_event_ids[-history_limit:]
+        else:
+            history_slice = []
+            history_event_ids = []
         summary_history_strs = [
             format_summary_for_history(summary) for summary in history_slice
         ]
@@ -334,12 +354,18 @@ class VariantPipeline(ABC):
             start_seq=start_seq,
             end_seq=end_seq,
             timestamp=timestamp,
+            trigger_type=trigger_type,
+            summary_history_event_ids=history_event_ids,
+            summarizer_input_hash=compute_text_hash(prompt_text),
+            summarizer_input_text=prompt_text,
+            limits_ok=True,
+            failure_mode=None,
             schema_ok=True,
             schema_error=None,
             summary_semantics_text=summary_semantics_text,
             summary_ctu=compute_ctu(summary_semantics_text),
             summary_content=summary_content,
-            latest_summary_event_id=ctx.latest_summary_event_id,
+            latest_summary_event_id=latest_summary_event_id,
             new_buffer_text_hash=compute_text_hash(input_text),
             llm_usage={
                 "prompt_ctu": compute_ctu(prompt_text),
@@ -354,6 +380,7 @@ class VariantPipeline(ABC):
         # Update context for next summary
         ctx.latest_summary_event_id = event_id
         ctx.latest_summary_text = summary_semantics_text
+        ctx.summary_event_ids.append(event_id)
         
         return result
 
@@ -368,9 +395,7 @@ class VariantPipeline(ABC):
         decision_index = ctx.decision_count
         ctx.decision_count += 1
 
-        summary_history = ctx.summaries
-        if ctx.history_k:
-            summary_history = summary_history[-ctx.history_k:]
+        summary_history = ctx.summaries[-ctx.history_k:]
         summary_history = [
             format_summary_for_history(summary) for summary in summary_history
         ]
@@ -535,19 +560,25 @@ class VariantPipeline(ABC):
 
                     if should_trigger:
                         buffer_text = "\n".join(self.buffer_agent.flush())
-                        summary = self.generate_summary(
-                            ctx,
-                            ctx.buffer_window_start_seq or flush_start,
-                            ctx.buffer_window_end_seq or flush_end,
-                            buffer_text,
-                            agent_id
-                        )
-                        summaries.append(summary)
-                        ctx.buffer_window_start_seq = None
-                        ctx.buffer_window_end_seq = None
+                            summary = self.generate_summary(
+                                ctx,
+                                ctx.buffer_window_start_seq or flush_start,
+                                ctx.buffer_window_end_seq or flush_end,
+                                buffer_text,
+                                agent_id,
+                                trigger_type="buffer_agent"
+                            )
+                            summaries.append(summary)
+                            ctx.buffer_window_start_seq = None
+                            ctx.buffer_window_end_seq = None
                 else:
                     summary = self.generate_summary(
-                        ctx, flush_start, flush_end, flushed_text, agent_id
+                        ctx,
+                        flush_start,
+                        flush_end,
+                        flushed_text,
+                        agent_id,
+                        trigger_type="tokengate_flush"
                     )
                     summaries.append(summary)
             else:
@@ -589,14 +620,20 @@ class VariantPipeline(ABC):
                                 ctx.buffer_window_start_seq or flush_start,
                                 ctx.buffer_window_end_seq or flush_end,
                                 buffer_text,
-                                agent_id
+                                agent_id,
+                                trigger_type="buffer_agent"
                             )
                             summaries.append(summary)
                             ctx.buffer_window_start_seq = None
                             ctx.buffer_window_end_seq = None
                     else:
                         summary = self.generate_summary(
-                            ctx, flush_start, flush_end, flushed_text, agent_id
+                            ctx,
+                            flush_start,
+                            flush_end,
+                            flushed_text,
+                            agent_id,
+                            trigger_type="tokengate_flush"
                         )
                         summaries.append(summary)
 
@@ -677,7 +714,12 @@ class V1_TurnEnd(VariantPipeline):
                 end_seq = event.seq if event.seq is not None else (bounds[1] if bounds else last_seq_seen)
                 start_seq = window_start if window_start is not None else end_seq
                 summary = self.generate_summary(
-                    ctx, start_seq, end_seq, accumulated_text, last_agent_id
+                    ctx,
+                    start_seq,
+                    end_seq,
+                    accumulated_text,
+                    last_agent_id,
+                    trigger_type="turn_end"
                 )
                 summaries.append(summary)
 
@@ -690,7 +732,12 @@ class V1_TurnEnd(VariantPipeline):
         if accumulated_text and last_seq_seen is not None:
             start_seq = window_start if window_start is not None else last_seq_seen
             summary = self.generate_summary(
-                ctx, start_seq, last_seq_seen, accumulated_text, last_agent_id
+                ctx,
+                start_seq,
+                last_seq_seen,
+                accumulated_text,
+                last_agent_id,
+                trigger_type="turn_end"
             )
             summaries.append(summary)
         
@@ -764,7 +811,12 @@ class V3_NoTokenGate(VariantPipeline):
                 if should_trigger:
                     buffer_text = "\n".join(self.buffer_agent.flush())
                     summary = self.generate_summary(
-                        ctx, ctx.buffer_window_start_seq or window_start, ctx.buffer_window_end_seq or seq, buffer_text, last_agent_id
+                        ctx,
+                        ctx.buffer_window_start_seq or window_start,
+                        ctx.buffer_window_end_seq or seq,
+                        buffer_text,
+                        last_agent_id,
+                        trigger_type="buffer_agent"
                     )
                     summaries.append(summary)
                     ctx.buffer_window_start_seq = None
@@ -787,7 +839,12 @@ class V3_NoTokenGate(VariantPipeline):
             if should_trigger:
                 buffer_text = "\n".join(self.buffer_agent.flush())
                 summary = self.generate_summary(
-                    ctx, ctx.buffer_window_start_seq or window_start, ctx.buffer_window_end_seq or last_seq_seen, buffer_text, last_agent_id
+                    ctx,
+                    ctx.buffer_window_start_seq or window_start,
+                    ctx.buffer_window_end_seq or last_seq_seen,
+                    buffer_text,
+                    last_agent_id,
+                    trigger_type="buffer_agent"
                 )
                 summaries.append(summary)
                 ctx.buffer_window_start_seq = None
@@ -924,6 +981,12 @@ def execute_run(
     asyncio.set_event_loop(loop)
     
     # Create run context
+    history_k = variant_config.get("summarizer", {}).get("history_k")
+    if history_k is None:
+        raise ValueError(f"Missing summarizer.history_k for {variant_id}")
+    if not isinstance(history_k, int) or history_k < 1:
+        raise ValueError(f"Invalid summarizer.history_k for {variant_id}: {history_k}")
+
     ctx = RunContext(
         case_id=case_id,
         variant_id=variant_id,
@@ -935,7 +998,7 @@ def execute_run(
         clock=clock,
         t0_emitted_ms=meta.t0_emitted_ms,
         loop=loop,
-        history_k=variant_config.get("summarizer", {}).get("history_k", 3),
+        history_k=history_k,
         mas_run_id=mas_run_id,
         eval_run_id=eval_run_id,
     )
@@ -954,7 +1017,7 @@ def execute_run(
     # run_meta record
     run_meta = {
         "schema_name": "exaid.run",
-        "schema_version": "1.3.0",
+        "schema_version": "1.4.0",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "case_id": case_id,
         "variant_id": variant_id,
@@ -1032,6 +1095,12 @@ def execute_run(
             "timestamp": summary.timestamp,
             "start_seq": summary.start_seq,
             "end_seq": summary.end_seq,
+            "trigger_type": summary.trigger_type,
+            "summary_history_event_ids": summary.summary_history_event_ids,
+            "summarizer_input_hash": summary.summarizer_input_hash,
+            "summarizer_input_text": summary.summarizer_input_text,
+            "limits_ok": summary.limits_ok,
+            "failure_mode": summary.failure_mode,
             "schema_ok": summary.schema_ok,
             "schema_error": summary.schema_error,
             "summary_semantics_text": summary.summary_semantics_text,
