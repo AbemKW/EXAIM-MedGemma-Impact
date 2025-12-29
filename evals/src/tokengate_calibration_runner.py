@@ -54,8 +54,6 @@ async def replay_case_with_policy(
     case_id: str,
     trace_meta,
     engine: Optional[TraceReplayEngine] = None,
-    strict_stub_guard: bool = True,
-    strict_validation: bool = True,
 ) -> CaseMetrics:
     """
     Replay a single case with a policy, recording flush events.
@@ -76,8 +74,6 @@ async def replay_case_with_policy(
         case_id: Case identifier
         trace_meta: Trace metadata (from engine.get_metadata())
         engine: Optional pre-created TraceReplayEngine (if None, creates one)
-        strict_stub_guard: Whether to enforce strict stub guard (default: True)
-        strict_validation: Whether to enforce strict validation (default: True)
     """
 
     # Initialize TokenGate with ManualClock
@@ -97,8 +93,8 @@ async def replay_case_with_policy(
     if engine is None:
         engine = TraceReplayEngine(
             trace_path,
-            strict_stub_guard=strict_stub_guard,
-            strict_validation=strict_validation,
+            strict_stub_guard=True,
+            strict_validation=True,
         )
 
     # Track flush events
@@ -340,8 +336,6 @@ async def run_calibration(
                     case_id,
                     trace_meta,
                     engine=engine,  # Pass the already-created engine to avoid duplicate I/O
-                    strict_stub_guard=not allow_stub,
-                    strict_validation=config.get("safety", {}).get("strict_validation", True),
                 )
                 case_metrics_for_policy.append(case_metrics)
                 all_case_metrics.append(case_metrics)
