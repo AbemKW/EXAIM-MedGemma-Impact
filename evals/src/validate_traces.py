@@ -34,6 +34,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+# Import trace_text module for canonical text validation
+try:
+    from trace_text import build_canonical_trace_text, TraceParsingError
+except ImportError:
+    # Fallback if running from different directory
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent))
+    from trace_text import build_canonical_trace_text, TraceParsingError
+
 # Boundary timestamp tolerance (milliseconds)
 # Due to millisecond resolution and async timing, boundary timestamps may be
 # off by 1-2ms from delta timestamps. This is cosmetic and does not affect
@@ -62,6 +72,10 @@ class ValidationStats:
     
     # Stub mode detection
     is_stub_mode: bool = False
+    
+    # Canonical text validation
+    canonical_text_empty: bool = False
+    canonical_text_length: int = 0
 
 
 class TraceValidationError(Exception):
@@ -159,6 +173,30 @@ def validate_trace_file(
         stats.is_stub_mode = True
         if verbose:
             print("    WARNING: Trace was generated in stub mode (not real MAC execution)")
+    
+    # Validate canonical trace text is non-empty for real traces
+    if not stats.is_stub_mode:
+        try:
+            canonical_text, parsing_stats = build_canonical_trace_text(
+                trace_path, fail_on_empty=False
+            )
+            stats.canonical_text_length = len(canonical_text)
+            if not canonical_text.strip():
+                stats.canonical_text_empty = True
+                errors.append(
+                    f"Canonical trace text is empty (no message chunks found). "
+                    f"Stats: total_records={parsing_stats.total_records}, "
+                    f"chunk_records={parsing_stats.chunk_records}, "
+                    f"included_message_chunks={parsing_stats.included_message_chunks}"
+                )
+        except TraceParsingError as e:
+            # If parsing fails, it's already an error
+            stats.canonical_text_empty = True
+            errors.append(f"Failed to build canonical trace text: {e}")
+        except Exception as e:
+            # Other errors (e.g., import issues) should not fail validation
+            if verbose:
+                warnings.append(f"Could not validate canonical text: {e}")
     
     # Extract t0 from trace_meta
     t0 = first_record.get("t0_emitted_ms")
@@ -354,6 +392,7 @@ def validate_trace_file(
     
     # Determine overall validity
     # Note: content_hash_mismatches are warnings only, not errors
+    # canonical_text_empty is an error for real traces (not stubs)
     is_valid = (
         stats.seq_violations == 0 and
         stats.timestamp_violations == 0 and
@@ -361,7 +400,8 @@ def validate_trace_file(
         stats.boundary_mismatches == 0 and
         stats.boundary_time_violations == 0 and
         len(stats.missing_fields) == 0 and
-        len(errors) == 0
+        len(errors) == 0 and
+        not stats.canonical_text_empty  # Real traces must have non-empty canonical text
     )
     
     if verbose and errors:
@@ -416,6 +456,7 @@ def validate_all_traces(
         "total_boundary_time_violations": 0,
         "total_boundary_time_warnings": 0,  # Cosmetic timing (within epsilon)
         "total_content_hash_mismatches": 0,
+        "total_canonical_text_empty": 0,  # Real traces with empty canonical text
         "files_with_errors": [],
         "files_with_warnings": [],  # Files with cosmetic timing issues
         "stub_mode_files_list": [],
@@ -475,6 +516,8 @@ def validate_all_traces(
         report["total_boundary_time_violations"] += stats.boundary_time_violations
         report["total_boundary_time_warnings"] += stats.boundary_time_warnings
         report["total_content_hash_mismatches"] += stats.content_hash_mismatches
+        if stats.canonical_text_empty:
+            report["total_canonical_text_empty"] += 1
         
         # Track files with warnings (but still valid)
         if stats.boundary_time_warnings > 0:
@@ -488,7 +531,9 @@ def validate_all_traces(
             "turns": stats.turn_count,
             "seq_violations": stats.seq_violations,
             "timestamp_violations": stats.timestamp_violations,
-            "boundary_time_violations": stats.boundary_time_violations
+            "boundary_time_violations": stats.boundary_time_violations,
+            "canonical_text_empty": stats.canonical_text_empty,
+            "canonical_text_length": stats.canonical_text_length
         }
     
     return report
@@ -540,6 +585,7 @@ def main():
     print("     - turn_end.t_ms >= last_delta.t_emitted_ms")
     print("     - ±2ms tolerance allowed (warnings within tolerance)")
     print("  6. content_hash matches recomputed hash (warning only)")
+    print("  7. Canonical trace text is non-empty for real traces (not stubs)")
     print()
     
     try:
@@ -576,6 +622,8 @@ def main():
     print(f"  t_rel violations: {report['total_t_rel_violations']}")
     print(f"  boundary mismatches: {report['total_boundary_mismatches']}")
     print(f"  boundary time violations: {report['total_boundary_time_violations']}")
+    if report['total_canonical_text_empty'] > 0:
+        print(f"  canonical text empty: {report['total_canonical_text_empty']}")
     
     # Show warnings (non-blocking issues)
     has_warnings = (

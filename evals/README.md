@@ -119,6 +119,7 @@ python src/validate_traces.py --traces data/traces/ --verbose
    - `turn_end.t_ms >= last_delta.t_emitted_ms` for that turn
    - **Tolerance:** ±2ms allowed due to millisecond resolution; violations within tolerance are warnings (cosmetic), not errors
 6. `content_hash` matches recomputed hash
+7. Canonical trace text is non-empty for real traces (not stubs)
 
 **Stub Mode Warning:** Traces with `stub_mode: true` are flagged during validation and must NOT be used for evaluation.
 
@@ -679,10 +680,13 @@ Canonical trace text is defined in `src/trace_text.py:build_canonical_trace_text
 
 | Rule | Description |
 |------|-------------|
+| **Chunk Type** | `record_type == "stream_delta"` (chunk records identified by stream_delta type) |
+| **Text Extraction** | Uses `delta_text` field from stream_delta records |
 | **Include** | Chunks where `event_subtype == "message"` |
 | **Exclude** | `orchestrator_summary`, `system_note`, other subtypes |
 | **Fallback** | If `event_subtype` missing, include unless `agent_id` in `{orchestrator, _system, system, meta}` |
 | **FAIL-FAST** | Raises `TraceParsingError` if 0 message chunks found |
+| **Validation** | Real traces (non-stub) must have non-empty canonical text |
 
 **Statistics tracked:**
 - `included_message_chunks` - Count of message chunks included
@@ -821,7 +825,7 @@ Note: TokenGate uses whitespace-delimited word counts (not model tokenizer token
 | Variant | Trigger Policy | Components |
 |---------|----------------|------------|
 | **V0** | `full_exaid` | TokenGate (word thresholds) + BufferAgent (completeness/value/novelty) + Summarizer |
-| **V1** | `turn_end` | Trigger at `is_turn_end=True` + Summarizer only |
+| **V1** | `turn_end` | Trigger at `turn_end` events (from `turn_boundary` records) + Summarizer only |
 | **V2** | `no_buffer` | TokenGate flush → Summarizer (skip BufferAgent) |
 | **V3** | `no_tokengate` | Fixed chunk/time + BufferAgent + Summarizer |
 | **V4** | `no_novelty` | TokenGate (word thresholds) + BufferAgent (completeness + value only) + Summarizer |

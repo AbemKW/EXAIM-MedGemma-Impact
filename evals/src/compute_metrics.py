@@ -228,7 +228,7 @@ def compute_faithfulness_for_event(
     Args:
         event: Summary event record
         run_events: Dict mapping event_id to event record
-        trace_chunks: List of trace chunk records
+        trace_chunks: List of stream_delta records (record_type == "stream_delta")
         extractor: Concept extractor
         
     Returns:

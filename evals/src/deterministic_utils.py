@@ -55,7 +55,7 @@ class DeterministicTimestamps:
         Initialize with trace chunks.
         
         Args:
-            trace_chunks: List of trace chunk records
+            trace_chunks: List of stream_delta records (record_type == "stream_delta")
             max_missing_threshold: Max allowed missing timestamps before warning
             
         Raises:

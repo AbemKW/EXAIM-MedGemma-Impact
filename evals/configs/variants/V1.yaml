@@ -30,8 +30,10 @@ components:
 
 # Turn-end trigger configuration
 turn_trigger:
-  # Trigger when is_turn_end=True in trace
+  # Trigger when turn_end event occurs (from turn_boundary records)
+  # Note: Turn boundaries are derived from explicit turn_boundary records in trace
   enabled: true
+  # Legacy field name (not used - triggers come from ReplayEvent.event_type == "turn_end")
   field: "is_turn_end"
   value: true
 

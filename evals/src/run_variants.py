@@ -7,10 +7,15 @@ deterministic timestamp derivation and byte-stable output (Section 3.1)"
 
 Replays frozen traces through V0-V4 variant pipelines:
     V0: full_exaid - TokenGate + BufferAgent (all filters) + Summarizer
-    V1: turn_end - Trigger at turn boundaries only
+    V1: turn_end - Trigger at turn_end events (from turn_boundary records) + Summarizer only
     V2: no_buffer - TokenGate → Summarizer (skip BufferAgent)
     V3: no_tokengate - Fixed intervals + BufferAgent + Summarizer
     V4: no_novelty - TokenGate + BufferAgent (no novelty check) + Summarizer
+
+Turn Boundary Derivation:
+    - Turn boundaries are derived from explicit turn_boundary records in trace
+    - Explicit boundaries take precedence over classification-derived bounds
+    - V1 variant triggers summarization on turn_end events from ReplayEvent stream
 
 Output: Multi-record JSONL run logs per evals/schemas/exaid.run.schema.json
 
@@ -193,9 +198,9 @@ class RunContext:
     case_id: str
     variant_id: str
     trace_file: Path
-    trace_chunks: list[dict]
+    trace_chunks: list[dict]  # stream_delta records (for timestamp derivation)
     replay_events: list[ReplayEvent]
-    turn_bounds: dict[int, tuple[int, int]]
+    turn_bounds: dict[int, tuple[Optional[int], Optional[int]]]
     timestamps: DeterministicTimestamps
     clock: ManualClock
     t0_emitted_ms: int
@@ -622,6 +627,12 @@ class V1_TurnEnd(VariantPipeline):
     
     Paper hook: "V1 triggers summarization only at turn boundaries,
     bypassing TokenGate and BufferAgent (Section 4.2)"
+    
+    Implementation:
+        - Triggers on turn_end events from TraceReplayEngine
+        - Turn boundaries derived from explicit turn_boundary records in trace
+        - Accumulates text from delta events until turn_end event
+        - Generates summary with accumulated text for the turn
     """
     
     def run(self, ctx: RunContext) -> tuple[list, list, list]:
@@ -639,7 +650,7 @@ class V1_TurnEnd(VariantPipeline):
             if event.event_type == "turn_start":
                 current_turn_id = event.turn_id
                 bounds = ctx.turn_bounds.get(event.turn_id)
-                window_start = bounds[0] if bounds else event.seq
+                window_start = event.seq if event.seq is not None else (bounds[0] if bounds else None)
                 accumulated_text = ""
                 last_seq_seen = None
                 last_agent_id = event.agent_id
@@ -649,7 +660,7 @@ class V1_TurnEnd(VariantPipeline):
                 if current_turn_id is None:
                     current_turn_id = event.turn_id
                     bounds = ctx.turn_bounds.get(event.turn_id)
-                    window_start = bounds[0] if bounds else event.seq
+                    window_start = bounds[0] if bounds and bounds[0] is not None else event.seq
                 accumulated_text += event.delta_text or ""
                 last_agent_id = event.agent_id
                 last_seq_seen = event.seq
@@ -663,7 +674,7 @@ class V1_TurnEnd(VariantPipeline):
                     continue
 
                 bounds = ctx.turn_bounds.get(event.turn_id)
-                end_seq = bounds[1] if bounds else (last_seq_seen or event.seq)
+                end_seq = event.seq if event.seq is not None else (bounds[1] if bounds else last_seq_seen)
                 start_seq = window_start if window_start is not None else end_seq
                 summary = self.generate_summary(
                     ctx, start_seq, end_seq, accumulated_text, last_agent_id
@@ -852,6 +863,7 @@ def execute_run(
     """
     # Load trace records and replay events
     trace_records = list(iter_trace_records(trace_file))
+    # Filter for stream_delta records (chunk type for text extraction)
     delta_records = [
         record for record in trace_records
         if record.get("record_type") == "stream_delta"
@@ -859,7 +871,7 @@ def execute_run(
     if not delta_records:
         raise ValueError(f"No stream_delta records found in {trace_file}")
 
-    # Initialize deterministic timestamps from delta records
+    # Initialize deterministic timestamps from stream_delta records
     timestamps = DeterministicTimestamps(delta_records)
 
     # Initialize deterministic clock for TokenGate timers
@@ -872,10 +884,39 @@ def execute_run(
     if not replay_events:
         raise ValueError(f"No content_plane replay events in {trace_file}")
 
-    turn_bounds = {
+    # Derive turn bounds from explicit turn_boundary records (authoritative source)
+    boundary_turn_bounds: dict[int, dict[str, Optional[int]]] = {}
+    for record in trace_records:
+        if record.get("record_type") != "turn_boundary":
+            continue
+        turn_id = record.get("turn_id")
+        boundary = record.get("boundary")
+        seq = record.get("seq")
+        if turn_id is not None and boundary in ("start", "end"):
+            bounds = boundary_turn_bounds.setdefault(turn_id, {})
+            bounds[boundary] = seq
+    
+    # Merge with classification bounds (explicit boundaries take precedence)
+    classification_bounds = {
         turn_id: (cls.start_seq, cls.end_seq)
         for turn_id, cls in replay_engine.get_turn_classifications().items()
     }
+    
+    turn_bounds: dict[int, tuple[Optional[int], Optional[int]]] = {}
+    for turn_id, (start_seq, end_seq) in classification_bounds.items():
+        boundary_bounds = boundary_turn_bounds.get(turn_id, {})
+        turn_bounds[turn_id] = (
+            boundary_bounds.get("start", start_seq),
+            boundary_bounds.get("end", end_seq)
+        )
+    
+    # Add any turns that have explicit boundaries but no classification
+    for turn_id, bounds in boundary_turn_bounds.items():
+        if turn_id not in turn_bounds:
+            turn_bounds[turn_id] = (
+                bounds.get("start"),
+                bounds.get("end")
+            )
     meta = replay_engine.get_metadata()
     mas_run_id = meta.mas_run_id
 
