@@ -371,24 +371,32 @@ async def summarize(
 ```
 
 **Prompt Template**:
+The summarizer uses prompts from `exaid_core/utils/prompts.py` that align with SBAR/SOAP documentation standards. The system prompt includes:
+
+- **Delta-first summarization**: Prioritizes new, changed, or newly concluded information
+- **Controlled continuity**: Allows restating prior information only for sticky context (active interventions, current leading assessment, unresolved critical abnormalities, safety constraints, decision blockers)
+- **Non-empty field rule**: All 6 fields must be populated, using explicit placeholders when no supported content exists
+- **Strict character limits**: 
+  - `status_action`: MAX 150 chars
+  - `key_findings`: MAX 180 chars
+  - `differential_rationale`: MAX 210 chars
+  - `uncertainty_confidence`: MAX 120 chars
+  - `recommendation_next_step`: MAX 180 chars
+  - `agent_contributions`: MAX 150 chars
+
+The prompt template structure:
 ```python
 self.summarize_prompt = ChatPromptTemplate.from_messages([    
-    ("system", "You are an expert summarizer for a medical multi-agent reasoning system. "
-    "Extract essential information about agent actions and clinical reasoning from the new buffer. "
-    "Focus on what agents did and why, using brief, action-oriented language. "
-    "Be concise and practical - physicians need to quickly understand agent decisions. "
-    "Extract only new information from the buffer, do not repeat previous summaries. "
-    "Identify all agents mentioned in the buffer. "
-    "CRITICAL: Strictly enforce character limits - action: MAX 100 chars, reasoning: MAX 200 chars, findings: MAX 150 chars, next_steps: MAX 100 chars. "
-    "If content exceeds limits, prioritize the most essential information and truncate."),
-    ("user", "Summary history:\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning."),
+    ("system", get_summarizer_system_prompt()),
+    ("user", get_summarizer_user_prompt()),
 ])
 ```
 
 **Features**:
 - Uses structured output with Pydantic models for consistent formatting
-- Enforces character limits (action: 100, reasoning: 200, findings: 150, next_steps: 100)
-- Optimized for medical/clinical reasoning
+- Enforces evidence-based character limits aligned with clinical documentation research
+- Optimized for medical/clinical reasoning with SBAR/SOAP alignment
+- Prevents hallucination through explicit placeholder rules
 
 ---
 
@@ -698,10 +706,11 @@ async def main():
     
     # Check if summary was generated
     if summary:
-        print("New summary:", summary.action)
+        print("New summary:", summary.status_action)
         
-        # Get summary as JSON
-        json_summary = exaid.get_summary_json(summary)
+        # Convert summary to JSON using Pydantic
+        import json
+        json_summary = summary.model_dump_json()
         print(json_summary)
     
     # Retrieve all summaries
@@ -731,17 +740,20 @@ asyncio.run(main())
    ```python
    if summary:
        # Access summary fields
-       agents = summary.agents
-       action = summary.action
-       reasoning = summary.reasoning
-       findings = summary.findings
-       next_steps = summary.next_steps
+       status_action = summary.status_action
+       key_findings = summary.key_findings
+       differential_rationale = summary.differential_rationale
+       uncertainty_confidence = summary.uncertainty_confidence
+       recommendation_next_step = summary.recommendation_next_step
+       agent_contributions = summary.agent_contributions
    ```
 
 4. **Export Data**:
    ```python
-   # Export summary as JSON
-   json_summary = exaid.get_summary_json()
+   # Convert summary to JSON using Pydantic
+   import json
+   json_summary = summary.model_dump_json()  # Pydantic v2
+   # or for Pydantic v1: json_summary = summary.json()
    ```
 
 ---
@@ -990,8 +1002,9 @@ async def main():
     summary = await exaid.received_trace("DoctorAgent", "Lab results received")
     
     if summary:
-        print(f"Action: {summary.action}")
-        print(f"Reasoning: {summary.reasoning}")
+        print(f"Status/Action: {summary.status_action}")
+        print(f"Key Findings: {summary.key_findings}")
+        print(f"Differential/Rationale: {summary.differential_rationale}")
 
 asyncio.run(main())
 ```
@@ -1013,8 +1026,9 @@ async def main():
     summary = await exaid.received_trace("Orchestrator", "Case analysis complete")
     
     if summary:
-        print(f"Agents involved: {', '.join(summary.agents)}")
-        print(f"Action: {summary.action}")
+        print(f"Agent Contributions: {summary.agent_contributions}")
+        print(f"Status/Action: {summary.status_action}")
+        print(f"Recommendation/Next Step: {summary.recommendation_next_step}")
 
 asyncio.run(main())
 ```
