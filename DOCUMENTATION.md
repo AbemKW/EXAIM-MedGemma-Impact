@@ -16,7 +16,7 @@
 
 ## Overview
 
-**EXAID** (Experimental Agent Intelligence Documentation) is a Python framework designed for capturing, buffering, and summarizing reasoning traces from multiple AI agents in real-time. Originally designed for medical multi-agent reasoning workflows, EXAID enables specialized agents (e.g., `InfectiousDiseaseAgent`, `HematologyAgent`, `OncologyAgent`) to collaborate on complex cases while their reasoning traces are intelligently captured and condensed into structured summaries optimized for physician understanding.
+**EXAID** (Explainable AI for Diagnoses) is a Python framework designed for capturing, buffering, and summarizing reasoning traces from multiple AI agents in real-time. Originally designed for medical multi-agent reasoning workflows, EXAID enables specialized agents (e.g., `InfectiousDiseaseAgent`, `HematologyAgent`, `OncologyAgent`) to collaborate on complex cases while their reasoning traces are intelligently captured and condensed into structured summaries optimized for physician understanding.
 
 ### Key Features
 
@@ -461,13 +461,15 @@ class AgentSummary(BaseModel):
 class TokenGate:
     def __init__(
         self,
-        min_words: int = 35,
-        max_words: int = 90,
+        min_words: int = 60,
+        max_words: int = 100,
         boundary_cues: str = ".?!\n",
-        silence_timer: float = 15,
-        max_wait_timeout: float = 40
+        silence_timer: float = 1,
+        max_wait_timeout: float = 4
     ):
 ```
+
+**Note**: Evaluation configurations (e.g., `evals/configs/summarizer.yaml`, `evals/configs/variants/V0.yaml`) use calibrated values (`min_words=35`, `max_words=90`, `silence_timer=15`, `max_wait_timeout=40`) which differ from these runtime defaults. The runtime defaults are optimized for general use, while eval configs are calibrated for specific evaluation scenarios.
 
 **Core Methods**:
 
@@ -571,10 +573,7 @@ The module provides role-based LLM configuration using `LLMRole` enum (MAS, SUMM
 class CDSS:
     def __init__(self):
         self.exaid = EXAID()
-        self.orchestrator = OrchestratorAgent()
-        self.cardiology = CardiologyAgent()
-        self.laboratory = LaboratoryAgent()
-        self.graph = build_cdss_graph()
+        self.graph = build_cdss_graph(self.exaid)
 ```
 
 **Core Methods**:
@@ -585,14 +584,15 @@ Processes a clinical case through the multi-agent system using LangGraph.
 
 **Parameters**:
 - `case`: ClinicalCase object or free-text case description
-- `use_streaming`: Whether to use streaming token processing (currently ignored as LangGraph doesn't support streaming)
+- `use_streaming`: Whether to use streaming (accepted but not actively used in current implementation)
 
 **Returns**: Dictionary containing:
 - `case_summary`: Case text summary
-- `agent_summaries`: List of all summaries generated
-- `final_recommendation`: Final summary with recommendations
-- `trace_count`: Trace counts per agent
-- `agents_called`: Which agents were invoked
+- `final_synthesis`: Final synthesis from the workflow
+- `running_summary`: Running summary maintained by orchestrator
+- `specialists_called`: List of specialist agents that were invoked
+- `iteration_count`: Number of workflow iterations
+- `agent_summaries`: List of AgentSummary objects from EXAID (for UI display only; workflow does not depend on these)
 
 #### `get_all_summaries() -> list[AgentSummary]`
 
@@ -653,9 +653,18 @@ langchain>=0.3.0
 langchain-community>=0.3.0
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
+langchain-groq>=0.2.0
+langchain-google-genai>=1.0.0
 langgraph>=0.2.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+tiktoken>=0.5.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+pyyaml>=6.0.0
 ```
 
 **Dependencies**:
@@ -663,8 +672,18 @@ python-dotenv>=1.0.0
 - **langchain-community**: Community integrations
 - **langchain-core**: Core LangChain abstractions
 - **langchain-openai**: OpenAI integration for ChatOpenAI
+- **langchain-groq**: Groq integration for LLM providers
+- **langchain-google-genai**: Google Gemini integration
 - **langgraph**: LangGraph for workflow orchestration (used in CDSS demo)
 - **pydantic**: Data validation and structured output
+- **python-dotenv**: Environment variable management
+- **fastapi**: Web framework (for API endpoints)
+- **uvicorn**: ASGI server (for FastAPI)
+- **websockets**: WebSocket support
+- **tiktoken**: Token counting utilities
+- **matplotlib**: Plotting library (for evaluation visualizations)
+- **seaborn**: Statistical visualization (for evaluation visualizations)
+- **pyyaml**: YAML parsing (for configuration files)
 - **python-dotenv**: Environment variable management
 
 ---

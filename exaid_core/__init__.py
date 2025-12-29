@@ -1,4 +1,4 @@
-"""EXAID Core - Explanation-based AI Debugging Framework
+"""EXAID Core - Explainable AI for Diagnoses Framework
 
 This module contains the core EXAID research artifact including:
 - TokenGate: Token streaming pre-buffer with syntax awareness
