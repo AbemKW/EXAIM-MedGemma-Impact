@@ -6,18 +6,17 @@ Paper hook: "All metrics computed from run logs and frozen traces
 with schema failure handling per Section 5.1"
 
 Implements M1-M10 metrics:
-    M1: Compression ratio (CTU saved)
-    M2: Summary count
-    M3: Redundancy (Jaccard on CUI sets between consecutive summaries)
+    M1: Update counts
+    M2: Output volume (summary CTU)
+    M3: Redundancy (Jaccard thresholds between consecutive summaries)
     M4: Trace coverage (fraction of trace CUIs in summaries)
-    M5a: Unsupported global rate
-    M5b: Unsupported per-summary rate
+    M5: Unsupported content rates
     M6a: Window-groundedness (unsupported vs window)
     M6b: Contract-groundedness (unsupported vs window+latest_summary)
-    M7: Mean summary latency (ms)
-    M8: LLM usage (CTU)
-    M9: BufferAgent overhead (decisions, CTU)
-    M10: Schema failure rate
+    M7b: Coverage-vs-budget curve
+    M8: Latency (summary + BufferAgent)
+    M9: LLM usage (CTU)
+    M10: Compliance (schema_ok rate)
 
 FAITHFULNESS PARADOX RESOLUTION:
     - schema_ok=false → EXCLUDE from M6a/M6b means (not 0.0!)
@@ -45,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from trace_text import build_canonical_trace_text, build_window_text, load_trace_chunks_for_case
 from deterministic_io import read_run_log, write_json_deterministic, write_jsonl_deterministic
-from config_loader import load_extractor_config, get_stoplists_provenance, get_configs_dir
+from config_loader import load_extractor_config, get_stoplists_provenance
 
 
 # ============================================================================
@@ -75,17 +74,16 @@ class PerCaseMetrics:
     case_id: str
     variant_id: str
     
-    # M1: Compression
-    trace_ctu: int = 0
-    summary_ctu: int = 0
-    compression_ratio: float = 0.0
+    # M1: Update counts
+    update_count: int = 0
     
-    # M2: Summary count
-    summary_count: int = 0
+    # M2: Output volume
+    output_ctu: int = 0
     
-    # M3: Redundancy (Jaccard)
+    # M3: Redundancy (Jaccard thresholds)
     redundancy_jaccard_mean: Optional[float] = None
     redundancy_jaccard_values: List[float] = field(default_factory=list)
+    redundancy_threshold_rates: Dict[str, Optional[float]] = field(default_factory=dict)
     
     # M4: Trace coverage
     trace_coverage: float = 0.0
@@ -106,20 +104,23 @@ class PerCaseMetrics:
     faithfulness_valid_event_count: int = 0
     excluded_from_faithfulness_count: int = 0
     
-    # M7: Latency
-    mean_summary_latency_ms: Optional[float] = None
+    # M7b: Coverage vs budget
+    coverage_by_budget: Dict[str, float] = field(default_factory=dict)
     
-    # M8: LLM usage
+    # M8: Latency
+    mean_summary_latency_ms: Optional[float] = None
+    mean_buffer_decision_latency_ms: Optional[float] = None
+    
+    # M9: LLM usage
     total_prompt_ctu: int = 0
     total_completion_ctu: int = 0
-    
-    # M9: BufferAgent overhead
+    total_llm_ctu: int = 0
     buffer_decision_count: int = 0
-    buffer_decision_ctu: int = 0
     
-    # M10: Schema failures
+    # M10: Compliance
     schema_failure_count: int = 0
     schema_failure_rate: float = 0.0
+    compliance_rate: float = 0.0
 
 
 @dataclass
@@ -128,19 +129,26 @@ class AggregateMetrics:
     variant_id: str
     n_cases: int = 0
     
-    # Means and CIs for each metric
-    compression_ratio_mean: float = 0.0
-    compression_ratio_ci_low: float = 0.0
-    compression_ratio_ci_high: float = 0.0
+    # M1: Update counts
+    update_count_mean: float = 0.0
     
-    summary_count_mean: float = 0.0
+    # M2: Output volume
+    output_ctu_mean: float = 0.0
     
+    # M3: Redundancy
     redundancy_jaccard_mean: Optional[float] = None
+    redundancy_threshold_rates: Dict[str, Optional[float]] = field(default_factory=dict)
     
+    # M4: Coverage
     trace_coverage_mean: float = 0.0
     trace_coverage_ci_low: float = 0.0
     trace_coverage_ci_high: float = 0.0
     
+    # M5: Unsupported
+    unsupported_global_rate_mean: float = 0.0
+    unsupported_per_summary_mean: Optional[float] = None
+    
+    # M6a/M6b: Faithfulness
     m6a_mean: Optional[float] = None
     m6a_ci_low: Optional[float] = None
     m6a_ci_high: Optional[float] = None
@@ -149,9 +157,37 @@ class AggregateMetrics:
     m6b_ci_low: Optional[float] = None
     m6b_ci_high: Optional[float] = None
     
+    # M7b: Coverage vs budget
+    coverage_by_budget_mean: Dict[str, Optional[float]] = field(default_factory=dict)
+    
+    # M8: Latency
+    summary_latency_mean_ms: Optional[float] = None
+    buffer_decision_latency_mean_ms: Optional[float] = None
+    
+    # M9: Usage
+    prompt_ctu_mean: float = 0.0
+    completion_ctu_mean: float = 0.0
+    total_llm_ctu_mean: float = 0.0
+    buffer_decision_count_mean: float = 0.0
+    
+    # M10: Compliance
+    schema_failure_rate_mean: Optional[float] = None
+    compliance_rate_mean: Optional[float] = None
+    schema_failure_count: int = 0
+    summary_event_count: int = 0
+    
     faithfulness_valid_event_count: int = 0
     excluded_from_faithfulness_count: int = 0
     schema_failures: int = 0
+
+
+# ============================================================================
+# Metric Configuration
+# ============================================================================
+
+METRICS_SCHEMA_VERSION = "2.0.0"
+REDUNDANCY_THRESHOLDS = [0.85, 0.90, 0.95]
+BUFFER_COVERAGE_BUDGETS = [250, 500, 1000, 2000]
 
 
 # ============================================================================
@@ -332,8 +368,11 @@ def compute_redundancy(
     # Extract CUI sets for each summary
     cui_sets = []
     for event in summary_events:
-        text = event.get("summary_semantics_text", "")
-        cuis = extractor.extract(text)
+        if not event.get("schema_ok", True):
+            cuis = set()
+        else:
+            text = event.get("summary_semantics_text", "")
+            cuis = extractor.extract(text)
         cui_sets.append(cuis)
     
     # Compute Jaccard for consecutive pairs
@@ -343,6 +382,22 @@ def compute_redundancy(
         jaccards.append(j)
     
     return jaccards
+
+
+def compute_redundancy_threshold_rates(
+    jaccards: List[float],
+    thresholds: List[float]
+) -> Dict[str, Optional[float]]:
+    """Compute redundancy rates at each Jaccard threshold."""
+    if not thresholds:
+        return {}
+    if not jaccards:
+        return {f"tau_{threshold:.2f}": None for threshold in thresholds}
+    total = len(jaccards)
+    return {
+        f"tau_{threshold:.2f}": float(sum(1 for j in jaccards if j >= threshold) / total)
+        for threshold in thresholds
+    }
 
 
 # ============================================================================
@@ -408,6 +463,47 @@ def compute_coverage_metrics(
         "trace_cui_count": len(trace_cuis),
         "summary_cui_count": len(all_summary_cuis)
     }
+
+
+def compute_coverage_by_budget(
+    summary_events: List[dict],
+    trace_cuis: Set[str],
+    extractor: ConceptExtractorWrapper,
+    budgets: List[int]
+) -> Dict[str, float]:
+    """
+    Compute coverage at increasing summary CTU budgets (M7b).
+    """
+    if not budgets:
+        return {}
+    sorted_budgets = sorted(budgets)
+    coverage_by_budget: Dict[str, float] = {}
+    cumulative_ctu = 0
+    cumulative_cuis: Set[str] = set()
+    event_index = 0
+
+    for budget in sorted_budgets:
+        while event_index < len(summary_events):
+            event = summary_events[event_index]
+            event_ctu = event.get(
+                "summary_ctu",
+                compute_ctu(event.get("summary_semantics_text", ""))
+            )
+            if cumulative_ctu + event_ctu > budget:
+                break
+            cumulative_ctu += event_ctu
+            if event.get("schema_ok", True):
+                summary_text = event.get("summary_semantics_text", "")
+                cumulative_cuis.update(extractor.extract(summary_text))
+            event_index += 1
+
+        if len(trace_cuis) == 0:
+            coverage = 0.0
+        else:
+            coverage = len(cumulative_cuis & trace_cuis) / len(trace_cuis)
+        coverage_by_budget[f"ctu_{budget}"] = coverage
+
+    return coverage_by_budget
 
 
 # ============================================================================
@@ -477,23 +573,23 @@ def compute_per_case_metrics(
     trace_text, _ = build_canonical_trace_text(trace_file, fail_on_empty=False)
     trace_cuis = extractor.extract(trace_text)
     
-    # M1: Compression
-    metrics.trace_ctu = compute_ctu(trace_text)
-    metrics.summary_ctu = sum(
+    # M1: Update counts
+    metrics.update_count = len(summary_events)
+    
+    # M2: Output volume
+    metrics.output_ctu = sum(
         e.get("summary_ctu", compute_ctu(e.get("summary_semantics_text", "")))
         for e in summary_events
     )
-    if metrics.trace_ctu > 0:
-        metrics.compression_ratio = 1 - (metrics.summary_ctu / metrics.trace_ctu)
-    
-    # M2: Summary count
-    metrics.summary_count = len(summary_events)
     
     # M3: Redundancy
     jaccards = compute_redundancy(summary_events, extractor)
     metrics.redundancy_jaccard_values = jaccards
     if jaccards:
         metrics.redundancy_jaccard_mean = float(np.mean(jaccards))
+    metrics.redundancy_threshold_rates = compute_redundancy_threshold_rates(
+        jaccards, REDUNDANCY_THRESHOLDS
+    )
     
     # M4, M5: Coverage
     coverage_results = compute_coverage_metrics(summary_events, trace_cuis, extractor)
@@ -538,26 +634,46 @@ def compute_per_case_metrics(
     metrics.faithfulness_valid_event_count = len(m6a_values)
     metrics.excluded_from_faithfulness_count = excluded_count
     
-    # M7: Latency
-    latencies = [e.get("latency_ms", 0) for e in summary_events]
-    if latencies:
-        metrics.mean_summary_latency_ms = float(np.mean(latencies))
+    # M7b: Coverage vs budget
+    metrics.coverage_by_budget = compute_coverage_by_budget(
+        summary_events, trace_cuis, extractor, BUFFER_COVERAGE_BUDGETS
+    )
     
-    # M8: LLM usage
+    # M8: Latency
+    summary_latencies = [
+        e.get("latency_ms")
+        for e in summary_events
+        if e.get("latency_ms") is not None
+    ]
+    if summary_latencies:
+        metrics.mean_summary_latency_ms = float(np.mean(summary_latencies))
+    decision_latencies = [
+        d.get("latency_ms")
+        for d in buffer_decisions
+        if d.get("latency_ms") is not None
+    ]
+    if decision_latencies:
+        metrics.mean_buffer_decision_latency_ms = float(np.mean(decision_latencies))
+    
+    # M9: LLM usage
+    metrics.buffer_decision_count = len(buffer_decisions)
     for event in summary_events:
         llm_usage = event.get("llm_usage", {})
         metrics.total_prompt_ctu += llm_usage.get("prompt_ctu", 0)
         metrics.total_completion_ctu += llm_usage.get("completion_ctu", 0)
-    
-    # M9: BufferAgent overhead
-    metrics.buffer_decision_count = len(buffer_decisions)
     for decision in buffer_decisions:
-        metrics.buffer_decision_ctu += decision.get("input_ctu", 0)
+        llm_usage = decision.get("llm_usage", {})
+        metrics.total_prompt_ctu += llm_usage.get("prompt_ctu", 0)
+        metrics.total_completion_ctu += llm_usage.get("completion_ctu", 0)
+    metrics.total_llm_ctu = metrics.total_prompt_ctu + metrics.total_completion_ctu
     
-    # M10: Schema failures
+    # M10: Compliance
     metrics.schema_failure_count = schema_failures
     if len(summary_events) > 0:
         metrics.schema_failure_rate = schema_failures / len(summary_events)
+        metrics.compliance_rate = 1 - metrics.schema_failure_rate
+    else:
+        metrics.compliance_rate = 1.0
     
     return metrics
 
@@ -637,31 +753,45 @@ def compute_aggregate_metrics(
     variant_id = per_case_metrics[0].variant_id
     agg = AggregateMetrics(variant_id=variant_id, n_cases=len(per_case_metrics))
     
-    # Compression ratio
-    compression_values = [m.compression_ratio for m in per_case_metrics]
-    mean, ci_low, ci_high = bootstrap_ci(compression_values, n_bootstrap, seed=seed)
-    agg.compression_ratio_mean = mean or 0.0
-    agg.compression_ratio_ci_low = ci_low or 0.0
-    agg.compression_ratio_ci_high = ci_high or 0.0
+    # M1: Update counts
+    agg.update_count_mean = float(np.mean([m.update_count for m in per_case_metrics]))
     
-    # Summary count
-    agg.summary_count_mean = np.mean([m.summary_count for m in per_case_metrics])
+    # M2: Output volume
+    agg.output_ctu_mean = float(np.mean([m.output_ctu for m in per_case_metrics]))
     
-    # Redundancy
+    # M3: Redundancy
     all_jaccards = []
     for m in per_case_metrics:
         all_jaccards.extend(m.redundancy_jaccard_values)
     if all_jaccards:
         agg.redundancy_jaccard_mean = float(np.mean(all_jaccards))
+    agg.redundancy_threshold_rates = compute_redundancy_threshold_rates(
+        all_jaccards, REDUNDANCY_THRESHOLDS
+    )
     
-    # Trace coverage
+    # M4: Coverage
     coverage_values = [m.trace_coverage for m in per_case_metrics]
     mean, ci_low, ci_high = bootstrap_ci(coverage_values, n_bootstrap, seed=seed)
     agg.trace_coverage_mean = mean or 0.0
     agg.trace_coverage_ci_low = ci_low or 0.0
     agg.trace_coverage_ci_high = ci_high or 0.0
+
+    # M5: Unsupported
+    unsupported_global_values = [
+        m.unsupported_global_rate for m in per_case_metrics
+    ]
+    agg.unsupported_global_rate_mean = float(np.mean(unsupported_global_values))
+    unsupported_per_summary_values = [
+        m.unsupported_per_summary_mean
+        for m in per_case_metrics
+        if m.unsupported_per_summary_mean is not None
+    ]
+    if unsupported_per_summary_values:
+        agg.unsupported_per_summary_mean = float(
+            np.mean(unsupported_per_summary_values)
+        )
     
-    # Faithfulness M6a
+    # M6a: Faithfulness
     m6a_values = [m.m6a_mean for m in per_case_metrics if m.m6a_mean is not None]
     if m6a_values:
         mean, ci_low, ci_high = bootstrap_ci(m6a_values, n_bootstrap, seed=seed)
@@ -669,13 +799,62 @@ def compute_aggregate_metrics(
         agg.m6a_ci_low = ci_low
         agg.m6a_ci_high = ci_high
     
-    # Faithfulness M6b
+    # M6b: Faithfulness
     m6b_values = [m.m6b_mean for m in per_case_metrics if m.m6b_mean is not None]
     if m6b_values:
         mean, ci_low, ci_high = bootstrap_ci(m6b_values, n_bootstrap, seed=seed)
         agg.m6b_mean = mean
         agg.m6b_ci_low = ci_low
         agg.m6b_ci_high = ci_high
+
+    # M7b: Coverage vs budget
+    budget_keys = {key for m in per_case_metrics for key in m.coverage_by_budget.keys()}
+    for budget_key in sorted(budget_keys):
+        values = [
+            m.coverage_by_budget.get(budget_key)
+            for m in per_case_metrics
+            if budget_key in m.coverage_by_budget
+        ]
+        agg.coverage_by_budget_mean[budget_key] = (
+            float(np.mean(values)) if values else 0.0
+        )
+
+    # M8: Latency
+    summary_latency_values = [
+        m.mean_summary_latency_ms
+        for m in per_case_metrics
+        if m.mean_summary_latency_ms is not None
+    ]
+    if summary_latency_values:
+        agg.summary_latency_mean_ms = float(np.mean(summary_latency_values))
+    buffer_latency_values = [
+        m.mean_buffer_decision_latency_ms
+        for m in per_case_metrics
+        if m.mean_buffer_decision_latency_ms is not None
+    ]
+    if buffer_latency_values:
+        agg.buffer_decision_latency_mean_ms = float(np.mean(buffer_latency_values))
+
+    # M9: Usage
+    agg.prompt_ctu_mean = float(np.mean([m.total_prompt_ctu for m in per_case_metrics]))
+    agg.completion_ctu_mean = float(
+        np.mean([m.total_completion_ctu for m in per_case_metrics])
+    )
+    agg.total_llm_ctu_mean = float(np.mean([m.total_llm_ctu for m in per_case_metrics]))
+    agg.buffer_decision_count_mean = float(
+        np.mean([m.buffer_decision_count for m in per_case_metrics])
+    )
+
+    # M10: Compliance
+    agg.schema_failure_count = sum(
+        m.schema_failure_count for m in per_case_metrics
+    )
+    agg.summary_event_count = sum(m.update_count for m in per_case_metrics)
+    if agg.summary_event_count > 0:
+        agg.schema_failure_rate_mean = (
+            agg.schema_failure_count / agg.summary_event_count
+        )
+        agg.compliance_rate_mean = float(1 - agg.schema_failure_rate_mean)
     
     # Totals
     agg.faithfulness_valid_event_count = sum(
@@ -825,11 +1004,12 @@ def main():
         )
         all_aggregate.append(agg)
         
+        m6a_display = f"{agg.m6a_mean:.3f}" if agg.m6a_mean is not None else "N/A"
+        m6b_display = f"{agg.m6b_mean:.3f}" if agg.m6b_mean is not None else "N/A"
         print(f"  {variant_id}: {agg.n_cases} cases, "
               f"coverage={agg.trace_coverage_mean:.3f} "
               f"[{agg.trace_coverage_ci_low:.3f}, {agg.trace_coverage_ci_high:.3f}]")
-        print(f"    M6a={agg.m6a_mean:.3f if agg.m6a_mean else 'N/A'}, "
-              f"M6b={agg.m6b_mean:.3f if agg.m6b_mean else 'N/A'}")
+        print(f"    M6a={m6a_display}, M6b={m6b_display}")
         print(f"    Schema failures: {agg.schema_failures}, "
               f"Excluded from faithfulness: {agg.excluded_from_faithfulness_count}")
     
@@ -842,23 +1022,34 @@ def main():
     per_case_records = []
     for m in all_per_case:
         record = {
+            "schema_name": "exaid.metrics",
+            "schema_version": METRICS_SCHEMA_VERSION,
+            "metrics_type": "per_case",
             "case_id": m.case_id,
             "variant_id": m.variant_id,
-            "compression_ratio": m.compression_ratio,
-            "summary_count": m.summary_count,
-            "redundancy_jaccard_mean": m.redundancy_jaccard_mean,
-            "trace_coverage": m.trace_coverage,
-            "unsupported_global_rate": m.unsupported_global_rate,
+            "m1_update_count": m.update_count,
+            "m2_output_ctu": m.output_ctu,
+            "m3_redundancy_jaccard_mean": m.redundancy_jaccard_mean,
+            "m3_redundancy_threshold_rates": m.redundancy_threshold_rates,
+            "m4_trace_coverage": m.trace_coverage,
+            "m4_trace_cui_count": m.trace_cui_count,
+            "m4_summary_cui_count": m.summary_cui_count,
+            "m5_unsupported_global_rate": m.unsupported_global_rate,
+            "m5_unsupported_per_summary_mean": m.unsupported_per_summary_mean,
             "m6a_mean": m.m6a_mean,
             "m6b_mean": m.m6b_mean,
             "faithfulness_valid_event_count": m.faithfulness_valid_event_count,
             "excluded_from_faithfulness_count": m.excluded_from_faithfulness_count,
-            "schema_failure_count": m.schema_failure_count,
-            "schema_failure_rate": m.schema_failure_rate,
-            "mean_summary_latency_ms": m.mean_summary_latency_ms,
-            "total_prompt_ctu": m.total_prompt_ctu,
-            "total_completion_ctu": m.total_completion_ctu,
-            "buffer_decision_count": m.buffer_decision_count
+            "m7b_coverage_by_budget": m.coverage_by_budget,
+            "m8_summary_latency_ms_mean": m.mean_summary_latency_ms,
+            "m8_buffer_decision_latency_ms_mean": m.mean_buffer_decision_latency_ms,
+            "m9_prompt_ctu_total": m.total_prompt_ctu,
+            "m9_completion_ctu_total": m.total_completion_ctu,
+            "m9_total_llm_ctu": m.total_llm_ctu,
+            "m9_buffer_decision_count": m.buffer_decision_count,
+            "m10_schema_failure_count": m.schema_failure_count,
+            "m10_schema_failure_rate": m.schema_failure_rate,
+            "m10_compliance_rate": m.compliance_rate
         }
         per_case_records.append(record)
     
@@ -868,6 +1059,9 @@ def main():
     # Aggregate JSON
     aggregate_output = args.output / "aggregate.metrics.json"
     aggregate_data = {
+        "schema_name": "exaid.metrics",
+        "schema_version": METRICS_SCHEMA_VERSION,
+        "metrics_type": "aggregate",
         "computed_at": __import__("datetime").datetime.now(
             __import__("datetime").timezone.utc
         ).isoformat(),
@@ -879,17 +1073,20 @@ def main():
     for agg in all_aggregate:
         aggregate_data["variants"][agg.variant_id] = {
             "n_cases": agg.n_cases,
-            "compression_ratio": {
-                "mean": agg.compression_ratio_mean,
-                "ci_low": agg.compression_ratio_ci_low,
-                "ci_high": agg.compression_ratio_ci_high
+            "m1_update_count_mean": agg.update_count_mean,
+            "m2_output_ctu_mean": agg.output_ctu_mean,
+            "m3_redundancy": {
+                "jaccard_mean": agg.redundancy_jaccard_mean,
+                "threshold_rates": agg.redundancy_threshold_rates
             },
-            "summary_count_mean": agg.summary_count_mean,
-            "redundancy_jaccard_mean": agg.redundancy_jaccard_mean,
-            "trace_coverage": {
+            "m4_trace_coverage": {
                 "mean": agg.trace_coverage_mean,
                 "ci_low": agg.trace_coverage_ci_low,
                 "ci_high": agg.trace_coverage_ci_high
+            },
+            "m5_unsupported": {
+                "global_rate_mean": agg.unsupported_global_rate_mean,
+                "per_summary_mean": agg.unsupported_per_summary_mean
             },
             "m6a": {
                 "mean": agg.m6a_mean,
@@ -900,6 +1097,23 @@ def main():
                 "mean": agg.m6b_mean,
                 "ci_low": agg.m6b_ci_low,
                 "ci_high": agg.m6b_ci_high
+            },
+            "m7b_coverage_by_budget_mean": agg.coverage_by_budget_mean,
+            "m8_latency_ms_mean": {
+                "summary": agg.summary_latency_mean_ms,
+                "buffer_decision": agg.buffer_decision_latency_mean_ms
+            },
+            "m9_usage_ctu_mean": {
+                "prompt": agg.prompt_ctu_mean,
+                "completion": agg.completion_ctu_mean,
+                "total": agg.total_llm_ctu_mean,
+                "buffer_decision_count": agg.buffer_decision_count_mean
+            },
+            "m10_compliance": {
+                "schema_failure_rate_mean": agg.schema_failure_rate_mean,
+                "compliance_rate_mean": agg.compliance_rate_mean,
+                "schema_failure_count": agg.schema_failure_count,
+                "summary_event_count": agg.summary_event_count
             },
             "faithfulness_valid_event_count": agg.faithfulness_valid_event_count,
             "excluded_from_faithfulness_count": agg.excluded_from_faithfulness_count,
