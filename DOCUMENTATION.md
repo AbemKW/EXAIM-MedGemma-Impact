@@ -525,24 +525,28 @@ The module provides role-based LLM configuration using `LLMRole` enum (MAS, SUMM
 
 **Environment Variables**:
 
-*Provider Selection:*
-- `LLM_PROVIDER`: Default provider (default: "google")
-- `MAS_LLM_PROVIDER`: Provider for MAS LLM (default: "groq")
-- `EXAID_LLM_PROVIDER`: Provider for EXAID LLM (default: "google")
+*Role-Based Provider Selection:*
+- `MAS_LLM_PROVIDER`: Provider for MAS role (default: "groq")
+- `SUMMARIZER_LLM_PROVIDER`: Provider for Summarizer role (default: "google")
+- `BUFFER_AGENT_LLM_PROVIDER`: Provider for Buffer Agent role (default: "google")
+
+*Role-Based Model Overrides (optional):*
+- `MAS_LLM_MODEL`: Model name for MAS role (overrides default from YAML)
+- `SUMMARIZER_LLM_MODEL`: Model name for Summarizer role (overrides default from YAML)
+- `BUFFER_AGENT_LLM_MODEL`: Model name for Buffer Agent role (overrides default from YAML)
 
 *Google Gemini Configuration:*
-- `LLM_MODEL_NAME`: Model name (default: "gemini-2.5-flash-lite")
-- `LLM_API_KEY` or `GOOGLE_API_KEY`: Google API key
-- `EXAID_LLM_MODEL`: Model for EXAID LLM (default: "gemini-2.5-pro")
+- `GOOGLE_API_KEY`: Google API key (required for Google provider)
+- `GOOGLE_MODEL_NAME`: Default model name (default: "gemini-2.5-flash-lite")
 
 *Groq Configuration:*
-- `GROQ_API_KEY`: Groq API key
-- `GROQ_MODEL`: Model name (default: "llama-3.3-70b-versatile")
+- `GROQ_API_KEY`: Groq API key (required for Groq provider)
+- `GROQ_MODEL`: Default model name (default: "llama-3.3-70b-versatile")
 
 *OpenAI Configuration:*
-- `OPENAI_API_KEY`: API key
+- `OPENAI_API_KEY`: API key (required for OpenAI provider)
 - `OPENAI_BASE_URL`: Base URL for API (optional, for OpenAI-compatible endpoints)
-- `OPENAI_MODEL`: Model name (optional)
+- `OPENAI_MODEL`: Default model name (optional)
 
 **Usage**: Imported by:
 - `BufferAgent` uses `get_llm(LLMRole.BUFFER_AGENT)` for trigger decisions
@@ -925,19 +929,23 @@ EXAID supports multiple LLM providers (Google Gemini, Groq, OpenAI, and OpenAI-c
 Create a `.env` file in the project root:
 
 ```bash
-# Provider selection (google, groq, or openai)
-LLM_PROVIDER=google
+# Role-based provider selection (mas, summarizer, buffer_agent)
 MAS_LLM_PROVIDER=groq
-EXAID_LLM_PROVIDER=google
+SUMMARIZER_LLM_PROVIDER=google
+BUFFER_AGENT_LLM_PROVIDER=google
 
 # Google Gemini configuration
-LLM_MODEL_NAME=gemini-2.5-flash-lite
-LLM_API_KEY=your-google-api-key
-EXAID_LLM_MODEL=gemini-2.5-pro
+GOOGLE_API_KEY=your-google-api-key
+GOOGLE_MODEL_NAME=gemini-2.5-flash-lite
+# Optional: Override models per role
+SUMMARIZER_LLM_MODEL=gemini-2.5-pro
+BUFFER_AGENT_LLM_MODEL=gemini-2.5-pro
 
 # Groq configuration (for fast multi-agent reasoning)
 GROQ_API_KEY=your-groq-api-key
 GROQ_MODEL=llama-3.3-70b-versatile
+# Optional: Override model for MAS role
+MAS_LLM_MODEL=llama-3.3-70b-versatile
 
 # OpenAI configuration (or OpenAI-compatible endpoints)
 OPENAI_API_KEY=your-openai-api-key
@@ -945,32 +953,34 @@ OPENAI_BASE_URL=https://api.openai.com/v1  # Optional
 OPENAI_MODEL=gpt-4  # Optional
 ```
 
-**Default Configuration**:
-- `llm`: Google Gemini Flash (fast, cost-effective)
-- `mas_llm`: Groq (optimized for multi-agent speed)
-- `exaid_llm`: Google Gemini Pro (strong reasoning)
+**Default Configuration** (from `infra/model_configs.yaml`):
+- `mas`: Groq with llama-3.3-70b-versatile (optimized for multi-agent speed)
+- `summarizer`: Google Gemini Flash Lite (strong reasoning, cost-effective)
+- `buffer_agent`: Google Gemini Flash Lite (strong reasoning, cost-effective)
 
 **Example Configurations**:
 
 *All Google Gemini:*
 ```bash
-LLM_PROVIDER=google
 MAS_LLM_PROVIDER=google
-EXAID_LLM_PROVIDER=google
-LLM_API_KEY=your-google-api-key
+SUMMARIZER_LLM_PROVIDER=google
+BUFFER_AGENT_LLM_PROVIDER=google
+GOOGLE_API_KEY=your-google-api-key
 ```
 
 *All Groq:*
 ```bash
-LLM_PROVIDER=groq
 MAS_LLM_PROVIDER=groq
-EXAID_LLM_PROVIDER=groq
+SUMMARIZER_LLM_PROVIDER=groq
+BUFFER_AGENT_LLM_PROVIDER=groq
 GROQ_API_KEY=your-groq-api-key
 ```
 
 *Custom OpenAI-compatible endpoint:*
 ```bash
 MAS_LLM_PROVIDER=openai
+SUMMARIZER_LLM_PROVIDER=openai
+BUFFER_AGENT_LLM_PROVIDER=openai
 OPENAI_BASE_URL=https://your-endpoint.com/v1
 OPENAI_MODEL=your-model-name
 OPENAI_API_KEY=your-api-key
