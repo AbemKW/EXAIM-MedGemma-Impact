@@ -1,0 +1,217 @@
+# EXAID Evaluation - TokenGate Calibration Sweep Configuration
+# Phase 5: TokenGate Trigger Calibration
+#
+# This configuration defines the parameter sweep for calibrating TokenGate
+# trigger parameters (min_words, max_words, silence_timer, max_wait_timeout)
+# across frozen v2.0.0 traces.
+
+# =============================================================================
+# Literature-Informed Parameter Grid
+# =============================================================================
+# Grid values are grounded in literature and design priorities:
+# - min_words: Larger chunks for "bucket not pipe" behavior (30-70 words)
+# - max_words: Typical sentence ranges and practical chunk sizes (80-160 words)
+# - silence_timer_ms: Streaming pause thresholds from prior studies (1-3s)
+# - max_wait_timeout_ms: Absolute upper bound to flush accumulated chunks (4-8s)
+
+parameter_grid:
+  min_words: [30, 40, 50, 60, 70]  # Changed from [10, 15, 20, 25, 30] for larger chunks
+  max_words: [80, 100, 120, 140, 160]  # Changed from [40, 50, 60, 70, 80] for larger chunks
+  silence_timer_ms: [1000, 1500, 2000, 2500, 3000]  # Keep as-is
+  max_wait_timeout_ms: [4000, 5000, 6000, 7000, 8000]  # Range 4000-8000
+  
+  # Total combinations: 5×5×5×5 = 625 policies
+  
+  # Fixed parameter (not calibrated)
+  boundary_cues: ".?!\n"
+
+# =============================================================================
+# Policy Validity Constraints
+# =============================================================================
+# Cross-parameter constraints to filter invalid combinations before replay:
+# 1. min_words < max_words (strictly)
+# 2. max_wait_timeout_ms >= silence_timer_ms
+# 3. Optional: max_words >= min_words + k (k=5 or 10)
+
+validity_constraints:
+  min_words_lt_max_words: true
+  max_wait_gte_silence: true
+  min_gap_between_min_max: 10  # Increased from 5 to ensure meaningful gap for larger chunks
+
+# =============================================================================
+# Constraint Thresholds (Hard Requirements)
+# =============================================================================
+# Policies violating any constraint are rejected (hard filter)
+
+constraints:
+  ttff_content_p95_ms: 30000  # First flush must occur reasonably quickly (from first content delta)
+  spam_pct_mean: 10.0  # Avoid excessive small flushes (policy-relative, excludes end-of-trace)
+  timer_under_min_pct_mean: 20.0  # Avoid policies where timers frequently force premature flushes
+  chunk_size_p50_min_ratio: 0.6  # Median chunks should be meaningful (policy-relative, ratio of min_words)
+  chunk_size_p95_max: 150  # Avoid extremely large chunks (words)
+  worst_wait_p95_ms: 60000  # Avoid excessive gaps between flushes (60s)
+  
+  # Cost constraints (BufferAgent calls per case)
+  flush_count_mean: 100  # Maximum average flushes per case (1 BufferAgent call per flush)
+  chunk_size_p50_min: 50  # Minimum median chunk size (absolute, not ratio)
+
+# =============================================================================
+# Selection Rule Configuration
+# =============================================================================
+# Primary: 3-objective Pareto frontier + utopia-distance selection
+# Secondary: Weighted objective function (for fallback when Pareto frontier empty)
+# Fallback: Lexicographic tie-breaking (if all metrics dropped)
+
+selection:
+  # Primary method: 3-objective Pareto frontier + utopia-distance selection
+  # Process:
+  #   1. Compute data-driven normalization bounds from survivor policies (P05/P95 percentiles)
+  #   2. Normalize objectives to [0,1] goodness space (1.0 = best)
+  #   3. Build k-dimensional Pareto frontier (k = number of active metrics, excluding dropped)
+  #   4. Compute dimension-normalized Euclidean distance to utopia point (1, 1, ..., 1)
+  #   5. Select policy with minimum utopia distance
+  #   6. Apply deterministic tie-breaking if distances are equal
+  #
+  # Objectives:
+  #   - Minimize ttff_content_p50_ms (Time To First Flush)
+  #   - Minimize flush_count_mean (BufferAgent calls per case)
+  #   - Maximize chunk_size_p50 (median chunk size)
+  #
+  # Normalization bounds:
+  #   - Computed from survivor policies using percentile-based methods
+  #   - Small-N handling: Uses min/max if len(survivors) < 5
+  #   - Degenerate bounds: Metrics with hi - lo < epsilon are dropped
+  #   - Epsilon values: EPS_MS=1.0 (TTFF), EPS_COUNT=1.0 (flush_count), EPS_WORDS=1.0 (chunk_size)
+  #
+  # Dropped metrics:
+  #   - Excluded from both Pareto dominance test AND distance computation
+  #   - If all metrics dropped, fallback to lexicographic tie-breaking
+  pareto:
+    x_metric: "ttff_content_p50_ms"  # Legacy field (kept for compatibility, not used in 3D Pareto)
+    y_metric: "chunk_size_p50"  # Legacy field (kept for compatibility, not used in 3D Pareto)
+    knee_detection_method: "curvature"  # Legacy field (not used in utopia-distance method)
+  
+  # Secondary method: Weighted score (for fallback when Pareto frontier is empty)
+  # Weights are renormalized when metrics are dropped
+  weighted_score:
+    enabled: true
+    weights:
+      ttff_content_p50_ms: 0.25  # TTFF importance
+      flush_count_mean: 0.15  # Flush frequency (lower is better)
+      chunk_size_p50: 0.30  # Chunk size (high importance)
+      spam_pct_mean: 0.15  # Spam avoidance
+      worst_wait_p95_ms: 0.15  # Wait time
+    
+    # Normalization bounds (FALLBACK ONLY - not used in normal operation)
+    # 
+    # IMPORTANT: These bounds are ONLY used as fallback defaults if computed_bounds is None
+    # (which should never happen in normal operation). Actual bounds are ALWAYS computed
+    # from survivor policies using percentile methods (P05/P95 or min/max for small-N).
+    #
+    # These values are set to realistic ranges based on observed calibration data:
+    # - TTFF: ~1000-2000ms observed, with constraint threshold at 30000ms
+    # - Flush count: ~40-90 observed in survivors
+    # - Chunk size: matches parameter grid ranges
+    normalization_bounds:
+      chunk_size_p50:
+        lower: 30  # Fallback default (matches min_words range [30-70])
+        upper: 160  # Fallback default (matches max_words range [80-160])
+      flush_count_mean:
+        lower: 40  # Fallback default (realistic lower bound from observed data)
+        upper: 100  # Fallback default (matches constraint threshold)
+      ttff_content_p50_ms:
+        lower: 500  # Fallback default (realistic lower bound, observed ~1000-2000ms)
+        upper: 3000  # Fallback default (realistic upper bound with headroom, constraint at 30000ms)
+      spam_pct_mean:
+        lower: 0  # Fallback default
+        upper: 10  # Fallback default (matches constraint threshold)
+      worst_wait_p95_ms:
+        lower: 2000  # Fallback default (realistic lower bound from observed data)
+        upper: 60000  # Fallback default (matches constraint threshold)
+
+# =============================================================================
+# Spam Definition
+# =============================================================================
+# Policy-relative spam: spam_pct = % of flushes (excluding end-of-trace)
+# where ws_units < α * min_words
+# Default α = 0.7 (adapts to each policy's min_words threshold)
+
+spam:
+  alpha_default: 0.7  # Default threshold multiplier
+  alpha_sensitivity: [0.5, 0.6, 0.7, 0.8]  # For sensitivity analysis
+  exclude_end_of_trace: true  # End-of-trace flushes excluded from spam_pct
+
+# =============================================================================
+# Reproducibility Configuration
+# =============================================================================
+# All calibration runs must log:
+# - trace_dataset_hash: SHA256 of canonical manifest fields
+# - mas_run_id: Trace generation campaign ID
+# - exaid_commit: Full git commit hash of EXAID repo
+# - calibration_config_hash: SHA256 of canonicalized sweep configuration
+# - calibration_run_id: Deterministic ID format
+
+reproducibility:
+  # Run ID format: calib_<trace_dataset_hash8>_<config_hash8>_<exaid_commit8>
+  run_id_format: "calib_{trace_dataset_hash8}_{config_hash8}_{exaid_commit8}"
+  
+  # Hash truncation (first 8 chars)
+  hash_truncate: 8
+
+# =============================================================================
+# Safety and Guardrails
+# =============================================================================
+
+safety:
+  # Stub trace protection
+  strict_stub_guard: true  # Raise error on stub_mode traces (unless --allow-stub)
+  
+  # Trace hash verification
+  verify_trace_hashes: true  # Compare trace file SHA256 to manifest
+  
+  # Missing cases / replay failures
+  strict_validation: true  # Use TraceReplayEngine with strict_validation=True
+  max_replay_failure_rate: 0.05  # Stop if >5% of cases fail replay validation
+  
+  # Determinism checks
+  verify_determinism: true  # Run same policy twice, verify identical flush events
+
+# =============================================================================
+# Output Configuration
+# =============================================================================
+
+output:
+  # Output directory structure:
+  # evals/data/calibration/calib_<hash8>_<hash8>_<hash8>/
+  base_dir: "data/calibration"
+  
+  # Artifacts to generate
+  artifacts:
+    - calibration_results.csv
+    - calibration_per_case.jsonl
+    - calibration_summary.json
+    - chosen_tokengate_params.yaml
+    - calibration_report.md
+    - calibration_config.yaml  # Sweep configuration used
+    - spam_sensitivity.json  # α sensitivity analysis results
+    - pareto_plot.png  # Optional: visualization of Pareto frontier
+
+# =============================================================================
+# Documentation
+# =============================================================================
+# Literature sources for grid values (documented for reviewer clarity)
+
+literature_sources:
+  min_words_range:
+    note: "Larger chunks for 'bucket not pipe' behavior (30-70 words)"
+    sources: []
+  max_words_range:
+    note: "Typical sentence ranges and practical chunk sizes (80-160 words)"
+    sources: []
+  silence_timer_range:
+    note: "Streaming pause thresholds from prior studies (1-3s)"
+    sources: []
+  max_wait_timeout_range:
+    note: "Absolute upper bound to flush accumulated chunks (4-8s)"
+    sources: []
+

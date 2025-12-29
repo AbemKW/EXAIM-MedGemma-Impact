@@ -97,20 +97,21 @@ class TokenGate:
     
     def __init__(
         self,
-        min_words: int = 15,
-        max_words: int = 50,
+        min_words: int = 60,
+        max_words: int = 100,
         boundary_cues: str = ".?!\n",
-        silence_timer: float = 15,
-        max_wait_timeout: float = 40,
+        silence_timer: float = 1,
+        max_wait_timeout: float = 4,
         clock: Optional[Clock] = None
     ):
         """Initialize TokenGate with configurable flush triggers.
         
         Args:
-            min_words: Minimum word threshold (whitespace-delimited) before flushing (default: 35)
-            max_words: Maximum word cap (whitespace-delimited) to force flush (default: 90)
+            min_words: Minimum word threshold (whitespace-delimited) before flushing (default: 15)
+            max_words: Maximum word cap (whitespace-delimited) to force flush (default: 50)
             boundary_cues: Punctuation/newline characters that trigger flush at end of buffer
                 after min_words (default: ".?!\n"). Note: tabs are excluded as formatting noise.
+                This parameter is fixed and not calibrated.
             silence_timer: Seconds of inactivity before flush (default: 15)
             max_wait_timeout: Maximum seconds before forced flush (default: 40)
             clock: Optional clock/time provider for deterministic timing. If None, uses real
