@@ -135,12 +135,13 @@ The Trace Replay Engine provides deterministic replay of v2.0.0 traces with virt
 - `cli/replay_trace.py` - CLI tool for inspection/debugging (runnable)
 - `tests/test_trace_replay_engine.py` - Unit and integration tests
 - `cli/calibrate_tokengate.py` - TokenGate calibration CLI wrapper (argument parsing + orchestration)
-- `src/tokengate_calibration_runner.py` - Calibration orchestrator (sequencing + trace replay)
-- `src/tokengate_calibration_models.py` - Calibration dataclasses (Policy, CaseMetrics, etc.)
-- `src/tokengate_calibration_grid.py` - Policy grid generation + validation
-- `src/tokengate_calibration_metrics.py` - Per-case + aggregate metrics, constraints, percentiles
-- `src/tokengate_calibration_selection.py` - Pareto/utopia selection + weighted fallback logic
-- `src/tokengate_calibration_io.py` - Hashing, manifest/config loading, artifact I/O
+- `src/tokengate_calibration/` - TokenGate calibration subpackage
+  - `runner.py` - Calibration orchestrator (sequencing + trace replay)
+  - `models.py` - Calibration dataclasses (Policy, CaseMetrics, etc.)
+  - `grid.py` - Policy grid generation + validation
+  - `metrics.py` - Per-case + aggregate metrics, constraints, percentiles
+  - `selection.py` - Pareto/utopia selection + weighted fallback logic
+  - `io.py` - Hashing, manifest/config loading, artifact I/O
 
 **Note:** `cli/` contains runnable inspection/debug tools; `src/` contains importable library code.
 
