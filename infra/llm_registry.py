@@ -51,8 +51,8 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
         
     Environment variables:
         For Google (Gemini):
-            - LLM_API_KEY or GOOGLE_API_KEY: Google API key
-            - LLM_MODEL_NAME: Default model name (default: gemini-2.5-flash-lite)
+            - GOOGLE_API_KEY: Google API key (required)
+            - GOOGLE_MODEL_NAME: Default model name (default: gemini-2.5-flash-lite)
             
         For Groq:
             - GROQ_API_KEY: Groq API key

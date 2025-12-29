@@ -56,19 +56,23 @@ See `evals/README.md` for full evaluation documentation.
    
    Create a `.env` file in the project root with your LLM provider settings:
    ```bash
-   # Choose your provider (google, groq, or openai)
-   LLM_PROVIDER=google
+   # Role-based provider selection (mas, summarizer, buffer_agent)
    MAS_LLM_PROVIDER=groq
-   EXAID_LLM_PROVIDER=google
+   SUMMARIZER_LLM_PROVIDER=google
+   BUFFER_AGENT_LLM_PROVIDER=google
    
    # Google Gemini configuration
-   LLM_API_KEY=your-google-api-key
-   LLM_MODEL_NAME=gemini-2.5-flash-lite
-   EXAID_LLM_MODEL=gemini-2.5-pro
+   GOOGLE_API_KEY=your-google-api-key
+   GOOGLE_MODEL_NAME=gemini-2.5-flash-lite
+   # Override models per role (optional):
+   SUMMARIZER_LLM_MODEL=gemini-2.5-pro
+   BUFFER_AGENT_LLM_MODEL=gemini-2.5-pro
    
    # Groq configuration (for multi-agent reasoning)
    GROQ_API_KEY=your-groq-api-key
    GROQ_MODEL=llama-3.3-70b-versatile
+   # Override model for MAS role (optional):
+   MAS_LLM_MODEL=llama-3.3-70b-versatile
    
    # OpenAI configuration (optional, if using OpenAI provider)
    OPENAI_API_KEY=your-openai-api-key
@@ -76,15 +80,15 @@ See `evals/README.md` for full evaluation documentation.
    OPENAI_MODEL=gpt-4
    ```
    
-   EXAID supports multiple LLM providers through environment variable configuration. See DOCUMENTATION.md for more details.
+   EXAID supports multiple LLM providers through role-based environment variable configuration. See DOCUMENTATION.md for more details.
 
-5. **Run the CDSS demo:**
+4. **Run the CDSS demo:**
 
    ```bash
    python demos/cdss_example/demo_cdss.py
    ```
 
-6. **Use the EXAID class in your code:**
+5. **Use the EXAID class in your code:**
 
    ```python
    import asyncio
@@ -148,7 +152,7 @@ The system is organized around a few small modules:
 - `infra/llm_registry.py` — LLM client configuration
   - Purpose: Holds LLM client instances used for summarization and trigger decisions. Uses environment variables for provider selection with role-based configuration.
   - Supports multiple providers: Google Gemini, Groq, OpenAI, and OpenAI-compatible endpoints.
-  - Provider selection via environment variables: `LLM_PROVIDER`, `MAS_LLM_PROVIDER`, `EXAID_LLM_PROVIDER`
+  - Provider selection via role-based environment variables: `MAS_LLM_PROVIDER`, `SUMMARIZER_LLM_PROVIDER`, `BUFFER_AGENT_LLM_PROVIDER`
   - Provides different LLM instances optimized for different use cases (speed vs. reasoning quality)
 
 - `demos/cdss_example/` — Clinical Decision Support System demo
