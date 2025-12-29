@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional, Tuple
 
-from .tokengate_calibration_models import CaseMetrics, FlushEvent, Policy, PolicyMetrics
+from .models import CaseMetrics, FlushEvent, Policy, PolicyMetrics
 
 
 def nearest_rank_percentile(sorted_values: List[float], percentile: float) -> Optional[float]:
@@ -420,3 +420,4 @@ def compute_spam_sensitivity(
             results[alpha] = 0.0
 
     return results
+

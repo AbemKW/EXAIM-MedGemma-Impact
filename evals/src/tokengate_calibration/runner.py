@@ -8,15 +8,15 @@ from pathlib import Path
 from typing import Callable, List, Optional
 
 # Ensure repo root is available for exaid_core imports if running outside Docker.
-repo_root = Path(__file__).parent.parent.parent.resolve()
+repo_root = Path(__file__).parent.parent.parent.parent.resolve()
 if (repo_root / "exaid_core").exists():
     sys.path.insert(0, str(repo_root))
 
-from .trace_replay_engine import TraceReplayEngine, StubTraceError, TraceValidationError
+from ..trace_replay_engine import TraceReplayEngine, StubTraceError, TraceValidationError
 from exaid_core.token_gate.token_gate import TokenGate, ManualClock
 
-from .tokengate_calibration_grid import filter_valid_policies, generate_policy_grid
-from .tokengate_calibration_io import (
+from .grid import filter_valid_policies, generate_policy_grid
+from .io import (
     compute_config_hash,
     compute_trace_dataset_hash,
     generate_calibration_run_id,
@@ -33,15 +33,15 @@ from .tokengate_calibration_io import (
     write_spam_sensitivity_json,
     write_summary_json,
 )
-from .tokengate_calibration_metrics import (
+from .metrics import (
     aggregate_policy_metrics,
     check_constraints,
     compute_all_normalization_bounds,
     compute_case_metrics,
     compute_spam_sensitivity,
 )
-from .tokengate_calibration_models import CaseMetrics, FlushEvent, Policy, PolicyMetrics
-from .tokengate_calibration_selection import (
+from .models import CaseMetrics, FlushEvent, Policy, PolicyMetrics
+from .selection import (
     compute_utopia_distances_for_all,
     compute_weighted_score,
     select_pareto_utopia,
@@ -569,3 +569,4 @@ async def run_calibration(
 def run_calibration_sync(*args, **kwargs) -> None:
     """Synchronous wrapper for run_calibration."""
     asyncio.run(run_calibration(*args, **kwargs))
+

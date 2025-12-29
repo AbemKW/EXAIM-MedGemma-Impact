@@ -10,7 +10,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import yaml
 
-from .tokengate_calibration_models import CaseMetrics, Policy, PolicyMetrics
+from .models import CaseMetrics, Policy, PolicyMetrics
 
 
 def resolve_manifest_path(manifest_pattern: str) -> Path:
@@ -562,3 +562,4 @@ def write_spam_sensitivity_json(output_path: Path, spam_sensitivity: dict) -> No
     """Write spam sensitivity JSON."""
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(spam_sensitivity, f, indent=2)
+

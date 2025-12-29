@@ -3,7 +3,7 @@
 EXAID Evaluation - TokenGate Calibration CLI
 
 CLI wrapper responsibilities: argument parsing, entrypoint wiring, and user-facing
-logging, while reusable calibration logic lives in evals/src/* modules.
+logging, while reusable calibration logic lives in evals/src/tokengate_calibration/ package.
 
 Usage:
     python -m evals.cli.calibrate_tokengate \
@@ -16,7 +16,7 @@ Usage:
 import argparse
 from pathlib import Path
 
-from ..src.tokengate_calibration_runner import run_calibration_sync
+from ..src.tokengate_calibration.runner import run_calibration_sync
 
 
 def main() -> None:
