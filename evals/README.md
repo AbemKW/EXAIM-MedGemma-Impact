@@ -134,6 +134,13 @@ The Trace Replay Engine provides deterministic replay of v2.0.0 traces with virt
 - `src/trace_replay_engine.py` - Core library module (importable)
 - `cli/replay_trace.py` - CLI tool for inspection/debugging (runnable)
 - `tests/test_trace_replay_engine.py` - Unit and integration tests
+- `cli/calibrate_tokengate.py` - TokenGate calibration CLI wrapper (argument parsing + orchestration)
+- `src/tokengate_calibration_runner.py` - Calibration orchestrator (sequencing + trace replay)
+- `src/tokengate_calibration_models.py` - Calibration dataclasses (Policy, CaseMetrics, etc.)
+- `src/tokengate_calibration_grid.py` - Policy grid generation + validation
+- `src/tokengate_calibration_metrics.py` - Per-case + aggregate metrics, constraints, percentiles
+- `src/tokengate_calibration_selection.py` - Pareto/utopia selection + weighted fallback logic
+- `src/tokengate_calibration_io.py` - Hashing, manifest/config loading, artifact I/O
 
 **Note:** `cli/` contains runnable inspection/debug tools; `src/` contains importable library code.
 
@@ -576,7 +583,7 @@ docker compose -f docker-compose.evals.yml run --rm evals scripts/05_calibrate_t
 
 # Or use Python directly
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/calibrate_tokengate.py \
+  python cli/calibrate_tokengate.py \
     --traces data/traces/ \
     --manifest data/manifests/exaid_traces_*.manifest.jsonl \
     --config configs/calibration_sweep.yaml \
