@@ -277,6 +277,7 @@ def select_pareto_utopia(
     import math
 
     def log(message: str) -> None:
+        """Log debug output when a logger is provided."""
         if logger is not None:
             logger(message)
 
@@ -357,8 +358,7 @@ def select_pareto_utopia(
 
     # After compressing vectors to active dimensions, remap active_dimensions to [0, 1, ..., k-1]
     # This fixes the index mismatch bug when metrics are dropped
-    k = len(points[0][1]) if points else 0
-    compressed_active_dimensions = list(range(k))
+    compressed_active_dimensions = list(range(len(points[0][1])))
 
     # Build k-dimensional Pareto frontier
     frontier = build_pareto_frontier_3d(points, compressed_active_dimensions)

@@ -107,12 +107,12 @@ def compute_trace_dataset_hash(manifest_path: Path) -> str:
             canonical_data["case_list_hash"] = record.get("case_list_hash", "")
             # Include trace entries (case_id, sha256 pairs)
             trace_entries = []
-            for entry in records:
-                if entry.get("record_type") == "trace_entry":
+            for trace_record in records:
+                if trace_record.get("record_type") == "trace_entry":
                     trace_entries.append(
                         {
-                            "case_id": entry.get("case_id", ""),
-                            "sha256": entry.get("sha256", ""),
+                            "case_id": trace_record.get("case_id", ""),
+                            "sha256": trace_record.get("sha256", ""),
                         }
                     )
             canonical_data["trace_entries"] = sorted(

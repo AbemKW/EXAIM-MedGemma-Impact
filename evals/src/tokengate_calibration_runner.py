@@ -247,7 +247,8 @@ async def run_calibration(
     log: Callable[[str], None] = print,
 ) -> None:
     """Run TokenGate calibration with explicit inputs and outputs."""
-    _ = verify_determinism
+    if verify_determinism:
+        log("NOTE: verify_determinism is not implemented in the calibration runner.")
     config = load_config(config_path)
 
     # Find manifest file
