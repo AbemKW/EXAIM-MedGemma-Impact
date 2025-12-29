@@ -557,6 +557,98 @@ docker compose -f docker-compose.evals.yml run --rm evals \
 - `data/metrics/per_case.metrics.jsonl` - Per-case metric records
 - `data/metrics/aggregate.metrics.json` - Aggregate statistics with CIs
 
+### Step 6: TokenGate Calibration (Phase 5)
+
+**Paper hook: Section 3.3**
+
+Calibrates TokenGate trigger parameters (`min_words`, `max_words`, `silence_timer`, `max_wait_timeout`) by systematically evaluating literature-informed parameter combinations across frozen v2.0.0 traces.
+
+```bash
+# Run calibration sweep
+docker compose -f docker-compose.evals.yml run --rm evals scripts/05_calibrate_tokengate.sh
+
+# Or use Python directly
+docker compose -f docker-compose.evals.yml run --rm evals \
+  python src/calibrate_tokengate.py \
+    --traces data/traces/ \
+    --manifest data/manifests/exaid_traces_*.manifest.jsonl \
+    --config configs/calibration_sweep.yaml \
+    --output data/calibration/
+```
+
+**Output Directory Structure:**
+```
+evals/data/calibration/calib_<hash8>_<hash8>_<hash8>/
+  ├── calibration_results.csv          # All policy results
+  ├── calibration_per_case.jsonl       # Per-case detailed metrics
+  ├── calibration_summary.json         # Summary and selected policy
+  ├── chosen_tokengate_params.yaml     # Selected parameters (frozen config)
+  ├── calibration_report.md            # Detailed report
+  ├── calibration_config.yaml          # Sweep configuration used
+  └── spam_sensitivity.json            # α sensitivity analysis
+```
+
+**Calibration Methodology:**
+
+1. **Parameter Grid**: 5×5×5×5 = 625 combinations
+   - `min_words`: [30, 40, 50, 60, 70] (larger chunks for "bucket not pipe" behavior)
+   - `max_words`: [80, 100, 120, 140, 160] (typical sentence ranges and practical chunk sizes)
+   - `silence_timer_ms`: [1000, 1500, 2000, 2500, 3000] (streaming pause thresholds)
+   - `max_wait_timeout_ms`: [4000, 5000, 6000, 7000, 8000] (absolute upper bound to flush)
+
+2. **Policy Validity Filter**: Filters invalid combinations before replay
+   - `min_words < max_words` (strictly)
+   - `max_wait_timeout_ms >= silence_timer_ms`
+   - `max_words >= min_words + k` (k=10, ensures meaningful gap for larger chunks)
+
+3. **Production-Faithful Replay**: Deterministic replay matching production behavior exactly
+   - Uses `TokenGate` with `ManualClock` for virtual time
+   - Timers checked synchronously: inside `add_token()` (silence check) and after `add_token()` via `check_timers()`
+   - Explicit flush at `turn_end` events (matching production `flush_agent()` behavior)
+   - **No gap-based timer processing** (production has no background/tick loop)
+   - Multi-agent support (per-agent buffers)
+
+4. **Metrics Computation**: Per-case and aggregated metrics
+   - TTFF (time to first flush): `ttff_content_ms` (from first content delta) and `ttff_trace_ms` (from trace t0)
+   - Flush count, chunk size distribution (p50, p90, p95, max)
+   - Spam percentage (policy-relative: `% flushes < α * min_words`, default α=0.7)
+   - Timer flush percentage, timer under-minimum percentage
+
+5. **Constraint Filters**: Hard requirements (reject violating policies)
+   - `ttff_content_p95_ms ≤ 30000 ms`
+   - `spam_pct_mean ≤ 10%`
+   - `timer_under_min_pct_mean ≤ 20%`
+   - `chunk_size_p50 ≥ 0.6 * min_words` (policy-relative)
+   - `chunk_size_p50 ≥ 50 words` (absolute minimum, cost constraint)
+   - `chunk_size_p95 ≤ 150 words`
+   - `worst_wait_p95_ms ≤ 60000 ms`
+   - `flush_count_mean ≤ 100` (cost constraint: limits BufferAgent calls per case)
+
+6. **Selection Rule**: 3-objective Pareto frontier + utopia-distance selection
+   - **Objectives**: Minimize TTFF (Time To First Flush), minimize flush count (BufferAgent calls), maximize chunk size
+   - **Normalization**: Data-driven percentile-based bounds (P05/P95) computed from survivor policies
+     - Small-N handling: Uses min/max if len(survivors) < 5
+     - Degenerate bounds: Metrics with insufficient variance (hi - lo < epsilon) are dropped
+       - Epsilon thresholds: EPS_MS = 5.0 ms (TTFF), EPS_COUNT = 2.0 (flush_count), EPS_WORDS = 2.0 (chunk_size)
+       - Relaxed thresholds prevent false positives from floating-point rounding
+   - **Pareto frontier**: k-dimensional non-dominated points (k = number of active metrics, excluding dropped)
+   - **Utopia distance**: Dimension-normalized Euclidean distance to utopia point (1, 1, ..., 1) in goodness space
+     - Formula: `sqrt(mean((1 - goodness_i)^2))` for active dimensions
+   - **Tie-breaking**: Deterministic order: lower flush_count → higher chunk_size → lower TTFF → smallest policy_id
+   - **Fallbacks**: Weighted score (with renormalized weights) if Pareto frontier empty; lexicographic if all metrics dropped
+
+7. **α Sensitivity Analysis**: Post-processing to validate spam definition
+   - Recompute spam metrics for α ∈ {0.5, 0.6, 0.7, 0.8}
+   - Demonstrates winner/top-k stability across α values
+
+**Reproducibility:**
+- Deterministic run ID: `calib_<trace_dataset_hash8>_<config_hash8>_<exaid_commit8>`
+- All hashes logged in summary JSON
+- Same inputs → same outputs (verified)
+
+**Selected Parameters:**
+The chosen parameters are written to `chosen_tokengate_params.yaml` and become the frozen TokenGate config for all later phases.
+
 ---
 
 ## Canonical Trace Text Definition

@@ -12,8 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Install evaluation dependencies
 COPY evals/requirements-evals.txt /app/evals/requirements-evals.txt
 RUN pip install --no-cache-dir -r /app/evals/requirements-evals.txt
+
+# Install full EXAID dependencies for later phases (BufferAgent, SummarizerAgent)
+# These are installed but only loaded when actually accessed (lazy imports in __init__.py)
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Install scispaCy WITHOUT dependency resolution
 RUN pip install --no-cache-dir --no-deps scispacy==0.5.4
