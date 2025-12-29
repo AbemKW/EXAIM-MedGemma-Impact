@@ -297,7 +297,7 @@ class VariantPipeline(ABC):
         else:
             history_slice = summary_history
             history_event_ids = summary_event_ids
-        if history_limit:
+        if history_limit > 0:
             history_slice = history_slice[-history_limit:]
             history_event_ids = history_event_ids[-history_limit:]
         else:
@@ -560,17 +560,17 @@ class VariantPipeline(ABC):
 
                     if should_trigger:
                         buffer_text = "\n".join(self.buffer_agent.flush())
-                            summary = self.generate_summary(
-                                ctx,
-                                ctx.buffer_window_start_seq or flush_start,
-                                ctx.buffer_window_end_seq or flush_end,
-                                buffer_text,
-                                agent_id,
-                                trigger_type="buffer_agent"
-                            )
-                            summaries.append(summary)
-                            ctx.buffer_window_start_seq = None
-                            ctx.buffer_window_end_seq = None
+                        summary = self.generate_summary(
+                            ctx,
+                            ctx.buffer_window_start_seq or flush_start,
+                            ctx.buffer_window_end_seq or flush_end,
+                            buffer_text,
+                            agent_id,
+                            trigger_type="buffer_agent"
+                        )
+                        summaries.append(summary)
+                        ctx.buffer_window_start_seq = None
+                        ctx.buffer_window_end_seq = None
                 else:
                     summary = self.generate_summary(
                         ctx,
