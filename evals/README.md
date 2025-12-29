@@ -545,6 +545,11 @@ docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
 
 ### Step 4: Run Summarizer Variants
 
+> **Note:** `run_variants.py` now invokes the real EXAID `BufferAgent` and
+> `SummarizerAgent`, so you must provide LLM credentials/configuration for the
+> `buffer_agent` and `summarizer` roles (e.g., `OPENAI_API_KEY` plus optional
+> `SUMMARIZER_LLM_PROVIDER` / `BUFFER_AGENT_LLM_PROVIDER` overrides).
+
 ```bash
 # Run all variants (V0-V4)
 docker compose -f docker-compose.evals.yml run --rm evals scripts/02_run_variants.sh
@@ -852,6 +857,8 @@ V3 uses fixed CTU intervals calibrated from V0:
 M6b support set = window_text + latest_summary_semantics_text
 
 `latest_summary_semantics_text` is reconstructed by looking up `latest_summary_event_id` within the run log.
+
+For semantic metrics, `summary_semantics_text` is built from clinician-facing fields and **excludes** `agent_contributions` to prevent inflated concept overlap.
 
 ---
 

@@ -67,6 +67,7 @@ class BufferAgent:
             ("user", get_buffer_agent_user_prompt())
         ])
         self.traces: dict[str, TraceData] = {}
+        self.last_analysis: dict[str, BufferAnalysis | None] = {}
 
     async def addsegment(self, agent_id: str, segment: str, previous_summaries: list[str]) -> bool:
         new_text = segment
@@ -90,6 +91,7 @@ class BufferAgent:
                 "previous_trace": buffer_context,
                 "new_trace": new_text
             })
+            self.last_analysis[agent_id] = analysis
             
             should_trigger = analysis.final_trigger
             
@@ -101,6 +103,7 @@ class BufferAgent:
         except Exception as e:
             # Fallback if structured output fails (fail closed/safe to avoid spam)
             print(f"Buffer decision failed: {e}")
+            self.last_analysis[agent_id] = None
             return False
     
     def flush(self) -> list[str]:
@@ -110,3 +113,6 @@ class BufferAgent:
         
     def get_trace_count(self, agent_id: str) -> int:
         return self.traces.get(agent_id, TraceData(count=0)).count
+
+    def get_last_analysis(self, agent_id: str) -> BufferAnalysis | None:
+        return self.last_analysis.get(agent_id)
