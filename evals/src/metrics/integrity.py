@@ -6,9 +6,9 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from trace_text import iter_trace_records
+from ..traces.trace_text import iter_trace_records
 
-from config_loader import compute_file_hash
+from ..config.config_loader import compute_file_hash
 
 
 def load_trace_meta(trace_file: Path) -> Optional[dict]:

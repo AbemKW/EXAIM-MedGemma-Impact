@@ -17,11 +17,12 @@ Dependencies:
     - hashlib
 """
 
-import hashlib
 from pathlib import Path
 from typing import Optional
 
 import yaml
+
+from ..deterministic.io import compute_file_hash
 
 
 def get_evals_root() -> Path:
@@ -31,26 +32,13 @@ def get_evals_root() -> Path:
     Works from any execution context by finding the directory
     containing this file and going up to evals/.
     """
-    # This file is in evals/src/
-    src_dir = Path(__file__).parent
-    evals_dir = src_dir.parent
-    return evals_dir
+    # This file is in evals/src/config/
+    return Path(__file__).resolve().parents[2]
 
 
 def get_configs_dir() -> Path:
     """Get the configs directory path."""
     return get_evals_root() / "configs"
-
-
-def compute_file_hash(path: Path) -> str:
-    """Compute SHA256 hash of file contents."""
-    if not path.exists():
-        return "sha256:" + "0" * 64
-    
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        h.update(f.read())
-    return f"sha256:{h.hexdigest()}"
 
 
 def load_extractor_config(
@@ -220,8 +208,6 @@ def load_metrics_config(configs_dir: Optional[Path] = None) -> dict:
     
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
-
-
 
 
 

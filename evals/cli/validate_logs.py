@@ -6,11 +6,11 @@ Validates JSONL and JSONL.gz files against the appropriate JSON schema.
 Supports validation of manifests, traces, runs, and metrics files.
 
 Usage:
-    python validate_logs.py <file_pattern> [--schema <schema_name>]
-    python validate_logs.py data/manifests/*.jsonl
-    python validate_logs.py data/traces/*.jsonl.gz
-    python validate_logs.py data/runs/*/*.jsonl.gz
-    python validate_logs.py data/metrics/*.jsonl
+    python -m evals.cli.validate_logs <file_pattern> [--schema <schema_name>]
+    python -m evals.cli.validate_logs data/manifests/*.jsonl
+    python -m evals.cli.validate_logs data/traces/*.jsonl.gz
+    python -m evals.cli.validate_logs data/runs/*/*.jsonl.gz
+    python -m evals.cli.validate_logs data/metrics/*.jsonl
 """
 
 import argparse
@@ -318,4 +318,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

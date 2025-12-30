@@ -86,13 +86,13 @@ Traces store raw streaming data only:
 
 ```bash
 # Dry-run (validate config without running MAC)
-python src/make_traces.py --config configs/mas_generation.yaml --dry-run
+python -m evals.cli.make_traces --config configs/mas_generation.yaml --dry-run
 
 # Generate one trace (for testing)
-python src/make_traces.py --config configs/mas_generation.yaml --limit 1
+python -m evals.cli.make_traces --config configs/mas_generation.yaml --limit 1
 
 # Generate all traces
-python src/make_traces.py --config configs/mas_generation.yaml
+python -m evals.cli.make_traces --config configs/mas_generation.yaml
 ```
 
 ### Validate Traces
@@ -100,7 +100,7 @@ python src/make_traces.py --config configs/mas_generation.yaml
 **Standalone validation tool** (pre-evaluation check):
 
 ```bash
-python src/validate_traces.py --traces data/traces/ --verbose
+python -m evals.cli.validate_traces --traces data/traces/ --verbose
 ```
 
 **Note:** The Trace Replay Engine also validates traces during replay (see "Replay Validation Guarantees" section below). Both tools share similar validation rules but serve different purposes:
@@ -132,7 +132,7 @@ python src/validate_traces.py --traces data/traces/ --verbose
 The Trace Replay Engine provides deterministic replay of v2.0.0 traces with virtual time and turn classification. It enables downstream evaluation components (TokenGate, metrics) to consume traces in a consistent, reproducible manner.
 
 **File Organization:**
-- `src/trace_replay_engine.py` - Core library module (importable)
+- `src/traces/trace_replay_engine.py` - Core library module (importable)
 - `cli/replay_trace.py` - CLI tool for inspection/debugging (runnable)
 - `tests/test_trace_replay_engine.py` - Unit and integration tests
 - `cli/calibrate_tokengate.py` - TokenGate calibration CLI wrapper (argument parsing + orchestration)
@@ -210,12 +210,12 @@ Use `--audit` flag in CLI to view flagged turns.
 from pathlib import Path
 
 # Import from evals package (if running from repo root)
-from evals.src.trace_replay_engine import TraceReplayEngine
+from evals.src.traces.trace_replay_engine import TraceReplayEngine
 
-# Alternative: If running from evals/ directory, add src to path first:
+# Alternative: If running from evals/ directory, add repo root to path first:
 # import sys
-# sys.path.insert(0, "src")
-# from trace_replay_engine import TraceReplayEngine
+# sys.path.insert(0, "..")
+# from evals.src.traces.trace_replay_engine import TraceReplayEngine
 
 # Initialize engine
 engine = TraceReplayEngine(Path("data/traces/case-33651373.trace.jsonl.gz"))
@@ -247,19 +247,19 @@ for flag in flags:
 
 ```bash
 # Show metadata and timeline
-python cli/replay_trace.py data/traces/case-33651373.trace.jsonl.gz
+python -m evals.cli.replay_trace data/traces/case-33651373.trace.jsonl.gz
 
 # Show content_plane stream only
-python cli/replay_trace.py --stream content_plane data/traces/case-33651373.trace.jsonl.gz
+python -m evals.cli.replay_trace --stream content_plane data/traces/case-33651373.trace.jsonl.gz
 
 # Show turn classifications
-python cli/replay_trace.py --classifications data/traces/case-33651373.trace.jsonl.gz
+python -m evals.cli.replay_trace --classifications data/traces/case-33651373.trace.jsonl.gz
 
 # Show audit flags
-python cli/replay_trace.py --audit data/traces/case-33651373.trace.jsonl.gz
+python -m evals.cli.replay_trace --audit data/traces/case-33651373.trace.jsonl.gz
 
 # Shift timeline to start at t=0
-python cli/replay_trace.py --shift-to-zero data/traces/case-33651373.trace.jsonl.gz
+python -m evals.cli.replay_trace --shift-to-zero data/traces/case-33651373.trace.jsonl.gz
 ```
 
 ### Timing Semantics
@@ -473,7 +473,7 @@ To **regenerate traces** (optional, requires OpenAI API key):
 ```bash
 docker compose -f docker-compose.evals.yml run --rm \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  evals python src/make_traces.py --config configs/mas_generation.yaml
+  evals python -m evals.cli.make_traces --config configs/mas_generation.yaml
 ```
 
 ### .gitignore Policy
@@ -517,11 +517,11 @@ Execute the following commands in order:
 ```bash
 # 0a. Validate frozen traces
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/validate_traces.py --traces data/traces/ --verbose
+  python -m evals.cli.validate_traces --traces data/traces/ --verbose
 
 # 0b. Generate stoplists (drift-proof, non-circular)
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/generate_stoplists.py --traces data/traces/ \
+  python -m evals.cli.generate_stoplists --traces data/traces/ \
     --output configs/ --config configs/extractor.yaml --verbose
 ```
 
@@ -535,7 +535,7 @@ docker compose -f docker-compose.evals.yml run --rm evals \
 ```bash
 docker compose -f docker-compose.evals.yml run --rm \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  evals python src/make_traces.py --config configs/mas_generation.yaml
+  evals python -m evals.cli.make_traces --config configs/mas_generation.yaml
 ```
 
 ### Step 3: Validate Schemas
@@ -560,7 +560,7 @@ docker compose -f docker-compose.evals.yml run --rm evals scripts/02_run_variant
 
 # Or use Python directly with more options
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/run_variants.py --traces data/traces/ --output data/runs/ --verbose
+  python -m evals.cli.run_variants --traces data/traces/ --output data/runs/ --verbose
 ```
 
 ### Step 5: Compute Metrics
@@ -570,7 +570,7 @@ docker compose -f docker-compose.evals.yml run --rm evals scripts/03_compute_met
 
 # Or use Python directly
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/compute_metrics.py --runs data/runs/ --traces data/traces/ \
+  python -m evals.cli.compute_metrics --runs data/runs/ --traces data/traces/ \
     --output data/metrics/ --bootstrap-samples 10000 --verbose
 ```
 
@@ -676,7 +676,7 @@ The chosen parameters are written to `chosen_tokengate_params.yaml` and become t
 
 **Paper hook: Section 3.1**
 
-Canonical trace text is defined in `src/trace_text.py:build_canonical_trace_text()`:
+Canonical trace text is defined in `src/traces/trace_text.py:build_canonical_trace_text()`:
 
 | Rule | Description |
 |------|-------------|
@@ -695,7 +695,7 @@ Canonical trace text is defined in `src/trace_text.py:build_canonical_trace_text
 - `excluded_other_subtype` - Other excluded subtypes
 - `missing_event_subtype` - Chunks included via fallback (missing subtype)
 
-**Single source of truth:** All modules MUST import from `trace_text.py`:
+**Single source of truth:** All modules MUST import from `traces/trace_text.py`:
 - `build_canonical_trace_text()` - Full trace text
 - `build_window_text()` - Window text for M6a/M6b
 
@@ -931,21 +931,20 @@ evals/
 │       ├── aggregate.metrics.json
 │       └── figures/               # Generated figures
 ├── src/                           # Python library modules (importable)
-│   ├── trace_replay_engine.py     # Trace replay engine (core library)
-│   ├── trace_text.py              # Canonical trace text (single source)
-│   ├── validate_traces.py         # Trace validation
-│   ├── generate_stoplists.py      # Stoplist generation
-│   ├── deterministic_utils.py     # Timestamps, IDs, CTU
-│   ├── deterministic_io.py        # gzip/JSON writing
-│   ├── concept_extractor.py       # CUI extraction
+│   ├── config/                    # Config loading + provenance helpers
+│   ├── deterministic/             # Deterministic timestamps + I/O helpers
+│   ├── extraction/                # Concept extraction
+│   ├── traces/                    # Trace parsing + replay engine
 │   ├── metrics/                   # Metric helpers (types, computations, aggregation)
-│   ├── validate_logs.py           # Schema validation
+│   └── tokengate_calibration/     # TokenGate calibration pipeline
+├── cli/                           # CLI tools (runnable inspection/debug tools)
+│   ├── replay_trace.py            # Trace replay CLI tool
 │   ├── make_traces.py             # Trace generation (MAC integration)
 │   ├── run_variants.py            # Variant replay engine
 │   ├── compute_metrics.py         # M1-M10 metrics orchestration
-│   └── test_concept_extractor.py  # Unit tests
-├── cli/                           # CLI tools (runnable inspection/debug tools)
-│   └── replay_trace.py            # Trace replay CLI tool
+│   ├── validate_traces.py         # Trace validation
+│   ├── validate_logs.py           # Schema validation
+│   └── generate_stoplists.py      # Stoplist generation
 └── scripts/                       # Orchestration scripts (shell scripts)
     ├── 00_validate.sh
     ├── 01_make_traces.sh
@@ -1022,7 +1021,7 @@ docker compose -f docker-compose.evals.yml run --rm evals \
 ### Validation fails
 ```bash
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/validate_traces.py --traces data/traces/ --verbose
+  python -m evals.cli.validate_traces --traces data/traces/ --verbose
 ```
 
 ### Trace parsing errors

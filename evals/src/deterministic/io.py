@@ -156,21 +156,25 @@ def write_jsonl_deterministic(records: list[dict], output_path: Path):
 def compute_file_hash(file_path: Path) -> str:
     """
     Compute SHA-256 hash of file contents.
-    
+
     Args:
         file_path: Path to file
-        
+
     Returns:
         Hash string prefixed with "sha256:"
     """
+    if not file_path.exists():
+        return "sha256:" + "0" * 64
+
     import hashlib
+
     h = hashlib.sha256()
-    
+
     with open(file_path, "rb") as f:
         # Read in chunks for large files
         for chunk in iter(lambda: f.read(8192), b""):
             h.update(chunk)
-    
+
     return f"sha256:{h.hexdigest()}"
 
 
@@ -255,7 +259,6 @@ class RunLogBuilder:
         """
         records = self.build()
         write_run_log_deterministic(records, output_path)
-
 
 
 

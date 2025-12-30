@@ -5,20 +5,17 @@ EXAID Trace Replay CLI Tool
 Replay a trace file and display timeline, classifications, or audit flags.
 
 Usage:
-    python cli/replay_trace.py data/traces/case-33651373.trace.jsonl.gz
-    python cli/replay_trace.py --stream content_plane data/traces/case-33651373.trace.jsonl.gz
-    python cli/replay_trace.py --classifications data/traces/case-33651373.trace.jsonl.gz
-    python cli/replay_trace.py --audit data/traces/case-33651373.trace.jsonl.gz
+    python -m evals.cli.replay_trace data/traces/case-33651373.trace.jsonl.gz
+    python -m evals.cli.replay_trace --stream content_plane data/traces/case-33651373.trace.jsonl.gz
+    python -m evals.cli.replay_trace --classifications data/traces/case-33651373.trace.jsonl.gz
+    python -m evals.cli.replay_trace --audit data/traces/case-33651373.trace.jsonl.gz
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-# Add src to path for imports (in case run from different directory)
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from trace_replay_engine import (
+from ..src.traces.trace_replay_engine import (
     TraceReplayEngine,
     TraceReplayError,
     ReplayEvent,
@@ -180,19 +177,19 @@ def main():
         epilog="""
 Examples:
     # Show metadata and timeline
-    python cli/replay_trace.py data/traces/case-33651373.trace.jsonl.gz
+    python -m evals.cli.replay_trace data/traces/case-33651373.trace.jsonl.gz
 
     # Show content_plane stream only
-    python cli/replay_trace.py --stream content_plane data/traces/case-33651373.trace.jsonl.gz
+    python -m evals.cli.replay_trace --stream content_plane data/traces/case-33651373.trace.jsonl.gz
 
     # Show turn classifications
-    python cli/replay_trace.py --classifications data/traces/case-33651373.trace.jsonl.gz
+    python -m evals.cli.replay_trace --classifications data/traces/case-33651373.trace.jsonl.gz
 
     # Show audit flags
-    python cli/replay_trace.py --audit data/traces/case-33651373.trace.jsonl.gz
+    python -m evals.cli.replay_trace --audit data/traces/case-33651373.trace.jsonl.gz
 
     # Verbose output with delta text
-    python cli/replay_trace.py --verbose data/traces/case-33651373.trace.jsonl.gz
+    python -m evals.cli.replay_trace --verbose data/traces/case-33651373.trace.jsonl.gz
         """
     )
     
@@ -291,4 +288,3 @@ Examples:
 
 if __name__ == "__main__":
     sys.exit(main())
-

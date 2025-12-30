@@ -72,7 +72,7 @@ if [ "${EXAID_STUB_MODE:-}" = "1" ] || [ "${EXAID_STUB_MODE:-}" = "true" ]; then
     echo ""
 fi
 
-python src/make_traces.py \
+python -m evals.cli.make_traces \
     --config configs/mas_generation.yaml \
     --dataset-config configs/dataset.yaml \
     --output data/traces \

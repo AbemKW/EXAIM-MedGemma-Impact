@@ -326,7 +326,7 @@ jsonschema --instance data/runs/V0/case-33651373.jsonl.gz \
            schemas/exaid.run.schema.json
 
 # Or using the validation script
-python src/validate_logs.py data/runs/V0/*.jsonl.gz --schema schemas/exaid.run.schema.json
+python -m evals.cli.validate_logs data/runs/V0/*.jsonl.gz --schema schemas/exaid.run.schema.json
 ```
 
 ---

@@ -16,14 +16,9 @@ Tests verify:
 Run with: pytest evals/tests/ -v
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-# Add parent directory to path (handled by conftest.py, but explicit for clarity)
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
 class TestConceptExtractorOrdering:
@@ -207,7 +202,7 @@ class TestConceptExtractorConfig:
     
     def test_default_config_values(self):
         """Verify default configuration values."""
-        from concept_extractor import ConceptExtractor
+        from evals.src.extraction.concept_extractor import ConceptExtractor
         
         config = {
             "scispacy_model": "en_core_sci_sm"
@@ -226,7 +221,7 @@ class TestConceptExtractorConfig:
     
     def test_version_info_structure(self):
         """Verify version info contains required fields."""
-        from concept_extractor import ConceptExtractor
+        from evals.src.extraction.concept_extractor import ConceptExtractor
         
         config = {
             "scispacy_model": "en_core_sci_sm",
@@ -261,7 +256,7 @@ class TestSurfaceExtraction:
     
     def test_surface_extraction_basic(self):
         """Test basic surface extraction."""
-        from concept_extractor import ConceptExtractor
+        from evals.src.extraction.concept_extractor import ConceptExtractor
         
         config = {
             "scispacy_model": "en_core_sci_sm",
@@ -285,7 +280,7 @@ class TestSurfaceExtraction:
     
     def test_empty_text_returns_empty_set(self):
         """Test that empty text returns empty set."""
-        from concept_extractor import ConceptExtractor
+        from evals.src.extraction.concept_extractor import ConceptExtractor
         
         config = {
             "scispacy_model": "en_core_sci_sm"
@@ -306,7 +301,7 @@ class TestStoplistLoading:
     
     def test_missing_stoplist_returns_empty(self, tmp_path):
         """Test that missing stoplist file returns empty set."""
-        from concept_extractor import ConceptExtractor
+        from evals.src.extraction.concept_extractor import ConceptExtractor
         
         config = {
             "scispacy_model": "en_core_sci_sm",
@@ -332,7 +327,7 @@ patient
 treatment
 """)
         
-        from concept_extractor import ConceptExtractor
+        from evals.src.extraction.concept_extractor import ConceptExtractor
         
         config = {
             "scispacy_model": "en_core_sci_sm",
@@ -380,7 +375,7 @@ class TestClinicalText:
     
     def test_clinical_text_extracts_concepts(self):
         """Test that clinical text produces non-empty concept set."""
-        from concept_extractor import ConceptExtractor
+        from evals.src.extraction.concept_extractor import ConceptExtractor
         
         config = {
             "scispacy_model": "en_core_sci_sm",
@@ -408,7 +403,7 @@ class TestConfigLoader:
     
     def test_config_loader_imports(self):
         """Verify config_loader module imports correctly."""
-        from config_loader import (
+        from evals.src.config.config_loader import (
             load_extractor_config,
             load_extractor_config_for_stoplist_generation,
             get_stoplists_provenance,
@@ -432,7 +427,7 @@ concept_extractor:
   stop_cuis_file: "evals/configs/stop_cuis.txt"
 """)
         
-        from config_loader import load_extractor_config_for_stoplist_generation
+        from evals.src.config.config_loader import load_extractor_config_for_stoplist_generation
         
         config = load_extractor_config_for_stoplist_generation(tmp_path)
         
@@ -443,7 +438,6 @@ concept_extractor:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
 
 
 

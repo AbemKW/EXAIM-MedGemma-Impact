@@ -35,7 +35,7 @@ validate_dir() {
 
     FILES_FOUND=1
 
-    if python src/validate_logs.py "$dir"/$pattern 2>/dev/null; then
+    if python -m evals.cli.validate_logs "$dir"/$pattern 2>/dev/null; then
         echo "  PASSED"
     else
         echo "  FAILED"

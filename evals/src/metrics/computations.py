@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Set
 
 import numpy as np
 
-from trace_text import build_window_text
+from ..traces.trace_text import build_window_text
 
 from .constants import BUFFER_COVERAGE_BUDGETS, REDUNDANCY_THRESHOLDS
 from .extractor import ConceptExtractorWrapper

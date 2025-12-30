@@ -13,7 +13,11 @@ repo_root = Path(__file__).parent.parent.parent.parent.resolve()
 if (repo_root / "exaid_core").exists():
     sys.path.insert(0, str(repo_root))
 
-from ..trace_replay_engine import TraceReplayEngine, StubTraceError, TraceValidationError
+from ..traces.trace_replay_engine import (
+    TraceReplayEngine,
+    StubTraceError,
+    TraceValidationError,
+)
 from exaid_core.token_gate.token_gate import TokenGate, ManualClock
 
 from .grid import filter_valid_policies, generate_policy_grid
@@ -681,4 +685,3 @@ async def run_calibration(
 def run_calibration_sync(*args, **kwargs) -> None:
     """Synchronous wrapper for run_calibration."""
     asyncio.run(run_calibration(*args, **kwargs))
-

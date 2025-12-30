@@ -24,34 +24,34 @@ FAITHFULNESS PARADOX RESOLUTION:
     - Track excluded_from_faithfulness_count
 
 Dependencies:
-    - trace_text.py (canonical text, window reconstruction)
-    - deterministic_io.py (run log reading)
+    - traces/trace_text.py (canonical text, window reconstruction)
+    - deterministic/io.py (run log reading)
     - metrics/ (shared metric helpers and dataclasses)
 """
 
 import argparse
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent))
-
-from trace_text import (
+from ..src.traces.trace_text import (
     build_canonical_trace_text,
     load_trace_chunks_for_case,
 )
-from deterministic_io import read_run_log, write_json_deterministic, write_jsonl_deterministic
-from config_loader import (
+from ..src.deterministic.io import (
+    read_run_log,
+    write_json_deterministic,
+    write_jsonl_deterministic,
+)
+from ..src.config.config_loader import (
     load_extractor_config,
     get_stoplists_provenance,
     load_variant_config,
 )
-from run_variants import compute_tokengate_config_hash
-from metrics import (
+from .run_variants import compute_tokengate_config_hash
+from ..src.metrics import (
     BUFFER_COVERAGE_BUDGETS,
     ConceptExtractorWrapper,
     METRICS_SCHEMA_VERSION,

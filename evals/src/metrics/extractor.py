@@ -17,7 +17,7 @@ class ConceptExtractorWrapper:
         self.no_linking = no_linking
 
         try:
-            from concept_extractor import ConceptExtractor
+            from ..extraction.concept_extractor import ConceptExtractor
 
             self._extractor = ConceptExtractor(config, no_linking=no_linking)
         except Exception as e:

@@ -25,7 +25,7 @@ if [ ! -d "data/runs" ] || [ -z "$(ls -A data/runs 2>/dev/null)" ]; then
     echo ""
 fi
 
-python src/compute_metrics.py \
+python -m evals.cli.compute_metrics \
     --runs data/runs \
     --output data/metrics \
     $VARIANT_ARG

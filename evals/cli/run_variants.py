@@ -20,13 +20,13 @@ Turn Boundary Derivation:
 Output: Multi-record JSONL run logs per evals/schemas/exaid.run.schema.json
 
 Usage:
-    python run_variants.py --traces data/traces/ --output data/runs/
-    python run_variants.py --variant V3 --case case-33651373
+    python -m evals.cli.run_variants --traces data/traces/ --output data/runs/
+    python -m evals.cli.run_variants --variant V3 --case case-33651373
 
 Dependencies:
-    - trace_replay_engine.py (content-plane replay)
-    - deterministic_utils.py (timestamps, IDs)
-    - deterministic_io.py (gzip/JSON writing)
+    - traces/trace_replay_engine.py (content-plane replay)
+    - deterministic/utils.py (timestamps, IDs)
+    - deterministic/io.py (gzip/JSON writing)
 """
 
 import argparse
@@ -43,24 +43,25 @@ from typing import Optional
 
 import yaml
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
-
-from trace_replay_engine import TraceReplayEngine, iter_trace_records, ReplayEvent
-from deterministic_utils import (
+from ..src.traces.trace_replay_engine import (
+    TraceReplayEngine,
+    iter_trace_records,
+    ReplayEvent,
+)
+from ..src.deterministic.utils import (
     DeterministicTimestamps,
     compute_ctu,
     compute_text_hash,
     generate_event_id,
     generate_decision_id,
 )
-from deterministic_io import (
+from ..src.deterministic.io import (
     RunLogBuilder,
     write_run_log_deterministic,
     compute_file_hash,
     write_json_deterministic,
 )
-from config_loader import (
+from ..src.config.config_loader import (
     load_extractor_config as _load_extractor_config_central,
     load_variant_config as _load_variant_config_central,
     get_stoplists_provenance,
