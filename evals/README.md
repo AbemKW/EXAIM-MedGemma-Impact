@@ -7,7 +7,8 @@ Reproducible evaluation framework for the EXAID conference paper. This module pr
 **Performance-only evaluation of EXAID summarization middleware.**
 
 This evaluation measures:
-- Compression efficiency (CTU saved)
+- Update counts
+- Output volume (CTU)
 - Concept coverage (trace CUIs recalled in summaries)
 - Faithfulness (unsupported content rates)
 - Latency and resource usage
@@ -879,7 +880,7 @@ For semantic metrics, `summary_semantics_text` is built from clinician-facing fi
 
 ---
 
-## Run Log Schema (v1.3.0)
+## Run Log Schema (v1.5.0)
 
 Multi-record JSONL format per `schemas/exaid.run.schema.json`:
 
@@ -914,7 +915,7 @@ evals/
 ├── schemas/                       # JSON Schema definitions
 │   ├── exaid.manifest.schema.json
 │   ├── exaid.trace.schema.json
-│   ├── exaid.run.schema.json      # Multi-record JSONL v1.3.0
+│   ├── exaid.run.schema.json      # Multi-record JSONL v1.5.0
 │   └── exaid.metrics.schema.json
 ├── configs/                       # Configuration files
 │   ├── extractor.yaml             # Concept extractor config

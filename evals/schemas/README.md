@@ -9,7 +9,7 @@ JSON Schema definitions for EXAID evaluation data artifacts.
 | `exaid.manifest.schema.json` | 2.0.0 | Dataset manifest with case selection |
 | `exaid.trace.schema.json` | 2.0.0 | Frozen MAS traces |
 | `exaid.run.schema.json` | 1.5.0 | Multi-record run logs |
-| `exaid.metrics.schema.json` | 2.0.0 | Computed evaluation metrics |
+| `exaid.metrics.schema.json` | 2.2.0 | Computed evaluation metrics |
 
 All schemas use JSON Schema Draft 2020-12.
 
