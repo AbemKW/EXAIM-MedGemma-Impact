@@ -778,7 +778,8 @@ def compute_per_case_metrics(
     trace_file: Path,
     extractor: ConceptExtractorWrapper,
     expected_tokengate_config_hash: Optional[str] = None,
-    manifest_hash_valid: Optional[bool] = None
+    manifest_hash_valid: Optional[bool] = None,
+    manifest_trace_dataset_hash: Optional[str] = None
 ) -> PerCaseMetrics:
     """
     Compute all metrics for a single case/variant.
@@ -833,7 +834,22 @@ def compute_per_case_metrics(
                 f"TokenGate config hash mismatch for {case_id}: "
                 f"{run_tokengate_hash} != {expected_tokengate_config_hash}"
             )
-    metrics.dataset_manifest_hash_valid = manifest_hash_valid
+    dataset_manifest_valid = manifest_hash_valid
+    if run_meta and manifest_trace_dataset_hash:
+        run_trace_dataset_hash = run_meta.get("trace_dataset_hash")
+        if run_trace_dataset_hash:
+            trace_dataset_match = run_trace_dataset_hash == manifest_trace_dataset_hash
+            dataset_manifest_valid = (
+                trace_dataset_match
+                if dataset_manifest_valid is None
+                else dataset_manifest_valid and trace_dataset_match
+            )
+            if not trace_dataset_match:
+                raise ValueError(
+                    f"Trace dataset hash mismatch for {case_id}: "
+                    f"{run_trace_dataset_hash} != {manifest_trace_dataset_hash}"
+                )
+    metrics.dataset_manifest_hash_valid = dataset_manifest_valid
     
     # Load trace chunks
     trace_chunks = load_trace_chunks_for_case(trace_file)
@@ -1410,6 +1426,8 @@ def main():
                     extractor,
                     expected_tokengate_config_hash=expected_tokengate_hash,
                     manifest_hash_valid=manifest_info["manifest_hash_valid"]
+                    if manifest_info else None,
+                    manifest_trace_dataset_hash=manifest_info["computed_hash"]
                     if manifest_info else None,
                 )
                 per_case_metrics.append(metrics)
