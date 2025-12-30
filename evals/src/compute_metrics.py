@@ -32,8 +32,10 @@ Dependencies:
 import argparse
 import json
 import math
+import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, List, Set, Any
 
@@ -42,9 +44,20 @@ import numpy as np
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from trace_text import build_canonical_trace_text, build_window_text, load_trace_chunks_for_case
+from trace_text import (
+    build_canonical_trace_text,
+    build_window_text,
+    load_trace_chunks_for_case,
+    iter_trace_records,
+)
 from deterministic_io import read_run_log, write_json_deterministic, write_jsonl_deterministic
-from config_loader import load_extractor_config, get_stoplists_provenance
+from config_loader import (
+    load_extractor_config,
+    get_stoplists_provenance,
+    load_variant_config,
+    compute_file_hash,
+)
+from run_variants import compute_tokengate_config_hash
 
 
 # ============================================================================
@@ -110,17 +123,43 @@ class PerCaseMetrics:
     # M8: Latency
     mean_summary_latency_ms: Optional[float] = None
     mean_buffer_decision_latency_ms: Optional[float] = None
+    summary_latency_distribution_ms: Optional[Dict[str, float]] = None
+    buffer_decision_latency_distribution_ms: Optional[Dict[str, float]] = None
     
     # M9: LLM usage
     total_prompt_ctu: int = 0
     total_completion_ctu: int = 0
     total_llm_ctu: int = 0
     buffer_decision_count: int = 0
+
+    # Flush statistics
+    flush_count: int = 0
+    flush_reason_counts: Dict[str, int] = field(default_factory=dict)
+    flush_accumulated_ctu_distribution: Optional[Dict[str, float]] = None
+    flush_interval_ms_distribution: Optional[Dict[str, float]] = None
+    
+    # Virtual-time throughput
+    virtual_time_duration_ms: Optional[int] = None
+    trace_ctu: int = 0
+    trace_ctu_per_s: Optional[float] = None
+    summary_ctu_per_s: Optional[float] = None
+    
+    # Overhead attribution
+    control_plane_latency_ms: float = 0.0
+    content_plane_latency_ms: float = 0.0
+    total_plane_latency_ms: float = 0.0
+    control_plane_latency_pct: Optional[float] = None
+    content_plane_latency_pct: Optional[float] = None
     
     # M10: Compliance
     schema_failure_count: int = 0
     schema_failure_rate: float = 0.0
     compliance_rate: float = 0.0
+
+    # Integrity checks
+    tokengate_config_hash_match: Optional[bool] = None
+    dataset_manifest_hash_valid: Optional[bool] = None
+    stub_trace_detected: bool = False
 
 
 @dataclass
@@ -163,12 +202,33 @@ class AggregateMetrics:
     # M8: Latency
     summary_latency_mean_ms: Optional[float] = None
     buffer_decision_latency_mean_ms: Optional[float] = None
+    summary_latency_distribution_ms: Optional[Dict[str, float]] = None
+    buffer_decision_latency_distribution_ms: Optional[Dict[str, float]] = None
     
     # M9: Usage
     prompt_ctu_mean: float = 0.0
     completion_ctu_mean: float = 0.0
     total_llm_ctu_mean: float = 0.0
     buffer_decision_count_mean: float = 0.0
+    
+    # Flush statistics
+    flush_count_mean: float = 0.0
+    flush_reason_counts_mean: Dict[str, float] = field(default_factory=dict)
+    flush_accumulated_ctu_distribution: Optional[Dict[str, float]] = None
+    flush_interval_ms_distribution: Optional[Dict[str, float]] = None
+    
+    # Virtual-time throughput
+    virtual_time_duration_ms_mean: Optional[float] = None
+    trace_ctu_mean: float = 0.0
+    trace_ctu_per_s_mean: Optional[float] = None
+    summary_ctu_per_s_mean: Optional[float] = None
+
+    # Overhead attribution
+    control_plane_latency_ms_total: float = 0.0
+    content_plane_latency_ms_total: float = 0.0
+    total_plane_latency_ms_total: float = 0.0
+    control_plane_latency_pct: Optional[float] = None
+    content_plane_latency_pct: Optional[float] = None
     
     # M10: Compliance
     schema_failure_rate_mean: Optional[float] = None
@@ -179,13 +239,14 @@ class AggregateMetrics:
     faithfulness_valid_event_count: int = 0
     excluded_from_faithfulness_count: int = 0
     schema_failures: int = 0
+    stub_trace_count: int = 0
 
 
 # ============================================================================
 # Metric Configuration
 # ============================================================================
 
-METRICS_SCHEMA_VERSION = "2.0.0"
+METRICS_SCHEMA_VERSION = "2.1.0"
 REDUNDANCY_THRESHOLDS = [0.85, 0.90, 0.95]
 BUFFER_COVERAGE_BUDGETS = [250, 500, 1000, 2000]
 
@@ -516,6 +577,196 @@ def compute_ctu(text: str) -> int:
     return math.ceil(len(text) / 4) if text else 0
 
 
+def compute_distribution(values: List[float]) -> Optional[Dict[str, float]]:
+    """Compute distribution statistics for a list of values."""
+    if not values:
+        return None
+    arr = np.array(values, dtype=float)
+    return {
+        "count": int(arr.size),
+        "min": float(np.min(arr)),
+        "max": float(np.max(arr)),
+        "mean": float(np.mean(arr)),
+        "p50": float(np.percentile(arr, 50)),
+        "p90": float(np.percentile(arr, 90)),
+        "p95": float(np.percentile(arr, 95)),
+        "p99": float(np.percentile(arr, 99)),
+    }
+
+
+def parse_timestamp_ms(timestamp: Optional[str]) -> Optional[int]:
+    """Parse ISO-8601 timestamp to milliseconds since epoch."""
+    if not timestamp:
+        return None
+    ts = timestamp
+    if ts.endswith("Z"):
+        ts = ts[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(ts)
+    except ValueError:
+        return None
+    return int(dt.timestamp() * 1000)
+
+
+def compute_flush_statistics(flushes: List[dict]) -> dict:
+    """Compute flush statistics from tokengate_flush records."""
+    stats: Dict[str, Any] = {
+        "flush_count": len(flushes),
+        "flush_reason_counts": {},
+        "flush_accumulated_ctu_distribution": None,
+        "flush_interval_ms_distribution": None,
+    }
+    if not flushes:
+        return stats
+
+    for flush in flushes:
+        reason = flush.get("trigger_reason", "unknown")
+        stats["flush_reason_counts"][reason] = stats["flush_reason_counts"].get(reason, 0) + 1
+
+    accumulated_ctu = [
+        f.get("accumulated_ctu")
+        for f in flushes
+        if f.get("accumulated_ctu") is not None
+    ]
+    stats["flush_accumulated_ctu_distribution"] = compute_distribution(accumulated_ctu)
+
+    sorted_flushes = sorted(flushes, key=lambda f: f.get("flush_index", 0))
+    intervals_ms = []
+    prev_ts_ms = None
+    for flush in sorted_flushes:
+        ts_ms = parse_timestamp_ms(flush.get("timestamp"))
+        if ts_ms is None:
+            continue
+        if prev_ts_ms is not None:
+            intervals_ms.append(ts_ms - prev_ts_ms)
+        prev_ts_ms = ts_ms
+    stats["flush_interval_ms_distribution"] = compute_distribution(intervals_ms)
+    return stats
+
+
+def compute_virtual_time_throughput(
+    trace_chunks: List[dict],
+    trace_ctu: int,
+    summary_ctu: int
+) -> dict:
+    """Compute virtual-time throughput metrics from trace chunks."""
+    t_rel_values = [
+        c.get("t_rel_ms")
+        for c in trace_chunks
+        if c.get("t_rel_ms") is not None
+    ]
+    if not t_rel_values:
+        return {
+            "virtual_time_duration_ms": None,
+            "trace_ctu_per_s": None,
+            "summary_ctu_per_s": None,
+        }
+    duration_ms = max(t_rel_values) - min(t_rel_values)
+    duration_s = duration_ms / 1000 if duration_ms > 0 else None
+    trace_ctu_per_s = trace_ctu / duration_s if duration_s else None
+    summary_ctu_per_s = summary_ctu / duration_s if duration_s else None
+    return {
+        "virtual_time_duration_ms": int(duration_ms),
+        "trace_ctu_per_s": float(trace_ctu_per_s) if trace_ctu_per_s is not None else None,
+        "summary_ctu_per_s": float(summary_ctu_per_s) if summary_ctu_per_s is not None else None,
+    }
+
+
+def compute_overhead_attribution(
+    summary_latencies: List[float],
+    buffer_latencies: List[float]
+) -> dict:
+    """Compute control-plane vs content-plane overhead attribution."""
+    content_plane = float(sum(summary_latencies))
+    control_plane = float(sum(buffer_latencies))
+    total = content_plane + control_plane
+    return {
+        "control_plane_latency_ms": control_plane,
+        "content_plane_latency_ms": content_plane,
+        "total_plane_latency_ms": total,
+        "control_plane_latency_pct": (control_plane / total) if total > 0 else None,
+        "content_plane_latency_pct": (content_plane / total) if total > 0 else None,
+    }
+
+
+def load_trace_meta(trace_file: Path) -> Optional[dict]:
+    """Load trace_meta record from a trace file."""
+    for record in iter_trace_records(trace_file):
+        if record.get("record_type") == "trace_meta":
+            return record
+    return None
+
+
+def compute_manifest_hash(
+    mas_run_id: str,
+    case_list_hash: str,
+    trace_entries: List[tuple]
+) -> str:
+    """Compute manifest trace_dataset_hash per schema."""
+    import hashlib
+
+    canonical = {
+        "mas_run_id": mas_run_id,
+        "case_list_hash": case_list_hash,
+        "traces": sorted(trace_entries),
+    }
+    canonical_json = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    return f"sha256:{hashlib.sha256(canonical_json.encode()).hexdigest()}"
+
+
+def load_manifest_provenance(manifest_path: Path) -> dict:
+    """Load manifest provenance and validate its hash."""
+    manifest_meta = {}
+    provenance = {}
+    trace_entries = []
+
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            record_type = record.get("record_type")
+            if record_type == "manifest_meta":
+                manifest_meta = record
+            elif record_type == "provenance":
+                provenance = record
+            elif record_type == "trace_entry":
+                trace_entries.append((record.get("case_id", ""), record.get("sha256", "")))
+
+    mas_run_id = manifest_meta.get("mas_run_id", "")
+    case_list_hash = provenance.get("case_list_hash", "")
+    computed_hash = compute_manifest_hash(mas_run_id, case_list_hash, trace_entries)
+    manifest_hash = provenance.get("trace_dataset_hash")
+
+    return {
+        "dataset_id": manifest_meta.get("dataset_id"),
+        "mas_run_id": mas_run_id,
+        "case_list_hash": case_list_hash,
+        "config_hash": provenance.get("config_hash"),
+        "manifest_hash": manifest_hash,
+        "computed_hash": computed_hash,
+        "manifest_hash_valid": manifest_hash == computed_hash,
+        "stub_mode": manifest_meta.get("stub_mode", False),
+        "manifest_path": str(manifest_path),
+    }
+
+
+def get_git_commit(repo_root: Path) -> str:
+    """Get current git commit hash."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown"
+
+
 # ============================================================================
 # Per-Case Metrics Computation
 # ============================================================================
@@ -525,7 +776,9 @@ def compute_per_case_metrics(
     variant_id: str,
     run_log_path: Path,
     trace_file: Path,
-    extractor: ConceptExtractorWrapper
+    extractor: ConceptExtractorWrapper,
+    expected_tokengate_config_hash: Optional[str] = None,
+    manifest_hash_valid: Optional[bool] = None
 ) -> PerCaseMetrics:
     """
     Compute all metrics for a single case/variant.
@@ -549,6 +802,7 @@ def compute_per_case_metrics(
     run_meta = None
     summary_events = []
     buffer_decisions = []
+    tokengate_flushes = []
     
     run_events: Dict[str, dict] = {}  # event_id -> event
     
@@ -563,15 +817,34 @@ def compute_per_case_metrics(
                 run_events[event_id] = record
         elif record_type == "buffer_decision":
             buffer_decisions.append(record)
+        elif record_type == "tokengate_flush":
+            tokengate_flushes.append(record)
     
     # Sort events by index
     summary_events.sort(key=lambda e: e.get("event_index", 0))
+
+    if run_meta and expected_tokengate_config_hash:
+        run_tokengate_hash = run_meta.get("tokengate_config_hash")
+        metrics.tokengate_config_hash_match = (
+            run_tokengate_hash == expected_tokengate_config_hash
+        )
+        if not metrics.tokengate_config_hash_match:
+            raise ValueError(
+                f"TokenGate config hash mismatch for {case_id}: "
+                f"{run_tokengate_hash} != {expected_tokengate_config_hash}"
+            )
+    metrics.dataset_manifest_hash_valid = manifest_hash_valid
     
     # Load trace chunks
     trace_chunks = load_trace_chunks_for_case(trace_file)
+
+    trace_meta = load_trace_meta(trace_file)
+    if trace_meta and trace_meta.get("stub_mode"):
+        metrics.stub_trace_detected = True
     
     # Build canonical trace text
     trace_text, _ = build_canonical_trace_text(trace_file, fail_on_empty=False)
+    metrics.trace_ctu = compute_ctu(trace_text)
     trace_cuis = extractor.extract(trace_text)
     
     # M1: Update counts
@@ -648,6 +921,7 @@ def compute_per_case_metrics(
     ]
     if summary_latencies:
         metrics.mean_summary_latency_ms = float(np.mean(summary_latencies))
+        metrics.summary_latency_distribution_ms = compute_distribution(summary_latencies)
     decision_latencies = [
         d.get("latency_ms")
         for d in buffer_decisions
@@ -655,6 +929,14 @@ def compute_per_case_metrics(
     ]
     if decision_latencies:
         metrics.mean_buffer_decision_latency_ms = float(np.mean(decision_latencies))
+        metrics.buffer_decision_latency_distribution_ms = compute_distribution(decision_latencies)
+
+    overhead = compute_overhead_attribution(summary_latencies, decision_latencies)
+    metrics.control_plane_latency_ms = overhead["control_plane_latency_ms"]
+    metrics.content_plane_latency_ms = overhead["content_plane_latency_ms"]
+    metrics.total_plane_latency_ms = overhead["total_plane_latency_ms"]
+    metrics.control_plane_latency_pct = overhead["control_plane_latency_pct"]
+    metrics.content_plane_latency_pct = overhead["content_plane_latency_pct"]
     
     # M9: LLM usage
     metrics.buffer_decision_count = len(buffer_decisions)
@@ -667,6 +949,23 @@ def compute_per_case_metrics(
         metrics.total_prompt_ctu += llm_usage.get("prompt_ctu", 0)
         metrics.total_completion_ctu += llm_usage.get("completion_ctu", 0)
     metrics.total_llm_ctu = metrics.total_prompt_ctu + metrics.total_completion_ctu
+
+    # Flush statistics
+    flush_stats = compute_flush_statistics(tokengate_flushes)
+    metrics.flush_count = flush_stats["flush_count"]
+    metrics.flush_reason_counts = flush_stats["flush_reason_counts"]
+    metrics.flush_accumulated_ctu_distribution = flush_stats["flush_accumulated_ctu_distribution"]
+    metrics.flush_interval_ms_distribution = flush_stats["flush_interval_ms_distribution"]
+
+    # Virtual-time throughput
+    throughput = compute_virtual_time_throughput(
+        trace_chunks,
+        metrics.trace_ctu,
+        metrics.output_ctu,
+    )
+    metrics.virtual_time_duration_ms = throughput["virtual_time_duration_ms"]
+    metrics.trace_ctu_per_s = throughput["trace_ctu_per_s"]
+    metrics.summary_ctu_per_s = throughput["summary_ctu_per_s"]
     
     # M10: Compliance
     metrics.schema_failure_count = schema_failures
@@ -828,6 +1127,7 @@ def compute_aggregate_metrics(
     ]
     if summary_latency_values:
         agg.summary_latency_mean_ms = float(np.mean(summary_latency_values))
+        agg.summary_latency_distribution_ms = compute_distribution(summary_latency_values)
     buffer_latency_values = [
         m.mean_buffer_decision_latency_ms
         for m in per_case_metrics
@@ -835,6 +1135,7 @@ def compute_aggregate_metrics(
     ]
     if buffer_latency_values:
         agg.buffer_decision_latency_mean_ms = float(np.mean(buffer_latency_values))
+        agg.buffer_decision_latency_distribution_ms = compute_distribution(buffer_latency_values)
 
     # M9: Usage
     agg.prompt_ctu_mean = float(np.mean([m.total_prompt_ctu for m in per_case_metrics]))
@@ -845,6 +1146,80 @@ def compute_aggregate_metrics(
     agg.buffer_decision_count_mean = float(
         np.mean([m.buffer_decision_count for m in per_case_metrics])
     )
+
+    # Flush statistics
+    agg.flush_count_mean = float(np.mean([m.flush_count for m in per_case_metrics]))
+    all_reasons = {
+        reason
+        for m in per_case_metrics
+        for reason in m.flush_reason_counts.keys()
+    }
+    for reason in sorted(all_reasons):
+        reason_values = [
+            m.flush_reason_counts.get(reason, 0)
+            for m in per_case_metrics
+        ]
+        agg.flush_reason_counts_mean[reason] = float(np.mean(reason_values))
+
+    flush_accum_means = [
+        m.flush_accumulated_ctu_distribution.get("mean")
+        for m in per_case_metrics
+        if m.flush_accumulated_ctu_distribution
+        and m.flush_accumulated_ctu_distribution.get("mean") is not None
+    ]
+    if flush_accum_means:
+        agg.flush_accumulated_ctu_distribution = compute_distribution(flush_accum_means)
+
+    flush_interval_means = [
+        m.flush_interval_ms_distribution.get("mean")
+        for m in per_case_metrics
+        if m.flush_interval_ms_distribution
+        and m.flush_interval_ms_distribution.get("mean") is not None
+    ]
+    if flush_interval_means:
+        agg.flush_interval_ms_distribution = compute_distribution(flush_interval_means)
+
+    # Virtual-time throughput
+    duration_values = [
+        m.virtual_time_duration_ms
+        for m in per_case_metrics
+        if m.virtual_time_duration_ms is not None
+    ]
+    if duration_values:
+        agg.virtual_time_duration_ms_mean = float(np.mean(duration_values))
+    agg.trace_ctu_mean = float(np.mean([m.trace_ctu for m in per_case_metrics]))
+    trace_ctu_per_s_values = [
+        m.trace_ctu_per_s
+        for m in per_case_metrics
+        if m.trace_ctu_per_s is not None
+    ]
+    if trace_ctu_per_s_values:
+        agg.trace_ctu_per_s_mean = float(np.mean(trace_ctu_per_s_values))
+    summary_ctu_per_s_values = [
+        m.summary_ctu_per_s
+        for m in per_case_metrics
+        if m.summary_ctu_per_s is not None
+    ]
+    if summary_ctu_per_s_values:
+        agg.summary_ctu_per_s_mean = float(np.mean(summary_ctu_per_s_values))
+
+    # Overhead attribution
+    agg.control_plane_latency_ms_total = sum(
+        m.control_plane_latency_ms for m in per_case_metrics
+    )
+    agg.content_plane_latency_ms_total = sum(
+        m.content_plane_latency_ms for m in per_case_metrics
+    )
+    agg.total_plane_latency_ms_total = sum(
+        m.total_plane_latency_ms for m in per_case_metrics
+    )
+    if agg.total_plane_latency_ms_total > 0:
+        agg.control_plane_latency_pct = (
+            agg.control_plane_latency_ms_total / agg.total_plane_latency_ms_total
+        )
+        agg.content_plane_latency_pct = (
+            agg.content_plane_latency_ms_total / agg.total_plane_latency_ms_total
+        )
 
     # M10: Compliance
     agg.schema_failure_count = sum(
@@ -865,6 +1240,7 @@ def compute_aggregate_metrics(
         m.excluded_from_faithfulness_count for m in per_case_metrics
     )
     agg.schema_failures = sum(m.schema_failure_count for m in per_case_metrics)
+    agg.stub_trace_count = sum(1 for m in per_case_metrics if m.stub_trace_detected)
     
     return agg
 
@@ -900,6 +1276,17 @@ def main():
         type=Path,
         default=Path("configs"),
         help="Configs directory"
+    )
+    parser.add_argument(
+        "--manifests",
+        type=Path,
+        default=Path("data/manifests"),
+        help="Manifests directory"
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        help="Explicit manifest path for dataset integrity checks"
     )
     parser.add_argument(
         "--variant",
@@ -946,6 +1333,25 @@ def main():
     extractor = ConceptExtractorWrapper(extractor_config, no_linking=True)
     print(f"Extractor: {extractor.get_version_info()}")
     print()
+
+    manifest_path = args.manifest
+    if manifest_path is None:
+        if args.manifests.exists():
+            manifest_candidates = sorted(args.manifests.glob("*.manifest.jsonl"))
+            if len(manifest_candidates) == 1:
+                manifest_path = manifest_candidates[0]
+            elif len(manifest_candidates) > 1:
+                print("WARNING: Multiple manifests found. Use --manifest to select one.")
+    manifest_info = None
+    if manifest_path and manifest_path.exists():
+        manifest_info = load_manifest_provenance(manifest_path)
+        if not manifest_info["manifest_hash_valid"]:
+            raise ValueError(
+                "Dataset manifest hash mismatch: "
+                f"{manifest_info['manifest_hash']} != {manifest_info['computed_hash']}"
+            )
+    elif manifest_path:
+        print(f"WARNING: Manifest path not found: {manifest_path}")
     
     # Determine variants
     variants = [args.variant] if args.variant else ["V0", "V1", "V2", "V3", "V4"]
@@ -956,6 +1362,8 @@ def main():
     all_per_case = []
     all_aggregate = []
     
+    variant_provenance: Dict[str, dict] = {}
+
     for variant_id in variants:
         variant_dir = args.runs / variant_id
         if not variant_dir.exists():
@@ -963,6 +1371,14 @@ def main():
             continue
         
         print(f"Computing metrics for {variant_id}...")
+        
+        variant_config = load_variant_config(variant_id, args.configs)
+        expected_tokengate_hash = compute_tokengate_config_hash(variant_config)
+        variant_config_path = args.configs / "variants" / f"{variant_id}.yaml"
+        variant_provenance[variant_id] = {
+            "variant_config_hash": compute_file_hash(variant_config_path),
+            "tokengate_config_hash": expected_tokengate_hash,
+        }
         
         # Find run logs
         run_logs = sorted(variant_dir.glob("*.jsonl.gz"))
@@ -987,7 +1403,14 @@ def main():
             
             try:
                 metrics = compute_per_case_metrics(
-                    case_id, variant_id, run_log_path, trace_file, extractor
+                    case_id,
+                    variant_id,
+                    run_log_path,
+                    trace_file,
+                    extractor,
+                    expected_tokengate_config_hash=expected_tokengate_hash,
+                    manifest_hash_valid=manifest_info["manifest_hash_valid"]
+                    if manifest_info else None,
                 )
                 per_case_metrics.append(metrics)
                 all_per_case.append(metrics)
@@ -1044,13 +1467,31 @@ def main():
             "m7b_coverage_by_budget": m.coverage_by_budget,
             "m8_summary_latency_ms_mean": m.mean_summary_latency_ms,
             "m8_buffer_decision_latency_ms_mean": m.mean_buffer_decision_latency_ms,
+            "m8_summary_latency_distribution_ms": m.summary_latency_distribution_ms,
+            "m8_buffer_decision_latency_distribution_ms": m.buffer_decision_latency_distribution_ms,
             "m9_prompt_ctu_total": m.total_prompt_ctu,
             "m9_completion_ctu_total": m.total_completion_ctu,
             "m9_total_llm_ctu": m.total_llm_ctu,
             "m9_buffer_decision_count": m.buffer_decision_count,
+            "flush_count": m.flush_count,
+            "flush_reason_counts": m.flush_reason_counts,
+            "flush_accumulated_ctu_distribution": m.flush_accumulated_ctu_distribution,
+            "flush_interval_ms_distribution": m.flush_interval_ms_distribution,
+            "virtual_time_duration_ms": m.virtual_time_duration_ms,
+            "trace_ctu": m.trace_ctu,
+            "trace_ctu_per_s": m.trace_ctu_per_s,
+            "summary_ctu_per_s": m.summary_ctu_per_s,
+            "control_plane_latency_ms": m.control_plane_latency_ms,
+            "content_plane_latency_ms": m.content_plane_latency_ms,
+            "total_plane_latency_ms": m.total_plane_latency_ms,
+            "control_plane_latency_pct": m.control_plane_latency_pct,
+            "content_plane_latency_pct": m.content_plane_latency_pct,
             "m10_schema_failure_count": m.schema_failure_count,
             "m10_schema_failure_rate": m.schema_failure_rate,
-            "m10_compliance_rate": m.compliance_rate
+            "m10_compliance_rate": m.compliance_rate,
+            "tokengate_config_hash_match": m.tokengate_config_hash_match,
+            "dataset_manifest_hash_valid": m.dataset_manifest_hash_valid,
+            "stub_trace_detected": m.stub_trace_detected
         }
         per_case_records.append(record)
     
@@ -1104,11 +1545,34 @@ def main():
                 "summary": agg.summary_latency_mean_ms,
                 "buffer_decision": agg.buffer_decision_latency_mean_ms
             },
+            "m8_latency_ms_distribution": {
+                "summary": agg.summary_latency_distribution_ms,
+                "buffer_decision": agg.buffer_decision_latency_distribution_ms
+            },
             "m9_usage_ctu_mean": {
                 "prompt": agg.prompt_ctu_mean,
                 "completion": agg.completion_ctu_mean,
                 "total": agg.total_llm_ctu_mean,
                 "buffer_decision_count": agg.buffer_decision_count_mean
+            },
+            "flush_statistics": {
+                "flush_count_mean": agg.flush_count_mean,
+                "flush_reason_counts_mean": agg.flush_reason_counts_mean,
+                "flush_accumulated_ctu_distribution": agg.flush_accumulated_ctu_distribution,
+                "flush_interval_ms_distribution": agg.flush_interval_ms_distribution
+            },
+            "virtual_time_throughput": {
+                "duration_ms_mean": agg.virtual_time_duration_ms_mean,
+                "trace_ctu_mean": agg.trace_ctu_mean,
+                "trace_ctu_per_s_mean": agg.trace_ctu_per_s_mean,
+                "summary_ctu_per_s_mean": agg.summary_ctu_per_s_mean
+            },
+            "overhead_attribution": {
+                "control_plane_latency_ms_total": agg.control_plane_latency_ms_total,
+                "content_plane_latency_ms_total": agg.content_plane_latency_ms_total,
+                "total_plane_latency_ms_total": agg.total_plane_latency_ms_total,
+                "control_plane_latency_pct": agg.control_plane_latency_pct,
+                "content_plane_latency_pct": agg.content_plane_latency_pct
             },
             "m10_compliance": {
                 "schema_failure_rate_mean": agg.schema_failure_rate_mean,
@@ -1118,11 +1582,28 @@ def main():
             },
             "faithfulness_valid_event_count": agg.faithfulness_valid_event_count,
             "excluded_from_faithfulness_count": agg.excluded_from_faithfulness_count,
-            "schema_failures": agg.schema_failures
+            "schema_failures": agg.schema_failures,
+            "stub_trace_count": agg.stub_trace_count
         }
     
     write_json_deterministic(aggregate_data, aggregate_output)
     print(f"  Aggregate: {aggregate_output}")
+
+    provenance_output = args.output / "metrics.provenance.json"
+    provenance_data = {
+        "schema_name": "exaid.metrics.provenance",
+        "schema_version": "1.0.0",
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "code_version": get_git_commit(Path(__file__).resolve().parents[2]),
+        "configs": {
+            "extractor_config_hash": compute_file_hash(args.configs / "extractor.yaml"),
+            "metrics_config_hash": compute_file_hash(args.configs / "metrics.yaml"),
+            "variant_configs": variant_provenance,
+        },
+        "dataset": manifest_info,
+    }
+    write_json_deterministic(provenance_data, provenance_output)
+    print(f"  Provenance: {provenance_output}")
     
     print()
     print("=" * 60)
