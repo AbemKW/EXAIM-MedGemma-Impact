@@ -125,6 +125,8 @@ class PerCaseMetrics:
     mean_buffer_decision_latency_ms: Optional[float] = None
     summary_latency_distribution_ms: Optional[Dict[str, float]] = None
     buffer_decision_latency_distribution_ms: Optional[Dict[str, float]] = None
+    summary_latency_values: List[float] = field(default_factory=list)
+    buffer_decision_latency_values: List[float] = field(default_factory=list)
     
     # M9: LLM usage
     total_prompt_ctu: int = 0
@@ -137,6 +139,8 @@ class PerCaseMetrics:
     flush_reason_counts: Dict[str, int] = field(default_factory=dict)
     flush_accumulated_ctu_distribution: Optional[Dict[str, float]] = None
     flush_interval_ms_distribution: Optional[Dict[str, float]] = None
+    flush_accumulated_ctu_values: List[float] = field(default_factory=list)
+    flush_interval_ms_values: List[float] = field(default_factory=list)
     
     # Virtual-time throughput
     virtual_time_duration_ms: Optional[int] = None
@@ -582,15 +586,32 @@ def compute_distribution(values: List[float]) -> Optional[Dict[str, float]]:
     if not values:
         return None
     arr = np.array(values, dtype=float)
+    if arr.size < 2:
+        return {
+            "count": int(arr.size),
+            "min": float(arr[0]),
+            "max": float(arr[0]),
+            "mean": float(arr[0]),
+            "p50": float(arr[0]),
+            "p90": float(arr[0]),
+            "p95": float(arr[0]),
+            "p99": float(arr[0]),
+        }
+    percentile_kwargs = {}
+    try:
+        np.percentile(arr, 50, method="linear")
+        percentile_kwargs["method"] = "linear"
+    except TypeError:
+        percentile_kwargs["interpolation"] = "linear"
     return {
         "count": int(arr.size),
         "min": float(np.min(arr)),
         "max": float(np.max(arr)),
         "mean": float(np.mean(arr)),
-        "p50": float(np.percentile(arr, 50)),
-        "p90": float(np.percentile(arr, 90)),
-        "p95": float(np.percentile(arr, 95)),
-        "p99": float(np.percentile(arr, 99)),
+        "p50": float(np.percentile(arr, 50, **percentile_kwargs)),
+        "p90": float(np.percentile(arr, 90, **percentile_kwargs)),
+        "p95": float(np.percentile(arr, 95, **percentile_kwargs)),
+        "p99": float(np.percentile(arr, 99, **percentile_kwargs)),
     }
 
 
@@ -609,12 +630,22 @@ def parse_timestamp_ms(timestamp: Optional[str]) -> Optional[int]:
 
 
 def compute_flush_statistics(flushes: List[dict]) -> dict:
-    """Compute flush statistics from tokengate_flush records."""
+    """
+    Compute flush statistics from tokengate_flush records.
+
+    Expected flush record fields:
+        - flush_index: monotonic index for ordering
+        - timestamp: ISO-8601 timestamp for interval computation
+        - accumulated_ctu: CTU since last flush
+        - trigger_reason: reason for flush (e.g. timer, length)
+    """
     stats: Dict[str, Any] = {
         "flush_count": len(flushes),
         "flush_reason_counts": {},
         "flush_accumulated_ctu_distribution": None,
         "flush_interval_ms_distribution": None,
+        "flush_accumulated_ctu_values": [],
+        "flush_interval_ms_values": [],
     }
     if not flushes:
         return stats
@@ -629,6 +660,7 @@ def compute_flush_statistics(flushes: List[dict]) -> dict:
         if f.get("accumulated_ctu") is not None
     ]
     stats["flush_accumulated_ctu_distribution"] = compute_distribution(accumulated_ctu)
+    stats["flush_accumulated_ctu_values"] = [float(value) for value in accumulated_ctu]
 
     sorted_flushes = sorted(flushes, key=lambda f: f.get("flush_index", 0))
     intervals_ms = []
@@ -641,6 +673,7 @@ def compute_flush_statistics(flushes: List[dict]) -> dict:
             intervals_ms.append(ts_ms - prev_ts_ms)
         prev_ts_ms = ts_ms
     stats["flush_interval_ms_distribution"] = compute_distribution(intervals_ms)
+    stats["flush_interval_ms_values"] = [float(value) for value in intervals_ms]
     return stats
 
 
@@ -662,9 +695,14 @@ def compute_virtual_time_throughput(
             "summary_ctu_per_s": None,
         }
     duration_ms = max(t_rel_values) - min(t_rel_values)
-    duration_s = duration_ms / 1000 if duration_ms > 0 else None
-    trace_ctu_per_s = trace_ctu / duration_s if duration_s else None
-    summary_ctu_per_s = summary_ctu / duration_s if duration_s else None
+    duration_s = duration_ms / 1000 if duration_ms is not None else None
+    if duration_s == 0:
+        duration_s = 0.0
+    trace_ctu_per_s = None
+    summary_ctu_per_s = None
+    if duration_s and duration_s > 0:
+        trace_ctu_per_s = trace_ctu / duration_s
+        summary_ctu_per_s = summary_ctu / duration_s
     return {
         "virtual_time_duration_ms": int(duration_ms),
         "trace_ctu_per_s": float(trace_ctu_per_s) if trace_ctu_per_s is not None else None,
@@ -734,6 +772,7 @@ def load_manifest_provenance(manifest_path: Path) -> dict:
             elif record_type == "trace_entry":
                 trace_entries.append((record.get("case_id", ""), record.get("sha256", "")))
 
+    # mas_run_id = multi-agent system run ID (trace generation campaign identifier)
     mas_run_id = manifest_meta.get("mas_run_id", "")
     case_list_hash = provenance.get("case_list_hash", "")
     computed_hash = compute_manifest_hash(mas_run_id, case_list_hash, trace_entries)
@@ -831,7 +870,7 @@ def compute_per_case_metrics(
         )
         if not metrics.tokengate_config_hash_match:
             raise ValueError(
-                f"TokenGate config hash mismatch for {case_id}: "
+                f"TokenGate config hash mismatch for {case_id} ({variant_id}): "
                 f"{run_tokengate_hash} != {expected_tokengate_config_hash}"
             )
     dataset_manifest_valid = manifest_hash_valid
@@ -938,6 +977,7 @@ def compute_per_case_metrics(
     if summary_latencies:
         metrics.mean_summary_latency_ms = float(np.mean(summary_latencies))
         metrics.summary_latency_distribution_ms = compute_distribution(summary_latencies)
+        metrics.summary_latency_values = [float(value) for value in summary_latencies]
     decision_latencies = [
         d.get("latency_ms")
         for d in buffer_decisions
@@ -946,6 +986,7 @@ def compute_per_case_metrics(
     if decision_latencies:
         metrics.mean_buffer_decision_latency_ms = float(np.mean(decision_latencies))
         metrics.buffer_decision_latency_distribution_ms = compute_distribution(decision_latencies)
+        metrics.buffer_decision_latency_values = [float(value) for value in decision_latencies]
 
     overhead = compute_overhead_attribution(summary_latencies, decision_latencies)
     metrics.control_plane_latency_ms = overhead["control_plane_latency_ms"]
@@ -972,6 +1013,8 @@ def compute_per_case_metrics(
     metrics.flush_reason_counts = flush_stats["flush_reason_counts"]
     metrics.flush_accumulated_ctu_distribution = flush_stats["flush_accumulated_ctu_distribution"]
     metrics.flush_interval_ms_distribution = flush_stats["flush_interval_ms_distribution"]
+    metrics.flush_accumulated_ctu_values = flush_stats["flush_accumulated_ctu_values"]
+    metrics.flush_interval_ms_values = flush_stats["flush_interval_ms_values"]
 
     # Virtual-time throughput
     throughput = compute_virtual_time_throughput(
@@ -1137,17 +1180,17 @@ def compute_aggregate_metrics(
 
     # M8: Latency
     summary_latency_values = [
-        m.mean_summary_latency_ms
+        value
         for m in per_case_metrics
-        if m.mean_summary_latency_ms is not None
+        for value in m.summary_latency_values
     ]
     if summary_latency_values:
         agg.summary_latency_mean_ms = float(np.mean(summary_latency_values))
         agg.summary_latency_distribution_ms = compute_distribution(summary_latency_values)
     buffer_latency_values = [
-        m.mean_buffer_decision_latency_ms
+        value
         for m in per_case_metrics
-        if m.mean_buffer_decision_latency_ms is not None
+        for value in m.buffer_decision_latency_values
     ]
     if buffer_latency_values:
         agg.buffer_decision_latency_mean_ms = float(np.mean(buffer_latency_values))
@@ -1177,23 +1220,21 @@ def compute_aggregate_metrics(
         ]
         agg.flush_reason_counts_mean[reason] = float(np.mean(reason_values))
 
-    flush_accum_means = [
-        m.flush_accumulated_ctu_distribution.get("mean")
+    flush_accum_values = [
+        value
         for m in per_case_metrics
-        if m.flush_accumulated_ctu_distribution
-        and m.flush_accumulated_ctu_distribution.get("mean") is not None
+        for value in m.flush_accumulated_ctu_values
     ]
-    if flush_accum_means:
-        agg.flush_accumulated_ctu_distribution = compute_distribution(flush_accum_means)
+    if flush_accum_values:
+        agg.flush_accumulated_ctu_distribution = compute_distribution(flush_accum_values)
 
-    flush_interval_means = [
-        m.flush_interval_ms_distribution.get("mean")
+    flush_interval_values = [
+        value
         for m in per_case_metrics
-        if m.flush_interval_ms_distribution
-        and m.flush_interval_ms_distribution.get("mean") is not None
+        for value in m.flush_interval_ms_values
     ]
-    if flush_interval_means:
-        agg.flush_interval_ms_distribution = compute_distribution(flush_interval_means)
+    if flush_interval_values:
+        agg.flush_interval_ms_distribution = compute_distribution(flush_interval_values)
 
     # Virtual-time throughput
     duration_values = [
