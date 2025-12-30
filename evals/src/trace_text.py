@@ -8,8 +8,8 @@ chunks only, excluding orchestrator summaries and system artifacts (Section 3.1)
 This module is the SINGLE SOURCE OF TRUTH for trace text construction.
 It MUST be used by:
     - generate_stoplists.py
-    - compute_metrics.py for trace concept sets (M4/M5)
-    - compute_metrics.py for window reconstruction (M6a/M6b)
+    - metrics/computations.py for trace concept sets (M4/M5)
+    - metrics/computations.py for window reconstruction (M6a/M6b)
     - run_variants.py for buffer hash computation
     - validate_traces.py for canonical text validation
     
@@ -331,7 +331,6 @@ if __name__ == "__main__":
     except TraceParsingError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
-
 
 
 
