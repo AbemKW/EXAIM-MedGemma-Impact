@@ -1293,7 +1293,6 @@ def main():
     if not trace_files:
         print(f"ERROR: No trace files found in {args.traces}")
         if args.case:
-            variants = [args.variant] if args.variant else ["V0", "V1", "V2", "V3", "V4"]
             for variant_id in variants:
                 case_results = [{
                     "case_id": args.case,
