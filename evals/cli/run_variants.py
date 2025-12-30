@@ -66,11 +66,7 @@ from ..src.config.config_loader import (
     load_variant_config as _load_variant_config_central,
     get_stoplists_provenance,
 )
-from ..src.metrics.integrity import (
-    compute_manifest_hash,
-    load_trace_meta,
-    load_manifest_provenance,
-)
+from ..src.metrics.integrity import load_manifest_provenance
 from exaid_core.buffer_agent.buffer_agent import BufferAgent, BufferAnalysis, BufferAnalysisNoNovelty
 from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
 from exaid_core.schema.agent_summary import AgentSummary
@@ -160,86 +156,56 @@ def compute_tokengate_config_hash(variant_config: dict) -> str:
     return compute_text_hash(payload)
 
 
-def compute_trace_dataset_hash(trace_files: list[Path], manifest_path: Optional[Path] = None) -> str:
+def compute_trace_dataset_hash(traces_root: Path, manifest_path: Optional[Path] = None) -> str:
     """
-    Compute trace_dataset_hash per schema definition.
-    
+    Compute trace_dataset_hash per schema definition using manifest provenance.
+
     Schema: SHA256 of JSON: {mas_run_id, case_list_hash, sorted [(case_id, trace_sha256)]}
-    
+
     Args:
-        trace_files: List of trace file paths
-        manifest_path: Optional path to manifest file (if provided, extracts case_list_hash from it)
-    
+        traces_root: Directory that contains trace files
+        manifest_path: Optional path to manifest file
+
     Returns:
         Hash in format "sha256:xxxx"
     """
-    # Extract mas_run_id and trace entries from trace files
-    mas_run_id = None
-    trace_entries = []
-    
-    for trace_file in sorted(trace_files):
-        # Load trace_meta to get mas_run_id
-        meta = load_trace_meta(trace_file)
-        if meta:
-            if mas_run_id is None:
-                mas_run_id = meta.get("mas_run_id", "")
-            elif mas_run_id != meta.get("mas_run_id", ""):
-                raise ValueError(
-                    f"Trace files have different mas_run_id values: "
-                    f"{mas_run_id} vs {meta.get('mas_run_id')}"
-                )
-        
-        # Extract case_id and sha256
-        case_id = trace_file.stem.replace(".jsonl", "").replace(".gz", "")
-        file_hash = compute_file_hash(trace_file)  # Returns "sha256:xxxx" format
-        # Keep the full "sha256:xxxx" format to match manifest format
-        trace_entries.append((case_id, file_hash))
-    
-    if not mas_run_id:
-        raise ValueError("Could not extract mas_run_id from trace files")
-    
-    # Try to get case_list_hash from manifest if provided
-    case_list_hash = None
-    if manifest_path and manifest_path.exists():
-        try:
-            manifest_info = load_manifest_provenance(manifest_path)
-            case_list_hash = manifest_info.get("case_list_hash")
-        except Exception as e:
-            # If manifest loading fails, continue without it
-            pass
-    
-    # If no manifest or case_list_hash not found, try to find manifest in common locations
-    if not case_list_hash:
+    manifest_candidate = manifest_path if manifest_path and manifest_path.exists() else None
+
+    if not manifest_candidate:
         import glob
-        # Try common manifest locations
+
         possible_manifest_dirs = [
-            trace_files[0].parent.parent / "manifests",
-            trace_files[0].parent.parent.parent / "manifests",
-            trace_files[0].parent,
+            traces_root.parent / "manifests",
+            traces_root.parent.parent / "manifests",
+            traces_root,
         ]
         for manifest_dir in possible_manifest_dirs:
             if not manifest_dir.exists():
                 continue
-            matches = glob.glob(str(manifest_dir / "*.manifest.jsonl"))
+            matches = sorted(glob.glob(str(manifest_dir / "*.manifest.jsonl")))
             if matches:
-                try:
-                    manifest_info = load_manifest_provenance(Path(matches[0]))
-                    case_list_hash = manifest_info.get("case_list_hash")
-                    if case_list_hash:
-                        break
-                except Exception:
-                    continue
-    
-    # If still no case_list_hash, we can't compute the exact hash
-    # This is a limitation when running without a manifest
-    if not case_list_hash:
+                manifest_candidate = Path(matches[0])
+                break
+
+    if not manifest_candidate:
         raise ValueError(
-            "Cannot compute trace_dataset_hash without case_list_hash. "
-            "Please provide a manifest file or ensure case_list_hash is available."
+            "Cannot compute trace_dataset_hash without a manifest file. "
+            "Please provide --manifest or place a manifest in a known location."
         )
-    
-    # Use the same computation as integrity.py for consistency
-    return compute_manifest_hash(mas_run_id, case_list_hash, trace_entries)
+
+    try:
+        manifest_info = load_manifest_provenance(manifest_candidate)
+    except Exception as exc:
+        raise ValueError(
+            f"Failed to load manifest provenance from {manifest_candidate}: {exc}"
+        ) from exc
+    if not manifest_info.get("manifest_hash_valid", False):
+        raise ValueError(
+            "Manifest trace_dataset_hash does not match computed value: "
+            f"{manifest_info.get('manifest_hash')} != {manifest_info.get('computed_hash')}"
+        )
+
+    return manifest_info["computed_hash"]
 
 
 def build_run_summary(
@@ -1411,7 +1377,7 @@ def main():
 
     # Process each trace file
     total_runs = 0
-    trace_dataset_hash = compute_trace_dataset_hash(trace_files, manifest_path=args.manifest)
+    trace_dataset_hash = compute_trace_dataset_hash(trace_files[0].parent, manifest_path=args.manifest)
     variant_case_results = {variant_id: [] for variant_id in variants}
     
     for trace_file in trace_files:
