@@ -44,7 +44,7 @@ def test_compute_flush_statistics_non_monotonic_warns():
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
         stats = compute_flush_statistics(flushes)
-        assert any("Flush timestamps are not monotonic" in str(w.message) for w in captured)
+        assert any(str(w.message) == "Flush timestamps are not monotonic" for w in captured)
     assert stats["flush_count"] == 2
 
 
