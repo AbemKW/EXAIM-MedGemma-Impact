@@ -65,7 +65,7 @@ from config_loader import (
     load_variant_config as _load_variant_config_central,
     get_stoplists_provenance,
 )
-from exaid_core.buffer_agent.buffer_agent import BufferAgent, BufferAnalysis
+from exaid_core.buffer_agent.buffer_agent import BufferAgent, BufferAnalysis, BufferAnalysisNoNovelty
 from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
 from exaid_core.schema.agent_summary import AgentSummary
 from exaid_core.token_gate.token_gate import ManualClock, TokenGate
@@ -314,7 +314,9 @@ class VariantPipeline(ABC):
         self.config = config
         self.variant_id = config.get("variant_id", "V?")
         self.trigger_policy = config.get("trigger_policy", "unknown")
-        self.buffer_agent = BufferAgent()
+        # Read novelty_check from config (default True for backward compatibility)
+        novelty_check = config.get("components", {}).get("buffer_agent", {}).get("novelty_check", True)
+        self.buffer_agent = BufferAgent(disable_novelty=not novelty_check)
         self.summarizer_agent = SummarizerAgent()
     
     @abstractmethod
@@ -457,10 +459,13 @@ class VariantPipeline(ABC):
         self,
         ctx: RunContext,
         agent_id: str,
-        segment_text: str,
-        disable_novelty: bool
+        segment_text: str
     ) -> tuple[bool, BufferDecisionResult]:
-        """Run BufferAgent on a segment and build a decision result."""
+        """Run BufferAgent on a segment and build a decision result.
+        
+        Novelty check is automatically determined by the BufferAgent's initialization
+        (based on config), so we derive it from the analysis type.
+        """
         decision_index = ctx.decision_count
         ctx.decision_count += 1
 
@@ -484,7 +489,7 @@ class VariantPipeline(ABC):
             self.buffer_agent.addsegment(agent_id, segment_text, summary_history)
         )
         latency_ms = int((time.perf_counter() - start_time) * 1000)
-        analysis: BufferAnalysis | None = self.buffer_agent.get_last_analysis(agent_id)
+        analysis: BufferAnalysis | BufferAnalysisNoNovelty | None = self.buffer_agent.get_last_analysis(agent_id)
 
         if analysis is None:
             filter_results = {
@@ -493,24 +498,17 @@ class VariantPipeline(ABC):
                 "novelty_passed": None
             }
         else:
+            # Derive novelty check status from analysis type (hasattr check)
+            # BufferAnalysisNoNovelty doesn't have is_novel field
+            novelty_passed = None
+            if hasattr(analysis, "is_novel"):
+                novelty_passed = analysis.is_novel
+            
             filter_results = {
                 "completeness_passed": analysis.is_complete,
                 "value_passed": analysis.is_relevant,
-                "novelty_passed": None if disable_novelty else analysis.is_novel
+                "novelty_passed": novelty_passed
             }
-
-        if analysis is not None and disable_novelty:
-            should_trigger = (
-                analysis.stream_state == "CRITICAL_ALERT"
-                or (
-                    analysis.stream_state == "TOPIC_SHIFT"
-                    and analysis.is_relevant
-                )
-                or (
-                    analysis.is_complete
-                    and analysis.is_relevant
-                )
-            )
 
         if analysis is not None:
             if hasattr(analysis, "model_dump"):
@@ -556,7 +554,6 @@ class VariantPipeline(ABC):
     def run_tokengate_pipeline(
         self,
         ctx: RunContext,
-        disable_novelty: bool,
         use_buffer_agent: bool
     ) -> tuple[list, list, list]:
         """Run TokenGate-driven pipeline for V0/V2/V4."""
@@ -623,7 +620,7 @@ class VariantPipeline(ABC):
                     ctx.buffer_window_end_seq = flush_end
 
                     should_trigger, decision = self.evaluate_buffer_agent(
-                        ctx, agent_id, flushed_text, disable_novelty=disable_novelty
+                        ctx, agent_id, flushed_text
                     )
                     decisions.append(decision)
 
@@ -678,7 +675,7 @@ class VariantPipeline(ABC):
                         ctx.buffer_window_end_seq = flush_end
 
                         should_trigger, decision = self.evaluate_buffer_agent(
-                            ctx, agent_id, flushed_text, disable_novelty=disable_novelty
+                            ctx, agent_id, flushed_text
                         )
                         decisions.append(decision)
 
@@ -723,7 +720,7 @@ class V0_FullEXAID(VariantPipeline):
     
     def run(self, ctx: RunContext) -> tuple[list, list, list]:
         return self.run_tokengate_pipeline(
-            ctx, disable_novelty=False, use_buffer_agent=True
+            ctx, use_buffer_agent=True
         )
 
 
@@ -823,7 +820,7 @@ class V2_NoBuffer(VariantPipeline):
     
     def run(self, ctx: RunContext) -> tuple[list, list, list]:
         return self.run_tokengate_pipeline(
-            ctx, disable_novelty=False, use_buffer_agent=False
+            ctx, use_buffer_agent=False
         )
 
 
@@ -873,7 +870,7 @@ class V3_NoTokenGate(VariantPipeline):
                 ctx.buffer_window_end_seq = seq
 
                 should_trigger, decision = self.evaluate_buffer_agent(
-                    ctx, last_agent_id, accumulated_text, disable_novelty=False
+                    ctx, last_agent_id, accumulated_text
                 )
                 decisions.append(decision)
 
@@ -901,7 +898,7 @@ class V3_NoTokenGate(VariantPipeline):
             ctx.buffer_window_end_seq = last_seq_seen
 
             should_trigger, decision = self.evaluate_buffer_agent(
-                ctx, last_agent_id, accumulated_text, disable_novelty=False
+                ctx, last_agent_id, accumulated_text
             )
             decisions.append(decision)
 
@@ -931,8 +928,10 @@ class V4_NoNovelty(VariantPipeline):
     """
     
     def run(self, ctx: RunContext) -> tuple[list, list, list]:
+        # V4 uses BufferAgent with novelty_check disabled via config
+        # The BufferAgent is initialized in VariantPipeline.__init__() based on config
         return self.run_tokengate_pipeline(
-            ctx, disable_novelty=True, use_buffer_agent=True
+            ctx, use_buffer_agent=True
         )
 
 
