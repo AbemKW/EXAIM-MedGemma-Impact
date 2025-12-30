@@ -77,7 +77,11 @@
             "m9_buffer_decision_count",
             "m10_schema_failure_count",
             "m10_schema_failure_rate",
-            "m10_compliance_rate"
+            "m10_compliance_rate",
+            "outlier_flags",
+            "outlier_latency_spike",
+            "outlier_excessive_flushes",
+            "outlier_low_coverage"
           ],
           "properties": {
             "metrics_type": {"const": "per_case"},
@@ -105,7 +109,14 @@
             "m9_buffer_decision_count": {"type": "integer", "minimum": 0},
             "m10_schema_failure_count": {"type": "integer", "minimum": 0},
             "m10_schema_failure_rate": {"type": "number", "minimum": 0, "maximum": 1},
-            "m10_compliance_rate": {"type": "number", "minimum": 0, "maximum": 1}
+            "m10_compliance_rate": {"type": "number", "minimum": 0, "maximum": 1},
+            "outlier_flags": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "outlier_latency_spike": {"type": "boolean"},
+            "outlier_excessive_flushes": {"type": "boolean"},
+            "outlier_low_coverage": {"type": "boolean"}
           }
         }
       ]

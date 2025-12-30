@@ -30,9 +30,10 @@ Dependencies:
 """
 
 import argparse
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence, Union
 
 import numpy as np
 
@@ -78,6 +79,59 @@ from ..src.metrics import (
 # ============================================================================
 # Per-Case Metrics Computation
 # ============================================================================
+
+def _percentile_threshold(
+    values: Sequence[Union[float, int]],
+    percentile: float,
+) -> Optional[float]:
+    if not values:
+        return None
+    return float(np.percentile(np.array(values, dtype=float), percentile))
+
+
+def apply_outlier_flags(per_case_metrics: List[PerCaseMetrics]) -> None:
+    """
+    Flag per-case outliers for latency spikes, excessive flushes, and low coverage.
+    """
+    latency_values = [
+        metrics.mean_summary_latency_ms
+        for metrics in per_case_metrics
+        if metrics.mean_summary_latency_ms is not None
+    ]
+    flush_counts = [metrics.flush_count for metrics in per_case_metrics]
+    coverage_values = [metrics.trace_coverage for metrics in per_case_metrics]
+
+    latency_threshold = _percentile_threshold(latency_values, 95)
+    flush_threshold = _percentile_threshold(flush_counts, 95)
+    coverage_threshold = _percentile_threshold(coverage_values, 5)
+
+    for metrics in per_case_metrics:
+        metrics.outlier_latency_spike = False
+        metrics.outlier_excessive_flushes = False
+        metrics.outlier_low_coverage = False
+        flags = []
+
+        if (
+            latency_threshold is not None
+            and metrics.mean_summary_latency_ms is not None
+            and metrics.mean_summary_latency_ms > latency_threshold
+        ):
+            metrics.outlier_latency_spike = True
+            flags.append("latency_spike")
+
+        if flush_threshold is not None and metrics.flush_count > flush_threshold:
+            metrics.outlier_excessive_flushes = True
+            flags.append("excessive_flushes")
+
+        if (
+            coverage_threshold is not None
+            and metrics.trace_coverage < coverage_threshold
+        ):
+            metrics.outlier_low_coverage = True
+            flags.append("low_coverage")
+
+        metrics.outlier_flags = flags
+
 
 def compute_per_case_metrics(
     case_id: str,
@@ -534,6 +588,8 @@ def main():
     # Write outputs
     print()
     print("Writing outputs...")
+
+    apply_outlier_flags(all_per_case)
     
     # Per-case JSONL
     per_case_output = args.output / "per_case.metrics.jsonl"
@@ -583,6 +639,10 @@ def main():
             "m10_schema_failure_count": m.schema_failure_count,
             "m10_schema_failure_rate": m.schema_failure_rate,
             "m10_compliance_rate": m.compliance_rate,
+            "outlier_flags": m.outlier_flags,
+            "outlier_latency_spike": m.outlier_latency_spike,
+            "outlier_excessive_flushes": m.outlier_excessive_flushes,
+            "outlier_low_coverage": m.outlier_low_coverage,
             "tokengate_config_hash_match": m.tokengate_config_hash_match,
             "dataset_manifest_hash_valid": m.dataset_manifest_hash_valid,
             "stub_trace_detected": m.stub_trace_detected
