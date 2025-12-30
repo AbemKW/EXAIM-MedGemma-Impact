@@ -86,42 +86,18 @@ def load_config(config_path: Path) -> dict:
 
 
 def compute_trace_dataset_hash(manifest_path: Path) -> str:
-    """Compute SHA256 hash of canonical manifest fields."""
-    # Load manifest and extract canonical fields
-    records = []
-    with open(manifest_path, "rt", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            records.append(json.loads(line))
-
-    # Extract canonical fields from manifest_meta and provenance
-    canonical_data = {}
-    for record in records:
-        if record.get("record_type") == "manifest_meta":
-            canonical_data["dataset_id"] = record.get("dataset_id", "")
-            canonical_data["mas_run_id"] = record.get("mas_run_id", "")
-        elif record.get("record_type") == "provenance":
-            canonical_data["mac_commit"] = record.get("mac_commit", "")
-            canonical_data["case_list_hash"] = record.get("case_list_hash", "")
-            # Include trace entries (case_id, sha256 pairs)
-            trace_entries = []
-            for trace_record in records:
-                if trace_record.get("record_type") == "trace_entry":
-                    trace_entries.append(
-                        {
-                            "case_id": trace_record.get("case_id", ""),
-                            "sha256": trace_record.get("sha256", ""),
-                        }
-                    )
-            canonical_data["trace_entries"] = sorted(
-                trace_entries, key=lambda x: x["case_id"]
-            )
-
-    # Canonicalize JSON
-    canonical_json = json.dumps(canonical_data, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+    """
+    Compute trace_dataset_hash per schema definition.
+    
+    Schema: SHA256 of JSON: {mas_run_id, case_list_hash, sorted [(case_id, trace_sha256)]}
+    
+    Uses the same computation as integrity.compute_manifest_hash for consistency.
+    """
+    from ..metrics.integrity import compute_manifest_hash, load_manifest_provenance
+    
+    # Use the validated implementation from integrity.py
+    manifest_info = load_manifest_provenance(manifest_path)
+    return manifest_info["computed_hash"]
 
 
 def compute_config_hash(config: dict) -> str:

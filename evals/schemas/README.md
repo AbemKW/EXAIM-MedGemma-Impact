@@ -6,16 +6,16 @@ JSON Schema definitions for EXAID evaluation data artifacts.
 
 | Schema | Version | Purpose |
 |--------|---------|---------|
-| `exaid.manifest.schema.json` | 1.0.0 | Dataset manifest with case selection |
-| `exaid.trace.schema.json` | 1.0.0 | Frozen MAS traces |
-| `exaid.run.schema.json` | 1.3.0 | Multi-record run logs |
-| `exaid.metrics.schema.json` | 1.0.0 | Computed evaluation metrics |
+| `exaid.manifest.schema.json` | 2.0.0 | Dataset manifest with case selection |
+| `exaid.trace.schema.json` | 2.0.0 | Frozen MAS traces |
+| `exaid.run.schema.json` | 1.5.0 | Multi-record run logs |
+| `exaid.metrics.schema.json` | 2.0.0 | Computed evaluation metrics |
 
 All schemas use JSON Schema Draft 2020-12.
 
 ---
 
-## Run Log Schema v1.3.0
+## Run Log Schema v1.5.0
 
 **Paper hook: Section 3.2**
 
@@ -48,7 +48,7 @@ First record in every run log file.
 {
   "record_type": "run_meta",
   "schema_name": "exaid.run",
-  "schema_version": "1.3.0",
+  "schema_version": "1.5.0",
   "created_at": "2025-12-21T10:30:00.000Z",
   "case_id": "case-33651373",
   "variant_id": "V0",
@@ -349,6 +349,12 @@ python -m evals.cli.validate_logs data/runs/V0/*.jsonl.gz --schema schemas/exaid
 - Added `timestamp_derivation` stats
 - Added `linker_kb_version` to concept_extractor
 - Changed from single-record to multi-record JSONL
+
+### v1.3.0 → v1.5.0
+
+- Added `trace_file_hash`, `trace_dataset_hash`, `tokengate_config_hash` to run_meta
+- Added `trigger_type`, `summary_history_event_ids`, `summarizer_input_hash`, `limits_ok`, `failure_mode` to summary_event
+- Enhanced provenance tracking
 
 ### Backward Compatibility
 
