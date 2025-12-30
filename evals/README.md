@@ -578,6 +578,20 @@ docker compose -f docker-compose.evals.yml run --rm evals \
 - `data/metrics/per_case.metrics.jsonl` - Per-case metric records
 - `data/metrics/aggregate.metrics.json` - Aggregate statistics with CIs
 
+### Step 5b: Error Analysis for Outliers
+
+Generate trace excerpts, gate decisions, and summary outputs for cases flagged
+as latency spikes, excessive flushes, or low coverage.
+
+```bash
+docker compose -f docker-compose.evals.yml run --rm evals \
+  python -m evals.cli.error_analysis --metrics data/metrics/per_case.metrics.jsonl \
+    --runs data/runs/ --traces data/traces/ --output data/metrics/error_analysis
+```
+
+**Output:**
+- `data/metrics/error_analysis/error_analysis.jsonl` - Per-case error analysis extracts
+
 ### Step 6: TokenGate Calibration (Phase 5)
 
 **Paper hook: Section 3.3**
