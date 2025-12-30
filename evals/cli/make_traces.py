@@ -25,9 +25,9 @@ Critical Constraints:
 - Global seq ordering across entire trace (strictly increasing)
 - Deterministic sorting before seq assignment
 
-Usage (from evals/ directory or Docker container):
-    python src/make_traces.py --config configs/mas_generation.yaml --dry-run
-    python src/make_traces.py --config configs/mas_generation.yaml --limit 1
+Usage (from repo root or Docker container):
+    python -m evals.cli.make_traces --config configs/mas_generation.yaml --dry-run
+    python -m evals.cli.make_traces --config configs/mas_generation.yaml --limit 1
 """
 
 import argparse

@@ -21,8 +21,8 @@ Validation Rules:
 Stub Mode Warning:
 - Traces with stub_mode=true are flagged and should not be used for evaluation
 
-Usage (from evals/ directory or Docker container):
-    python -m evals.src.validate_traces --traces data/traces/ --verbose
+Usage (from repo root or Docker container):
+    python -m evals.cli.validate_traces --traces data/traces/ --verbose
 """
 
 import argparse
@@ -34,15 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-# Import trace_text module for canonical text validation
-try:
-    from trace_text import build_canonical_trace_text, TraceParsingError
-except ImportError:
-    # Fallback if running from different directory
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent))
-    from trace_text import build_canonical_trace_text, TraceParsingError
+from ..src.traces.trace_text import build_canonical_trace_text, TraceParsingError
 
 # Boundary timestamp tolerance (milliseconds)
 # Due to millisecond resolution and async timing, boundary timestamps may be

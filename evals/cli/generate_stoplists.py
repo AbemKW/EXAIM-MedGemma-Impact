@@ -9,12 +9,12 @@ preventing masking of variant-specific hallucinations (Section 6.1)"
 CRITICAL INVARIANTS:
     1. Uses SAME extractor config as metrics computation (drift-proof)
     2. Stoplist generation with stoplists DISABLED (non-circular)
-    3. Uses build_canonical_trace_text() from trace_text.py
+    3. Uses build_canonical_trace_text() from traces/trace_text.py
     4. Produces audit artifact for reviewer verification
 
 Dependencies:
-    - trace_text.py (canonical text)
-    - concept_extractor.py (CUI extraction)
+    - traces/trace_text.py (canonical text)
+    - extraction/concept_extractor.py (CUI extraction)
     - extractor config file (extractor settings)
 """
 
@@ -31,12 +31,9 @@ from typing import Optional
 
 import yaml
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
-
-from trace_text import build_canonical_trace_text, TraceParsingError
-from validate_traces import validate_all_traces
-from config_loader import load_extractor_config_for_stoplist_generation, get_configs_dir
+from ..src.traces.trace_text import build_canonical_trace_text, TraceParsingError
+from .validate_traces import validate_all_traces
+from ..src.config.config_loader import load_extractor_config_for_stoplist_generation
 
 
 def load_phase4_extractor_config(config_path: Path) -> dict:
@@ -589,4 +586,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

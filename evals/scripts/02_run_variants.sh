@@ -25,7 +25,7 @@ if [ ! -d "data/traces" ] || [ -z "$(ls -A data/traces 2>/dev/null)" ]; then
     echo ""
 fi
 
-python src/run_variants.py \
+python -m evals.cli.run_variants \
     --traces data/traces \
     --output data/runs \
     $VARIANT_ARG

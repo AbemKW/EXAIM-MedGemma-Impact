@@ -15,10 +15,7 @@ import pytest
 import warnings
 from pathlib import Path
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from trace_replay_engine import (
+from evals.src.traces.trace_replay_engine import (
     TraceReplayEngine,
     TraceValidationError,
     StubTraceError,
@@ -705,4 +702,3 @@ class TestIntegrationRealTraces:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

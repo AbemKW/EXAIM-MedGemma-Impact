@@ -7,11 +7,11 @@ chunks only, excluding orchestrator summaries and system artifacts (Section 3.1)
 
 This module is the SINGLE SOURCE OF TRUTH for trace text construction.
 It MUST be used by:
-    - generate_stoplists.py
+    - cli/generate_stoplists.py
     - metrics/computations.py for trace concept sets (M4/M5)
     - metrics/computations.py for window reconstruction (M6a/M6b)
-    - run_variants.py for buffer hash computation
-    - validate_traces.py for canonical text validation
+    - cli/run_variants.py for buffer hash computation
+    - cli/validate_traces.py for canonical text validation
     
 INVARIANT: No other module may implement trace/window text logic.
 All must import and use build_canonical_trace_text() or build_window_text().
@@ -313,7 +313,7 @@ if __name__ == "__main__":
     import sys
     
     if len(sys.argv) < 2:
-        print("Usage: python trace_text.py <trace_file.jsonl.gz>")
+        print("Usage: python -m evals.src.traces.trace_text <trace_file.jsonl.gz>")
         sys.exit(1)
     
     trace_path = Path(sys.argv[1])
@@ -331,7 +331,5 @@ if __name__ == "__main__":
     except TraceParsingError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
-
-
 
 

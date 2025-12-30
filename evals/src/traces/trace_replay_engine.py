@@ -389,12 +389,12 @@ class TraceReplayEngine:
         from pathlib import Path
         
         # Import from evals package (if running from repo root)
-        from evals.src.trace_replay_engine import TraceReplayEngine
+        from evals.src.traces.trace_replay_engine import TraceReplayEngine
         
         # Alternative: If running from evals/ directory, add src to path first:
         # import sys
         # sys.path.insert(0, "src")
-        # from trace_replay_engine import TraceReplayEngine
+        # from traces.trace_replay_engine import TraceReplayEngine
         
         engine = TraceReplayEngine(Path("trace.jsonl.gz"))
         
@@ -934,7 +934,7 @@ if __name__ == "__main__":
     import sys
     
     if len(sys.argv) < 2:
-        print("Usage: python cli/replay_trace.py <trace_file.jsonl.gz>")
+        print("Usage: python -m evals.cli.replay_trace <trace_file.jsonl.gz>")
         sys.exit(1)
     
     trace_path = Path(sys.argv[1])
@@ -972,4 +972,3 @@ if __name__ == "__main__":
     except TraceReplayError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
-
