@@ -245,13 +245,32 @@ Examples:
     
     args = parser.parse_args()
     
-    if not args.trace_file.exists():
-        print(f"ERROR: Trace file not found: {args.trace_file}", file=sys.stderr)
+    # Resolve trace file path - try relative to current dir first, then evals root
+    trace_path = args.trace_file
+    if not trace_path.is_absolute() and not trace_path.exists():
+        # Try resolving relative to evals root
+        # __file__ is evals/cli/replay_trace.py, so parents[1] is evals/
+        evals_root = Path(__file__).resolve().parents[1]
+        evals_relative_path = evals_root / trace_path
+        if evals_relative_path.exists():
+            trace_path = evals_relative_path
+        else:
+            # Provide helpful error message
+            print(f"ERROR: Trace file not found: {args.trace_file}", file=sys.stderr)
+            print(f"  Tried:", file=sys.stderr)
+            print(f"    - {trace_path.resolve()}", file=sys.stderr)
+            print(f"    - {evals_relative_path.resolve()}", file=sys.stderr)
+            print(f"  Current directory: {Path.cwd()}", file=sys.stderr)
+            print(f"  Evals root: {evals_root}", file=sys.stderr)
+            return 1
+    
+    if not trace_path.exists():
+        print(f"ERROR: Trace file not found: {trace_path}", file=sys.stderr)
         return 1
     
     try:
         engine = TraceReplayEngine(
-            args.trace_file,
+            trace_path,
             strict_stub_guard=not args.allow_stub,
             shift_to_zero=args.shift_to_zero,
         )

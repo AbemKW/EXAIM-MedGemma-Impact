@@ -532,6 +532,27 @@ def main():
     
     args = parser.parse_args()
     
+    # Resolve relative paths relative to evals root
+    evals_root = Path(__file__).resolve().parents[1]  # cli -> evals
+    
+    def resolve_path(path: Path) -> Path:
+        """Resolve relative paths relative to evals root."""
+        if path.is_absolute():
+            return path
+        # Try current directory first, then evals root
+        if path.exists():
+            return path
+        evals_path = evals_root / path
+        if evals_path.exists():
+            return evals_path
+        return path  # Return as-is if neither exists (let downstream handle error)
+    
+    args.traces = resolve_path(args.traces)
+    args.output = resolve_path(args.output)
+    args.config = resolve_path(args.config)
+    if args.report:
+        args.report = resolve_path(args.report)
+    
     print("=" * 60)
     print("EXAID Stoplist Generation")
     print("=" * 60)
