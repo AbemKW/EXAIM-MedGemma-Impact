@@ -30,6 +30,7 @@ Dependencies:
 """
 
 import argparse
+import hashlib
 import json
 import math
 import subprocess
@@ -670,7 +671,12 @@ def compute_flush_statistics(flushes: List[dict]) -> dict:
         if ts_ms is None:
             continue
         if prev_ts_ms is not None:
-            intervals_ms.append(ts_ms - prev_ts_ms)
+            interval = ts_ms - prev_ts_ms
+            if interval < 0:
+                raise ValueError(
+                    "Flush timestamps are not monotonic; check flush_index ordering."
+                )
+            intervals_ms.append(interval)
         prev_ts_ms = ts_ms
     stats["flush_interval_ms_distribution"] = compute_distribution(intervals_ms)
     stats["flush_interval_ms_values"] = [float(value) for value in intervals_ms]
@@ -695,9 +701,7 @@ def compute_virtual_time_throughput(
             "summary_ctu_per_s": None,
         }
     duration_ms = max(t_rel_values) - min(t_rel_values)
-    duration_s = duration_ms / 1000 if duration_ms is not None else None
-    if duration_s == 0:
-        duration_s = 0.0
+    duration_s = duration_ms / 1000
     trace_ctu_per_s = None
     summary_ctu_per_s = None
     if duration_s and duration_s > 0:
@@ -741,8 +745,6 @@ def compute_manifest_hash(
     trace_entries: List[tuple]
 ) -> str:
     """Compute manifest trace_dataset_hash per schema."""
-    import hashlib
-
     canonical = {
         "mas_run_id": mas_run_id,
         "case_list_hash": case_list_hash,
@@ -750,6 +752,13 @@ def compute_manifest_hash(
     }
     canonical_json = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
     return f"sha256:{hashlib.sha256(canonical_json.encode()).hexdigest()}"
+
+
+def safe_file_hash(path: Path) -> Optional[str]:
+    """Compute file hash if it exists, else return None."""
+    if path.exists():
+        return compute_file_hash(path)
+    return None
 
 
 def load_manifest_provenance(manifest_path: Path) -> dict:
@@ -863,6 +872,11 @@ def compute_per_case_metrics(
     # Sort events by index
     summary_events.sort(key=lambda e: e.get("event_index", 0))
 
+    if expected_tokengate_config_hash and not run_meta:
+        raise ValueError(
+            f"Missing run_meta for {case_id} ({variant_id}); "
+            "cannot validate TokenGate config hash."
+        )
     if run_meta and expected_tokengate_config_hash:
         run_tokengate_hash = run_meta.get("tokengate_config_hash")
         metrics.tokengate_config_hash_match = (
@@ -1433,7 +1447,7 @@ def main():
         expected_tokengate_hash = compute_tokengate_config_hash(variant_config)
         variant_config_path = args.configs / "variants" / f"{variant_id}.yaml"
         variant_provenance[variant_id] = {
-            "variant_config_hash": compute_file_hash(variant_config_path),
+            "variant_config_hash": safe_file_hash(variant_config_path),
             "tokengate_config_hash": expected_tokengate_hash,
         }
         
@@ -1655,8 +1669,8 @@ def main():
         "computed_at": datetime.now(timezone.utc).isoformat(),
         "code_version": get_git_commit(Path(__file__).resolve().parents[2]),
         "configs": {
-            "extractor_config_hash": compute_file_hash(args.configs / "extractor.yaml"),
-            "metrics_config_hash": compute_file_hash(args.configs / "metrics.yaml"),
+            "extractor_config_hash": safe_file_hash(args.configs / "extractor.yaml"),
+            "metrics_config_hash": safe_file_hash(args.configs / "metrics.yaml"),
             "variant_configs": variant_provenance,
         },
         "dataset": manifest_info,
