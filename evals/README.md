@@ -938,10 +938,11 @@ evals/
 │   ├── deterministic_utils.py     # Timestamps, IDs, CTU
 │   ├── deterministic_io.py        # gzip/JSON writing
 │   ├── concept_extractor.py       # CUI extraction
+│   ├── metrics/                   # Metric helpers (types, computations, aggregation)
 │   ├── validate_logs.py           # Schema validation
 │   ├── make_traces.py             # Trace generation (MAC integration)
 │   ├── run_variants.py            # Variant replay engine
-│   ├── compute_metrics.py         # M1-M10 metrics
+│   ├── compute_metrics.py         # M1-M10 metrics orchestration
 │   └── test_concept_extractor.py  # Unit tests
 ├── cli/                           # CLI tools (runnable inspection/debug tools)
 │   └── replay_trace.py            # Trace replay CLI tool

@@ -5,7 +5,7 @@ import warnings
 
 import pytest
 
-from compute_metrics import (
+from metrics import (
     compute_distribution,
     compute_flush_statistics,
     compute_manifest_hash,

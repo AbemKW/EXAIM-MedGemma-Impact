@@ -1,0 +1,5 @@
+"""Metric configuration constants."""
+
+METRICS_SCHEMA_VERSION = "2.1.0"
+REDUNDANCY_THRESHOLDS = [0.85, 0.90, 0.95]
+BUFFER_COVERAGE_BUDGETS = [250, 500, 1000, 2000]
