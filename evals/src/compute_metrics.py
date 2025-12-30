@@ -35,6 +35,7 @@ import json
 import math
 import subprocess
 import sys
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -663,9 +664,9 @@ def compute_flush_statistics(flushes: List[dict]) -> dict:
     stats["flush_accumulated_ctu_distribution"] = compute_distribution(accumulated_ctu)
     stats["flush_accumulated_ctu_values"] = [float(value) for value in accumulated_ctu]
 
-    sorted_flushes = sorted(flushes, key=lambda f: f.get("flush_index", 0))
     intervals_ms = []
     prev_ts_ms = None
+    sorted_flushes = sorted(flushes, key=lambda f: f.get("flush_index", 0))
     for flush in sorted_flushes:
         ts_ms = parse_timestamp_ms(flush.get("timestamp"))
         if ts_ms is None:
@@ -673,9 +674,10 @@ def compute_flush_statistics(flushes: List[dict]) -> dict:
         if prev_ts_ms is not None:
             interval = ts_ms - prev_ts_ms
             if interval < 0:
-                raise ValueError(
-                    "Flush timestamps are not monotonic; check flush_index ordering."
+                warnings.warn(
+                    "Flush timestamps are not monotonic; skipping negative interval."
                 )
+                continue
             intervals_ms.append(interval)
         prev_ts_ms = ts_ms
     stats["flush_interval_ms_distribution"] = compute_distribution(intervals_ms)
@@ -704,7 +706,7 @@ def compute_virtual_time_throughput(
     duration_s = duration_ms / 1000
     trace_ctu_per_s = None
     summary_ctu_per_s = None
-    if duration_s and duration_s > 0:
+    if duration_s > 0:
         trace_ctu_per_s = trace_ctu / duration_s
         summary_ctu_per_s = summary_ctu / duration_s
     return {
@@ -718,7 +720,12 @@ def compute_overhead_attribution(
     summary_latencies: List[float],
     buffer_latencies: List[float]
 ) -> dict:
-    """Compute control-plane vs content-plane overhead attribution."""
+    """
+    Compute control-plane vs content-plane overhead attribution.
+
+    summary_latencies -> content-plane (summarizer)
+    buffer_latencies -> control-plane (buffer/decision)
+    """
     content_plane = float(sum(summary_latencies))
     control_plane = float(sum(buffer_latencies))
     total = content_plane + control_plane
@@ -874,7 +881,7 @@ def compute_per_case_metrics(
 
     if expected_tokengate_config_hash and not run_meta:
         raise ValueError(
-            f"Missing run_meta for {case_id} ({variant_id}); "
+            f"Missing run_meta for {case_id} ({variant_id}) in {run_log_path}; "
             "cannot validate TokenGate config hash."
         )
     if run_meta and expected_tokengate_config_hash:
@@ -1412,7 +1419,9 @@ def main():
             if len(manifest_candidates) == 1:
                 manifest_path = manifest_candidates[0]
             elif len(manifest_candidates) > 1:
-                print("WARNING: Multiple manifests found. Use --manifest to select one.")
+                raise ValueError(
+                    "Multiple manifests found. Use --manifest to select one."
+                )
     manifest_info = None
     if manifest_path and manifest_path.exists():
         manifest_info = load_manifest_provenance(manifest_path)
@@ -1458,6 +1467,9 @@ def main():
         
         per_case_metrics = []
         
+        manifest_hash_valid = manifest_info["manifest_hash_valid"] if manifest_info else None
+        manifest_trace_dataset_hash = manifest_info["computed_hash"] if manifest_info else None
+
         for run_log_path in run_logs:
             case_id = run_log_path.stem.replace(".jsonl", "")
             trace_file = args.traces / f"{case_id}.jsonl.gz"
@@ -1480,10 +1492,8 @@ def main():
                     trace_file,
                     extractor,
                     expected_tokengate_config_hash=expected_tokengate_hash,
-                    manifest_hash_valid=manifest_info["manifest_hash_valid"]
-                    if manifest_info else None,
-                    manifest_trace_dataset_hash=manifest_info["computed_hash"]
-                    if manifest_info else None,
+                    manifest_hash_valid=manifest_hash_valid,
+                    manifest_trace_dataset_hash=manifest_trace_dataset_hash,
                 )
                 per_case_metrics.append(metrics)
                 all_per_case.append(metrics)
@@ -1577,9 +1587,7 @@ def main():
         "schema_name": "exaid.metrics",
         "schema_version": METRICS_SCHEMA_VERSION,
         "metrics_type": "aggregate",
-        "computed_at": __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat(),
+        "computed_at": datetime.now(timezone.utc).isoformat(),
         "bootstrap_samples": args.bootstrap_samples,
         "seed": args.seed,
         "variants": {}
