@@ -6,6 +6,7 @@ Command-line entry points for trace generation, replay, validation, and metrics.
 - `make_traces.py`: Generate timed traces from MAC.
 - `run_variants.py`: Replay traces through evaluation variants.
 - `compute_metrics.py`: Compute per-case and aggregate metrics.
+- `error_analysis.py`: Extract trace excerpts and decisions for outlier cases.
 - `validate_traces.py`: Validate trace integrity.
 - `validate_logs.py`: Validate log files against schemas.
 - `generate_stoplists.py`: Build stoplists from frozen traces.

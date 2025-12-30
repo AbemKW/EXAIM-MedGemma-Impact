@@ -3,8 +3,10 @@
 import json
 import warnings
 
+import numpy as np
 import pytest
 
+from evals.cli.compute_metrics import _percentile_threshold, apply_outlier_flags
 from evals.src.metrics import (
     compute_distribution,
     compute_flush_statistics,
@@ -13,6 +15,7 @@ from evals.src.metrics import (
     compute_virtual_time_throughput,
     load_manifest_provenance,
 )
+from evals.src.metrics.types import PerCaseMetrics
 
 
 def test_compute_distribution_empty():
@@ -89,3 +92,96 @@ def test_load_manifest_provenance_valid(tmp_path):
     info = load_manifest_provenance(manifest_path)
     assert info["manifest_hash_valid"] is True
     assert info["dataset_id"] == "ds-1"
+
+
+def test_percentile_threshold_empty_returns_none():
+    assert _percentile_threshold([], 95) is None
+
+
+def test_percentile_threshold_matches_numpy():
+    values = [10.0, 20.0, 30.0, 40.0, 50.0]
+    expected = float(np.percentile(np.array(values, dtype=float), 95))
+    assert _percentile_threshold(values, 95) == expected
+
+
+def test_apply_outlier_flags_handles_empty_input():
+    apply_outlier_flags([])
+
+
+def test_apply_outlier_flags_assigns_flags():
+    metrics = [
+        PerCaseMetrics(
+            case_id="case-a",
+            variant_id="V0",
+            mean_summary_latency_ms=100.0,
+            flush_count=2,
+            trace_coverage=0.9,
+        ),
+        PerCaseMetrics(
+            case_id="case-b",
+            variant_id="V0",
+            mean_summary_latency_ms=120.0,
+            flush_count=4,
+            trace_coverage=0.5,
+        ),
+        PerCaseMetrics(
+            case_id="case-c",
+            variant_id="V1",
+            mean_summary_latency_ms=1000.0,
+            flush_count=30,
+            trace_coverage=0.1,
+        ),
+    ]
+
+    apply_outlier_flags(metrics)
+
+    assert metrics[2].outlier_latency_spike is True
+    assert metrics[2].outlier_excessive_flushes is True
+    assert metrics[2].outlier_low_coverage is True
+    assert set(metrics[2].outlier_flags) == {
+        "latency_spike",
+        "excessive_flushes",
+        "low_coverage",
+    }
+
+    assert metrics[0].outlier_flags == []
+    assert metrics[1].outlier_flags == []
+
+
+def test_apply_outlier_flags_ignores_none_latency():
+    metrics = [
+        PerCaseMetrics(
+            case_id="case-a",
+            variant_id="V0",
+            mean_summary_latency_ms=None,
+            flush_count=10,
+            trace_coverage=0.9,
+        ),
+        PerCaseMetrics(
+            case_id="case-b",
+            variant_id="V0",
+            mean_summary_latency_ms=200.0,
+            flush_count=10,
+            trace_coverage=0.9,
+        ),
+    ]
+
+    apply_outlier_flags(metrics)
+    assert metrics[0].outlier_latency_spike is False
+    assert metrics[0].outlier_flags == []
+
+
+def test_apply_outlier_flags_all_same_values():
+    metrics = [
+        PerCaseMetrics(
+            case_id=f"case-{i}",
+            variant_id="V0",
+            mean_summary_latency_ms=100.0,
+            flush_count=5,
+            trace_coverage=0.5,
+        )
+        for i in range(3)
+    ]
+
+    apply_outlier_flags(metrics)
+    assert all(metric.outlier_flags == [] for metric in metrics)

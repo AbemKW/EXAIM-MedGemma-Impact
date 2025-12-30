@@ -102,6 +102,12 @@ class PerCaseMetrics:
     schema_failure_rate: float = 0.0
     compliance_rate: float = 0.0
 
+    # Outlier flags
+    outlier_flags: List[str] = field(default_factory=list)
+    outlier_latency_spike: bool = False
+    outlier_excessive_flushes: bool = False
+    outlier_low_coverage: bool = False
+
     # Integrity checks
     tokengate_config_hash_match: Optional[bool] = None
     dataset_manifest_hash_valid: Optional[bool] = None
