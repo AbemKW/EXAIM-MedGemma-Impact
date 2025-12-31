@@ -260,15 +260,25 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         if not segments:
             return "(Buffer empty)"
 
-        agent_segments_map: dict[str, list[str]] = {}
-        for item in segments:
-            agent_segments_map.setdefault(item.agent_id, []).append(item.segment)
+        lines = ["BEGIN TRACE"]
+        last_agent = None
+        acc = []
 
-        formatted_parts = ["BEGIN AGENT SEGMENTS"]
-        for agent_id, grouped_segments in agent_segments_map.items():
-            formatted_parts.append(f"[{agent_id}] " + " ".join(grouped_segments))
-        formatted_parts.append("END AGENT SEGMENTS")
-        return "\n".join(formatted_parts)
+        def flush():
+            nonlocal acc, last_agent
+            if acc and last_agent is not None:
+                lines.append(f"[{last_agent}] " + " ".join(acc))
+            acc = []
+
+        for s in segments:
+            if s.agent_id != last_agent:
+                flush()
+                last_agent = s.agent_id
+            acc.append(s.segment)
+
+        flush()
+        lines.append("END TRACE")
+        return "\n".join(lines)
 
     async def summarize(
         self,
