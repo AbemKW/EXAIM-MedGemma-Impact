@@ -1,5 +1,6 @@
 from typing import Optional, Callable, List
 from exaid_core.buffer_agent.buffer_agent import BufferAgent
+from exaid_core.schema.agent_segment import AgentSegment
 from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
 from exaid_core.token_gate.token_gate import TokenGate
 from exaid_core.schema.agent_summary import AgentSummary
@@ -104,13 +105,12 @@ class EXAID:
         
         trigger = await self.buffer_agent.addsegment(agent_id, text, previous_summaries)
         if trigger:
-            agent_segments, agent_ids = self.buffer_agent.flush()
+            agent_segments = self.buffer_agent.flush()
             all_summaries = self.get_all_summaries()
             summary_history_strs = self._get_limited_history(all_summaries[:-1])
             latest_summary_str = self._format_summary_for_history(all_summaries[-1]) if all_summaries else "No summaries yet."
-            segments_with_agents = list(zip(agent_ids, agent_segments))
             summary = await self.summarizer_agent.summarize(
-                segments_with_agents,
+                agent_segments,
                 summary_history_strs,
                 latest_summary_str
             )
@@ -162,12 +162,12 @@ class EXAID:
             previous_summaries
         )
         if trigger:
-            agent_segments, agent_ids = self.buffer_agent.flush()
+            # Flush returns deferred tail + current buffer content.
+            agent_segments = self.buffer_agent.flush()
             summary_history_strs = self._get_limited_history(summaries[:-1])
             latest_summary_str = self._format_summary_for_history(summaries[-1]) if summaries else "No summaries yet."
-            segments_with_agents = list(zip(agent_ids, agent_segments))
             summary = await self.summarizer_agent.summarize(
-                segments_with_agents,
+                agent_segments,
                 summary_history_strs,
                 latest_summary_str
             )
@@ -185,37 +185,17 @@ class EXAID:
             return summary
         return None
 
-    async def flush_agent(self, agent_id: str) -> Optional[AgentSummary]:
-        """Flush remaining tokens for the given agent."""
+    async def flush_agent(self, agent_id: str) -> None:
+        """Flush remaining tokens and park them without triggering summarization."""
         remaining = await self.token_gate.flush(agent_id)
-        if remaining:
-            summaries = self.get_all_summaries()
-            summary = await self._process_chunk(agent_id, remaining, summaries)
-            
-            # If no summary was triggered but buffer has content, force a summary
-            if summary is None and self.buffer_agent.buffer:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"Forcing final summary for {agent_id} with remaining buffer content")
-                agent_segments, agent_ids = self.buffer_agent.flush()
-                summary_history_strs = self._get_limited_history(summaries[:-1])
-                latest_summary_str = self._format_summary_for_history(summaries[-1]) if summaries else "No summaries yet."
-                segments_with_agents = list(zip(agent_ids, agent_segments))
-                summary = await self.summarizer_agent.summarize(
-                    segments_with_agents,
-                    summary_history_strs,
-                    latest_summary_str
-                )
-                if summary is not None:
-                    self.summaries.append(summary)
-                    self._print_summary(summary)
-                    
-                    # Emit summary event to callbacks
-                    for callback in self.summary_callbacks:
-                        try:
-                            callback(summary)
-                        except Exception as e:
-                            print(f"Error in summary callback: {e}")
-            
-            return summary
+        if not remaining:
+            return None
+
+        import logging
+        logger = logging.getLogger(__name__)
+        self.buffer_agent.park_tail([AgentSegment(agent_id=agent_id, segment=remaining)])
+        logger.debug(
+            "Parked 1 segment for %s in tail buffer",
+            agent_id
+        )
         return None

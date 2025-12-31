@@ -126,7 +126,7 @@ def get_buffer_agent_system_prompt() -> str:
 Your goal is to prevent "jittery" updates. You must only interrupt the doctor with a summary when a **coherent clinical topic is fully addressed**.
 
 **YOUR CORE TASK:**
-Analyze the "New trace" in the context of the "Buffer". You will be informed which agent's traces you are analyzing. Evaluate completeness, determine the stream state using a three-state machine, then independently evaluate relevance and novelty.
+Analyze the "New trace" in the context of the "Buffer". Evaluate completeness, determine the stream state using a three-state machine, then independently evaluate relevance and novelty.
 
 **COMPLETENESS DETECTION (is_complete):**
 
@@ -211,24 +211,21 @@ Set to True if ANY of these conditions are met:
 This dual-path approach allows triggering on completed thoughts even when the topic hasn't shifted, preventing the "wait too long" failure mode while preserving smart pacing.
 
 **INPUTS:**
-- Agent ID: The identifier of the agent whose traces you are analyzing (e.g., "Laboratory Agent", "Cardiology Agent").
 - Previous Summaries: What the user already knows.
-- Current Buffer: The unspoken thoughts accumulating right now.
-- New Trace: The latest sentence(s) added to the buffer.
+- Current Buffer: The unspoken thoughts accumulating right now (grouped by agent).
+- New Trace: The latest segment block (grouped by agent).
 """
 
 
 def get_buffer_agent_user_prompt() -> str:
     """Returns the user prompt template for the BufferAgent."""
-    return """Agent ID: {agent_id}
-
-Previous Summaries:
+    return """Previous Summaries:
 {summaries}
 
 Current Buffer (Unsummarized Context):
 {previous_trace}
 
-New Trace (Latest Segment):
+New Trace (Latest Segment Block):
 {new_trace}
 
 Analyze completeness, stream state, relevance, and novelty. Provide structured analysis."""
@@ -240,7 +237,7 @@ def get_buffer_agent_system_prompt_no_novelty() -> str:
 Your goal is to prevent "jittery" updates. You must only interrupt the doctor with a summary when a **coherent clinical topic is fully addressed**.
 
 **YOUR CORE TASK:**
-Analyze the "New trace" in the context of the "Buffer". You will be informed which agent's traces you are analyzing. Evaluate completeness, determine the stream state using a three-state machine, then independently evaluate relevance.
+Analyze the "New trace" in the context of the "Buffer". Evaluate completeness, determine the stream state using a three-state machine, then independently evaluate relevance.
 
 **COMPLETENESS DETECTION (is_complete):**
 
@@ -302,8 +299,7 @@ Set to True if ANY of these conditions are met:
 This dual-path approach allows triggering on completed thoughts even when the topic hasn't shifted, preventing the "wait too long" failure mode while preserving smart pacing.
 
 **INPUTS:**
-- Agent ID: The identifier of the agent whose traces you are analyzing (e.g., "Laboratory Agent", "Cardiology Agent").
 - Previous Summaries: What the user already knows.
-- Current Buffer: The unspoken thoughts accumulating right now.
-- New Trace: The latest sentence(s) added to the buffer.
+- Current Buffer: The unspoken thoughts accumulating right now (grouped by agent).
+- New Trace: The latest segment block (grouped by agent).
 """

@@ -1,11 +1,12 @@
 from langchain_core.prompts import ChatPromptTemplate
 from exaid_core.schema.agent_summary import AgentSummary
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from pydantic import ValidationError
 import json
 import logging
 from infra import get_llm, LLMRole
 from exaid_core.utils.prompts import get_summarizer_system_prompt, get_summarizer_user_prompt
+from exaid_core.schema.agent_segment import AgentSegment
 
 class SummarizerAgent:
     def __init__(self):
@@ -256,9 +257,25 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         
         return None
     
+    @staticmethod
+    def format_segments_for_prompt(segments: List[AgentSegment]) -> Tuple[str, str]:
+        agent_segments_map = {}
+        for item in segments:
+            agent_segments_map.setdefault(item.agent_id, []).append(item.segment)
+
+        formatted_parts = ["BEGIN AGENT SEGMENTS"]
+        for agent_id, grouped_segments in agent_segments_map.items():
+            combined_segments = " ".join(grouped_segments)
+            formatted_parts.append(f"[{agent_id}] {combined_segments}")
+        formatted_parts.append("END AGENT SEGMENTS")
+
+        new_buffer = "\n".join(formatted_parts)
+        agent_ids_str = ", ".join(sorted(agent_segments_map.keys())) if agent_segments_map else "Unknown"
+        return new_buffer, agent_ids_str
+
     async def summarize(
         self,
-        segments_with_agents: List[tuple[str, str]],
+        segments_with_agents: List[AgentSegment],
         summary_history: List[str],
         latest_summary: str,
     ) -> AgentSummary:
@@ -270,7 +287,7 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         3. Fallback truncation if retry still fails
         
         Args:
-            segments_with_agents: List of (agent_id, segment) tuples representing agent contributions
+            segments_with_agents: List of AgentSegment items representing agent contributions
             summary_history: List of previous summary strings
             latest_summary: Most recent summary string
             
@@ -283,21 +300,7 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         """
         summarize_chain = self.summarize_prompt | self.llm
         
-        # Format segments efficiently: group by agent to minimize token overhead
-        agent_segments_map = {}
-        for agent_id, segment in segments_with_agents:
-            if agent_id not in agent_segments_map:
-                agent_segments_map[agent_id] = []
-            agent_segments_map[agent_id].append(segment)
-        
-        # Format as: [Agent1] segment1 segment2\n[Agent2] segment3
-        formatted_parts = []
-        for agent_id, segments in agent_segments_map.items():
-            combined_segments = " ".join(segments)
-            formatted_parts.append(f"[{agent_id}] {combined_segments}")
-        
-        new_buffer = "\n".join(formatted_parts)
-        agent_ids_str = ", ".join(sorted(agent_segments_map.keys())) if agent_segments_map else "Unknown"
+        new_buffer, agent_ids_str = self.format_segments_for_prompt(segments_with_agents)
         
         # Attempt 1: Initial structured output
         try:

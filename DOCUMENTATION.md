@@ -1083,10 +1083,8 @@ async def main():
             print(f"Differential/Rationale: {summary.differential_rationale}")
         await asyncio.sleep(0.1)  # Simulate streaming delay
     
-    # Flush any remaining tokens
-    final_summary = await exaid.flush_agent("DoctorAgent")
-    if final_summary:
-        print(f"Final summary: {final_summary.status_action}")
+    # Flush any remaining tokens (parks tail content; no summary is produced here)
+    await exaid.flush_agent("DoctorAgent")
 
 asyncio.run(main())
 ```
@@ -1208,4 +1206,3 @@ This is an experimental prototype. Contributions and feedback are welcome!
 ---
 
 *Last Updated: Generated from codebase analysis*
-

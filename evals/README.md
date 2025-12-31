@@ -640,7 +640,7 @@ evals/data/calibration/calib_<hash8>_<hash8>_<hash8>/
 3. **Production-Faithful Replay**: Deterministic replay matching production behavior exactly
    - Uses `TokenGate` with `ManualClock` for virtual time
    - Timers checked synchronously: inside `add_token()` (silence check) and after `add_token()` via `check_timers()`
-   - Explicit flush at `turn_end` events (matching production `flush_agent()` behavior)
+   - Explicit TokenGate flush at `turn_end` events (matching production `flush_agent()` behavior)
    - **No gap-based timer processing** (production has no background/tick loop)
    - Multi-agent support (per-agent buffers)
 

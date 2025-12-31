@@ -83,7 +83,6 @@ class LaboratoryAgent(DemoBaseAgent):
             else:
                 raise
 
-        # 3. After stream ends: flush final chunk from TokenGate
+        # 3. After stream ends: flush remaining TokenGate content (parks tail content for later)
         if self.exaid:
             await self.exaid.flush_agent(self.agent_id)
-
