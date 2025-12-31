@@ -5,11 +5,12 @@ from exaid_core.token_gate.token_gate import TokenGate
 from exaid_core.schema.agent_summary import AgentSummary
 
 class EXAID:
-    def __init__(self):
+    def __init__(self, history_k: int = 3):
         self.buffer_agent = BufferAgent()
         self.summarizer_agent = SummarizerAgent()
         self.token_gate = TokenGate()
         self.summaries: list[AgentSummary] = []
+        self.history_k = history_k
         self.trace_callbacks: List[Callable[[str, str], None]] = []
         self.summary_callbacks: List[Callable[[AgentSummary], None]] = []
     
@@ -76,6 +77,11 @@ class EXAID:
         """Converts a list of AgentSummary objects to string representations for prompt history."""
         return [self._format_summary_for_history(s) for s in summaries]
 
+    def _get_limited_history(self, summaries: list[AgentSummary]) -> list[str]:
+        """Get the last k summary entries."""
+        limited = summaries[-self.history_k:] if self.history_k > 0 else []
+        return self._format_summaries_history(limited)
+
     async def received_trace(self, agent_id: str, text: str) -> Optional[AgentSummary]:
         """
         Processes a trace for the given agent ID and text, triggering summarization if appropriate.
@@ -94,20 +100,19 @@ class EXAID:
         
         # Prepare previous summaries for buffer agent evaluation
         all_summaries = self.get_all_summaries()
-        previous_summaries = self._format_summaries_history(all_summaries)
+        previous_summaries = self._get_limited_history(all_summaries)
         
         trigger = await self.buffer_agent.addsegment(agent_id, text, previous_summaries)
         if trigger:
-            agent_buffer = self.buffer_agent.flush()
-            buffer_str = "\n".join(agent_buffer)
+            agent_segments, agent_ids = self.buffer_agent.flush()
             all_summaries = self.get_all_summaries()
-            summary_history_strs = self._format_summaries_history(all_summaries[:-1]) if len(all_summaries) > 1 else []
+            summary_history_strs = self._get_limited_history(all_summaries[:-1])
             latest_summary_str = self._format_summary_for_history(all_summaries[-1]) if all_summaries else "No summaries yet."
+            segments_with_agents = list(zip(agent_ids, agent_segments))
             summary = await self.summarizer_agent.summarize(
-                agent_id,
+                segments_with_agents,
                 summary_history_strs,
-                latest_summary_str,
-                buffer_str
+                latest_summary_str
             )
             if summary is not None:
                 self.summaries.append(summary)
@@ -138,35 +143,33 @@ class EXAID:
         # Process chunk if complete
         if chunk:
             summaries = self.get_all_summaries()
-            previous_summaries = self._format_summaries_history(summaries)
-            return await self._process_chunk(agent_id, chunk, previous_summaries, summaries)
+            return await self._process_chunk(agent_id, chunk, summaries)
 
         # Check TokenGate timers
         timer_chunk = await self.token_gate.check_timers(agent_id)
         if timer_chunk:
             summaries = self.get_all_summaries()
-            previous_summaries = self._format_summaries_history(summaries)
-            return await self._process_chunk(agent_id, timer_chunk, previous_summaries, summaries)
+            return await self._process_chunk(agent_id, timer_chunk, summaries)
 
         return None
 
-    async def _process_chunk(self, agent_id: str, chunk: str, previous_summaries: list[str], summaries: list[AgentSummary]) -> Optional[AgentSummary]:
+    async def _process_chunk(self, agent_id: str, chunk: str, summaries: list[AgentSummary]) -> Optional[AgentSummary]:
         """Process a chunk of text for summarization."""
+        previous_summaries = self._get_limited_history(summaries)
         trigger = await self.buffer_agent.addsegment(
             agent_id,
             chunk,
             previous_summaries
         )
         if trigger:
-            agent_buffer = self.buffer_agent.flush()
-            buffer_str = "\n".join(agent_buffer)
-            summary_history_strs = self._format_summaries_history(summaries[:-1]) if len(summaries) > 1 else []
+            agent_segments, agent_ids = self.buffer_agent.flush()
+            summary_history_strs = self._get_limited_history(summaries[:-1])
             latest_summary_str = self._format_summary_for_history(summaries[-1]) if summaries else "No summaries yet."
+            segments_with_agents = list(zip(agent_ids, agent_segments))
             summary = await self.summarizer_agent.summarize(
-                agent_id,
+                segments_with_agents,
                 summary_history_strs,
-                latest_summary_str,
-                buffer_str
+                latest_summary_str
             )
             if summary is not None:
                 self.summaries.append(summary)
@@ -187,23 +190,21 @@ class EXAID:
         remaining = await self.token_gate.flush(agent_id)
         if remaining:
             summaries = self.get_all_summaries()
-            previous_summaries = self._format_summaries_history(summaries)
-            summary = await self._process_chunk(agent_id, remaining, previous_summaries, summaries)
+            summary = await self._process_chunk(agent_id, remaining, summaries)
             
             # If no summary was triggered but buffer has content, force a summary
             if summary is None and self.buffer_agent.buffer:
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.info(f"Forcing final summary for {agent_id} with remaining buffer content")
-                agent_buffer = self.buffer_agent.flush()
-                buffer_str = "\n".join(agent_buffer)
-                summary_history_strs = self._format_summaries_history(summaries[:-1]) if len(summaries) > 1 else []
+                agent_segments, agent_ids = self.buffer_agent.flush()
+                summary_history_strs = self._get_limited_history(summaries[:-1])
                 latest_summary_str = self._format_summary_for_history(summaries[-1]) if summaries else "No summaries yet."
+                segments_with_agents = list(zip(agent_ids, agent_segments))
                 summary = await self.summarizer_agent.summarize(
-                    agent_id,
+                    segments_with_agents,
                     summary_history_strs,
-                    latest_summary_str,
-                    buffer_str
+                    latest_summary_str
                 )
                 if summary is not None:
                     self.summaries.append(summary)

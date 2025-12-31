@@ -196,7 +196,13 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
                 pass
         return None
 
-    async def _get_raw_output(self, agent_ids: str, summary_history: List[str], latest_summary: str, new_buffer: str) -> Dict[str, Any]:
+    async def _get_raw_output(
+        self,
+        agent_ids: str,
+        summary_history: List[str],
+        latest_summary: str,
+        new_buffer: str,
+    ) -> Dict[str, Any]:
         """Get raw LLM output as a dictionary, extracting JSON if needed.
         
         Returns:
@@ -250,7 +256,12 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         
         return None
     
-    async def summarize(self, segments_with_agents: List[tuple[str, str]], summary_history: List[str], latest_summary: str) -> AgentSummary:
+    async def summarize(
+        self,
+        segments_with_agents: List[tuple[str, str]],
+        summary_history: List[str],
+        latest_summary: str,
+    ) -> AgentSummary:
         """Summarize agent output with automatic retry and fallback truncation.
         
         This method attempts to get a valid summary up to 3 times:
@@ -310,7 +321,12 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
                     try:
                         # Get raw output if not already extracted
                         if previous_output is None:
-                            previous_output = await self._get_raw_output(agent_ids_str, summary_history, latest_summary, new_buffer)
+                            previous_output = await self._get_raw_output(
+                                agent_ids_str,
+                                summary_history,
+                                latest_summary,
+                                new_buffer,
+                            )
                         
                         if previous_output is None:
                             # Can't extract output, use fallback truncation on a minimal dict
@@ -335,7 +351,12 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
                         # Attempt 3: Fallback truncation
                         # Get the raw output if we don't have it
                         if previous_output is None:
-                            previous_output = await self._get_raw_output(agent_ids_str, summary_history, latest_summary, new_buffer)
+                            previous_output = await self._get_raw_output(
+                                agent_ids_str,
+                                summary_history,
+                                latest_summary,
+                                new_buffer,
+                            )
                         
                         if previous_output is None:
                             # Last resort: re-raise the original validation error
