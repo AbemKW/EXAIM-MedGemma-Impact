@@ -118,6 +118,7 @@ The system is organized around a few small modules:
 
 - `exaid_core/exaid.py` — EXAID orchestrator class
   - Purpose: Collects traces from agents, buffers them, and produces summaries using an LLM. Maintains a list of all summaries.
+  - Note: `flush_agent(...)` parks any remaining tokens for later summarization rather than forcing a summary.
   - Key methods:
     - `received_trace(agent_id, text)` — Call this to add a trace for an agent. If a summary is triggered, it returns the new `AgentSummary` object.
     - `on_new_token(agent_id, token)` — Process a single streaming token from an agent using TokenGate for intelligent chunking.

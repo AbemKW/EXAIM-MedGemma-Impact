@@ -518,8 +518,8 @@ async def replay_trace_file(trace_file_path: str):
                         exaid.register_trace_callback(trace_callback)
                 
             elif event.event_type == "turn_end":
-                # Flush any remaining buffer for this agent
-                # This ensures any final content is processed even if TokenGate hasn't flushed yet
+                # Flush any remaining TokenGate content for this agent
+                # Tail content is parked for later summarization
                 try:
                     # Temporarily remove trace_callback to avoid duplicate token sending
                     had_callback = trace_callback in exaid.trace_callbacks
@@ -806,4 +806,3 @@ if __name__ == "__main__":
     print("WebSocket endpoint: ws://localhost:8000/ws")
     print("API endpoint: http://localhost:8000/api/process-case")
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

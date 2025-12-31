@@ -69,6 +69,7 @@ from ..src.config.config_loader import (
 from ..src.metrics.integrity import load_manifest_provenance
 from exaid_core.buffer_agent.buffer_agent import BufferAgent, BufferAnalysis, BufferAnalysisNoNovelty
 from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
+from exaid_core.schema.agent_segment import AgentSegment
 from exaid_core.schema.agent_summary import AgentSummary
 from exaid_core.token_gate.token_gate import ManualClock, TokenGate
 
@@ -379,7 +380,7 @@ class VariantPipeline(ABC):
         ctx: RunContext,
         start_seq: int,
         end_seq: int,
-        input_text: str,
+        segments: list[AgentSegment],
         agent_id: str,
         trigger_type: str
     ) -> SummaryResult:
@@ -390,7 +391,7 @@ class VariantPipeline(ABC):
             ctx: Run context
             start_seq: Start of window
             end_seq: End of window
-            input_text: Input text for summarization
+            segments: Segments to summarize
             agent_id: Agent identifier
         """
         event_index = ctx.summary_count
@@ -429,17 +430,17 @@ class VariantPipeline(ABC):
         if summary_history_strs:
             prompt_parts.append("\n".join(summary_history_strs))
         prompt_parts.append(latest_summary_str)
-        prompt_parts.append(input_text)
+        new_buffer, _ = self.summarizer_agent.format_segments_for_prompt(segments)
+        prompt_parts.append(new_buffer)
         prompt_text = "\n".join(prompt_parts)
 
         start_time = time.perf_counter()
         summary = run_async(
             ctx,
             self.summarizer_agent.summarize(
-                agent_id,
+                segments,
                 summary_history_strs,
-                latest_summary_str,
-                input_text
+                latest_summary_str
             )
         )
         latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -479,7 +480,7 @@ class VariantPipeline(ABC):
             summary_ctu=compute_ctu(summary_semantics_text),
             summary_content=summary_content,
             latest_summary_event_id=latest_summary_event_id,
-            new_buffer_text_hash=compute_text_hash(input_text),
+            new_buffer_text_hash=compute_text_hash(new_buffer),
             llm_usage={
                 "prompt_ctu": compute_ctu(prompt_text),
                 "completion_ctu": compute_ctu(summary_semantics_text),
@@ -515,7 +516,7 @@ class VariantPipeline(ABC):
         summary_history = [
             format_summary_for_history(summary) for summary in summary_history
         ]
-        buffer_context = "\n".join(self.buffer_agent.buffer) if self.buffer_agent.buffer else "(Buffer empty)"
+        buffer_context = self.buffer_agent.format_segments_for_prompt(self.buffer_agent.buffer)
 
         prompt_text = "\n".join([
             f"agent_id: {agent_id}",
@@ -667,12 +668,12 @@ class VariantPipeline(ABC):
                     decisions.append(decision)
 
                     if should_trigger:
-                        buffer_text = "\n".join(self.buffer_agent.flush())
+                        flushed_segments = self.buffer_agent.flush()
                         summary = self.generate_summary(
                             ctx,
                             ctx.buffer_window_start_seq or flush_start,
                             ctx.buffer_window_end_seq or flush_end,
-                            buffer_text,
+                            flushed_segments,
                             agent_id,
                             trigger_type="buffer_agent"
                         )
@@ -684,7 +685,7 @@ class VariantPipeline(ABC):
                         ctx,
                         flush_start,
                         flush_end,
-                        flushed_text,
+                        [AgentSegment(agent_id=agent_id, segment=flushed_text)],
                         agent_id,
                         trigger_type="tokengate_flush"
                     )
@@ -722,12 +723,12 @@ class VariantPipeline(ABC):
                         decisions.append(decision)
 
                         if should_trigger:
-                            buffer_text = "\n".join(self.buffer_agent.flush())
+                            flushed_segments = self.buffer_agent.flush()
                             summary = self.generate_summary(
                                 ctx,
                                 ctx.buffer_window_start_seq or flush_start,
                                 ctx.buffer_window_end_seq or flush_end,
-                                buffer_text,
+                                flushed_segments,
                                 agent_id,
                                 trigger_type="buffer_agent"
                             )
@@ -739,7 +740,7 @@ class VariantPipeline(ABC):
                             ctx,
                             flush_start,
                             flush_end,
-                            flushed_text,
+                            [AgentSegment(agent_id=agent_id, segment=flushed_text)],
                             agent_id,
                             trigger_type="tokengate_flush"
                         )
@@ -825,7 +826,7 @@ class V1_TurnEnd(VariantPipeline):
                     ctx,
                     start_seq,
                     end_seq,
-                    accumulated_text,
+                    [AgentSegment(agent_id=last_agent_id, segment=accumulated_text)],
                     last_agent_id,
                     trigger_type="turn_end"
                 )
@@ -843,7 +844,7 @@ class V1_TurnEnd(VariantPipeline):
                 ctx,
                 start_seq,
                 last_seq_seen,
-                accumulated_text,
+                [AgentSegment(agent_id=last_agent_id, segment=accumulated_text)],
                 last_agent_id,
                 trigger_type="turn_end"
             )
@@ -917,12 +918,12 @@ class V3_NoTokenGate(VariantPipeline):
                 decisions.append(decision)
 
                 if should_trigger:
-                    buffer_text = "\n".join(self.buffer_agent.flush())
+                    flushed_segments = self.buffer_agent.flush()
                     summary = self.generate_summary(
                         ctx,
                         ctx.buffer_window_start_seq or window_start,
                         ctx.buffer_window_end_seq or seq,
-                        buffer_text,
+                        flushed_segments,
                         last_agent_id,
                         trigger_type="buffer_agent"
                     )
@@ -945,12 +946,12 @@ class V3_NoTokenGate(VariantPipeline):
             decisions.append(decision)
 
             if should_trigger:
-                buffer_text = "\n".join(self.buffer_agent.flush())
+                flushed_segments = self.buffer_agent.flush()
                 summary = self.generate_summary(
                     ctx,
                     ctx.buffer_window_start_seq or window_start,
                     ctx.buffer_window_end_seq or last_seq_seen,
-                    buffer_text,
+                    flushed_segments,
                     last_agent_id,
                     trigger_type="buffer_agent"
                 )
