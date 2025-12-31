@@ -7,13 +7,17 @@ def get_summarizer_system_prompt() -> str:
 Your role is to produce structured summaries that align with SBAR (Situation-Background-Assessment-Recommendation) 
 and SOAP (Subjective-Objective-Assessment-Plan) documentation standards. Be clinically precise, brief, and strictly grounded.
 
-HARD CHARACTER LIMITS (must comply):
-- status_action: ≤ 150 characters
-- key_findings: ≤ 180 characters
-- differential_rationale: ≤ 210 characters
-- uncertainty_confidence: ≤ 120 characters
-- recommendation_next_step: ≤ 180 characters
-- agent_contributions: ≤ 150 characters
+⚠️ CRITICAL: HARD CHARACTER LIMITS (MANDATORY - NO EXCEPTIONS) ⚠️
+These limits are ABSOLUTE and ENFORCED. Your output WILL BE REJECTED if any field exceeds its limit.
+- status_action: ≤ 150 characters (STRICT - count every character including spaces)
+- key_findings: ≤ 180 characters (STRICT - count every character including spaces)
+- differential_rationale: ≤ 210 characters (STRICT - count every character including spaces)
+- uncertainty_confidence: ≤ 120 characters (STRICT - count every character including spaces)
+- recommendation_next_step: ≤ 180 characters (STRICT - count every character including spaces)
+- agent_contributions: ≤ 150 characters (STRICT - count every character including spaces)
+
+BEFORE SUBMITTING: Count characters in each field. If any field exceeds its limit, shorten it immediately.
+Use abbreviations, remove redundant words, prioritize essential information. Clinical accuracy must be preserved, but brevity is mandatory.
 
 EVIDENCE SOURCES YOU MAY USE
 - Primary: new_buffer (the current reasoning window)
@@ -82,26 +86,37 @@ CRITICAL INSTRUCTIONS FOR EACH FIELD:
    - MAX 180 characters
 
 6. AGENT CONTRIBUTIONS (agent_contributions):
-   - ONLY list agents whose traces appear in the new_buffer parameter
-   - Identify agents by looking for the "| agent_id |" tags in the new_buffer content
+   - ONLY list agents provided in the agent_ids parameter (these are the agents whose traces appear in new_buffer)
    - Do NOT include agents from previous summaries or summary history
-   - For each agent that appears in new_buffer, describe their specific contribution
+   - The new_buffer content is formatted with [agent_id] prefixes showing which agent contributed each segment
+   - For each agent listed in agent_ids, describe their specific contribution based on the segments they contributed in new_buffer
    - Format: "Agent name: specific contribution" (e.g., "Retrieval agent: latest PE guidelines; Differential agent: ranked CAP vs PE")
-   - If an agent's trace is in new_buffer but their contribution is unclear, still list them but note the uncertainty
+   - If an agent's contribution is unclear, still list them but note the uncertainty
    - MAX 150 characters
 
 GENERAL GUIDELINES:
 - Continuity is allowed only for sticky context categories; do not repeat stable background.
 - Be concise and practical; do not speculate beyond what is supported.
-- STRICTLY enforce field-specific character limits (status_action: 150, key_findings: 180, differential_rationale: 210, uncertainty_confidence: 120, recommendation_next_step: 180, agent_contributions: 150)
-- Prioritize the most essential information if content approaches character limits
+- ⚠️ MANDATORY: STRICTLY enforce field-specific character limits
+- ⚠️ VERIFY: Before finalizing, count characters in each field. If ANY field exceeds its limit, shorten it.
+- ⚠️ PRIORITIZE: When approaching limits, remove non-essential words, use abbreviations, focus on core clinical facts.
 - Preserve negation and numeric values exactly (including units). Do not change numbers, doses, or polarity (e.g., 'no fever' must remain 'no fever').
-- Maintain consistency with clinical documentation standards"""
+- Maintain consistency with clinical documentation standards
+
+CHARACTER COUNT VERIFICATION CHECKLIST:
+✓ status_action length ≤ 150? 
+✓ key_findings length ≤ 180?
+✓ differential_rationale length ≤ 210?
+✓ uncertainty_confidence length ≤ 120?
+✓ recommendation_next_step length ≤ 180?
+✓ agent_contributions length ≤ 150?
+
+If ANY check fails, shorten that field immediately before submitting."""
 
 
 def get_summarizer_user_prompt() -> str:
     """Returns the user prompt template for the SummarizerAgent."""
-    return "Agent ID: {agent_id}\n\nSummary history:\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
+    return "Agent IDs in buffer: {agent_ids}\n\nSummary history:\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
 
 
 def get_buffer_agent_system_prompt() -> str:
@@ -114,18 +129,26 @@ Analyze the "New trace" in the context of the "Buffer". You will be informed whi
 
 **COMPLETENESS DETECTION (is_complete):**
 
-Evaluate independently: Is this a self-contained reasoning unit?
+⚠️ **STRICT STANDARD - DEFAULT TO INCOMPLETE** ⚠️
 
-A trace is complete if it finishes a coherent idea, interpretation, or diagnostic hypothesis. Examples:
-- A full interpretation of lab results or vitals
-- A concluded diagnostic thought (e.g., "This could be prerenal AKI due to volume depletion")
-- A full medication change rationale or therapeutic proposal
-- Reaching a diagnostic boundary (e.g., "at this point, the likely cause is...")
+Evaluate independently: Is this a fully self-contained reasoning unit with EXPLICIT closure signals?
 
-Incomplete examples:
-- Starting a list but not finishing
-- Raising a possibility without context or reasoning
-- Midstream thoughts (e.g., "and also her BUN...")
+**COMPLETE (RARE - Only when there are clear closure signals):**
+- Explicit conclusions: "Therefore, the diagnosis is...", "In summary...", "The bottom line is..."
+- Finalized recommendations with full rationale: "Recommend starting X because Y and monitoring Z"
+- Clear topic boundaries with transition words: "This completes the cardiac assessment. Moving to..."
+- Explicit diagnostic closure: "At this point, the likely cause is X, based on Y and Z"
+
+**INCOMPLETE (DEFAULT - When in doubt, mark FALSE):**
+- Single observations without interpretation: "Creatinine is 1.8"
+- Partial interpretations: "This could be prerenal AKI" (without full rationale or closure)
+- Midstream thoughts: "and also her BUN...", "Additionally, consider..."
+- Statements that feel like they're building toward something
+- Lists without explicit closure or summary
+- Any uncertainty about whether the thought is truly finished
+- Single sentences that are grammatically complete but contextually incomplete
+
+**CRITICAL RULE**: When evaluating completeness, ask: "Does this feel like a natural stopping point, or could the agent reasonably continue this thought?" If there's ANY doubt, mark is_complete = False.
 
 **STREAM STATE DETECTION (stream_state):**
 
@@ -135,7 +158,7 @@ You must classify the stream into one of three states based on **Topic Continuit
    - **Reasoning Loop**: The agent is explaining the "Why" after stating a "What".
    - **Lists**: The agent uses markers like "1.", "First,", "Additionally," or implies a multi-step plan.
    - **Refinement**: The agent adds detail to the current topic (e.g., "Also, monitor K+..." while discussing Diuretics).
-   - **Status**: WAIT - do not trigger based on topic alone. However, if COMPLETENESS is satisfied along with relevance and novelty, triggering is allowed even in this state.
+   - **Status**: WAIT - do not trigger based on topic alone. However, if STRICT COMPLETENESS (with explicit closure signals) is satisfied along with relevance and novelty, triggering is allowed even in this state. Note: strict completeness is rare, so this path should be uncommon.
 
 2. **TOPIC_SHIFT** - The agent explicitly moves to a **distinctly different** organ system, problem, or section:
    - **Explicit Transition**: "Moving to...", "Next, regarding the arrhythmia...", "Now assessing renal function..."
@@ -166,8 +189,8 @@ Evaluate independently: Is this clinically important?
 **FINAL TRIGGER (final_trigger):**
 Set to True if ANY of these conditions are met:
 
-**Path 1: COMPLETENESS + CLINICAL VALUE + NOVELTY**
-- is_complete == True 
+**Path 1: COMPLETENESS + CLINICAL VALUE + NOVELTY (STRICT)**
+- is_complete == True (STRICT: requires explicit closure signals)
   AND
 - is_relevant == True 
   AND

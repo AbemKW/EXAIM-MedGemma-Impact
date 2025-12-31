@@ -3,6 +3,7 @@ from exaid_core.schema.agent_summary import AgentSummary
 from typing import List, Dict, Any
 from pydantic import ValidationError
 import json
+import logging
 from infra import get_llm, LLMRole
 from exaid_core.utils.prompts import get_summarizer_system_prompt, get_summarizer_user_prompt
 
@@ -51,6 +52,51 @@ class SummarizerAgent:
                         violations[field_name] = self.field_limits[field_name]
         return violations
     
+    def _truncate_field(self, text: str, max_length: int) -> str:
+        """Truncate a field to max_length, preserving word boundaries when possible.
+        
+        Args:
+            text: Text to truncate
+            max_length: Maximum allowed length
+            
+        Returns:
+            Truncated text
+        """
+        if len(text) <= max_length:
+            return text
+        
+        # Try to truncate at a word boundary
+        truncated = text[:max_length]
+        # Find the last space before the limit
+        last_space = truncated.rfind(' ')
+        if last_space > max_length * 0.8:  # Only use word boundary if it's not too far back
+            truncated = truncated[:last_space]
+        else:
+            truncated = truncated[:max_length]
+        
+        return truncated
+    
+    def _apply_fallback_truncation(self, output_dict: Dict[str, Any]) -> AgentSummary:
+        """Apply fallback truncation to fields that exceed limits.
+        
+        This is a last resort when the LLM fails to comply after retries.
+        
+        Args:
+            output_dict: Dictionary with field values that may exceed limits
+            
+        Returns:
+            AgentSummary with truncated fields
+        """
+        truncated_dict = {}
+        for field, max_len in self.field_limits.items():
+            value = output_dict.get(field, '')
+            if len(str(value)) > max_len:
+                truncated_dict[field] = self._truncate_field(str(value), max_len)
+            else:
+                truncated_dict[field] = value
+        
+        return AgentSummary(**truncated_dict)
+    
     def _create_rewrite_prompt(self, previous_output: Dict[str, Any], violations: Dict[str, int]) -> str:
         """Create a targeted rewrite prompt for fields that exceeded max_length.
         
@@ -66,23 +112,29 @@ class SummarizerAgent:
             current_value = previous_output.get(field, '')
             current_len = len(str(current_value))
             violation_list.append(
-                f"- {field}: currently {current_len} characters, must be ≤ {max_len} characters"
+                f"- {field}: currently {current_len} characters, must be ≤ {max_len} characters (need to remove {current_len - max_len} characters)"
             )
         
         violations_text = '\n'.join(violation_list)
         
-        prompt = f"""REWRITE REQUEST: Your previous output exceeded character limits. Please shorten ONLY the following fields while preserving their semantic meaning and clinical accuracy:
+        prompt = f"""⚠️ CRITICAL REWRITE REQUEST ⚠️
+
+Your previous output was REJECTED because it exceeded character limits. You MUST shorten the following fields:
 
 {violations_text}
 
 Your previous output:
 {json.dumps(previous_output, indent=2)}
 
-Instructions:
-- Shorten ONLY the fields listed above to meet their character limits
-- Preserve all semantic meaning and clinical information
-- Keep all other fields exactly as they are
-- Return the complete output with shortened fields"""
+MANDATORY INSTRUCTIONS:
+1. Shorten ONLY the fields listed above to meet their character limits EXACTLY
+2. Count characters as you shorten - verify each field is ≤ its limit
+3. Preserve all semantic meaning and clinical information
+4. Use abbreviations, remove redundant words, prioritize essential facts
+5. Keep all other fields exactly as they are
+6. Return the complete output with shortened fields
+
+VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure compliance."""
         
         return prompt
 
@@ -144,12 +196,102 @@ Instructions:
                 pass
         return None
 
-    async def summarize(self, agent_id: str, summary_history: List[str], latest_summary: str, new_buffer: str) -> AgentSummary:
+    async def _get_raw_output(self, agent_ids: str, summary_history: List[str], latest_summary: str, new_buffer: str) -> Dict[str, Any]:
+        """Get raw LLM output as a dictionary, extracting JSON if needed.
+        
+        Returns:
+            Dictionary with field values, or None if extraction fails
+        """
+        try:
+            raw_chain = self.summarize_prompt | self.base_llm
+            raw_response = await raw_chain.ainvoke({
+                "agent_ids": agent_ids,
+                "summary_history": ",\n".join(summary_history),
+                "latest_summary": latest_summary,
+                "new_buffer": new_buffer
+            })
+            
+            # Extract JSON from raw response
+            content = raw_response.content if hasattr(raw_response, 'content') else str(raw_response)
+            
+            # Try to parse JSON from response
+            start_idx = content.find('{')
+            if start_idx != -1:
+                # Find matching closing brace
+                brace_count = 0
+                in_string = False
+                escape_next = False
+                
+                for i in range(start_idx, len(content)):
+                    char = content[i]
+                    
+                    if escape_next:
+                        escape_next = False
+                        continue
+                    
+                    if char == '\\':
+                        escape_next = True
+                        continue
+                    
+                    if char == '"' and not escape_next:
+                        in_string = not in_string
+                        continue
+                    
+                    if not in_string:
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_str = content[start_idx:i+1]
+                                return json.loads(json_str)
+        except Exception:
+            pass
+        
+        return None
+    
+    async def summarize(self, segments_with_agents: List[tuple[str, str]], summary_history: List[str], latest_summary: str) -> AgentSummary:
+        """Summarize agent output with automatic retry and fallback truncation.
+        
+        This method attempts to get a valid summary up to 3 times:
+        1. Initial attempt with structured output
+        2. Retry with rewrite prompt if character limits exceeded
+        3. Fallback truncation if retry still fails
+        
+        Args:
+            segments_with_agents: List of (agent_id, segment) tuples representing agent contributions
+            summary_history: List of previous summary strings
+            latest_summary: Most recent summary string
+            
+        Returns:
+            AgentSummary object
+            
+        Raises:
+            ValidationError: If validation fails for non-length-related reasons
+            Exception: For other unexpected errors
+        """
         summarize_chain = self.summarize_prompt | self.llm
         
+        # Format segments efficiently: group by agent to minimize token overhead
+        agent_segments_map = {}
+        for agent_id, segment in segments_with_agents:
+            if agent_id not in agent_segments_map:
+                agent_segments_map[agent_id] = []
+            agent_segments_map[agent_id].append(segment)
+        
+        # Format as: [Agent1] segment1 segment2\n[Agent2] segment3
+        formatted_parts = []
+        for agent_id, segments in agent_segments_map.items():
+            combined_segments = " ".join(segments)
+            formatted_parts.append(f"[{agent_id}] {combined_segments}")
+        
+        new_buffer = "\n".join(formatted_parts)
+        agent_ids_str = ", ".join(sorted(agent_segments_map.keys())) if agent_segments_map else "Unknown"
+        
+        # Attempt 1: Initial structured output
         try:
             summary = await summarize_chain.ainvoke({
-                "agent_id": agent_id,
+                "agent_ids": agent_ids_str,
                 "summary_history": ",\n".join(summary_history),
                 "latest_summary": latest_summary,
                 "new_buffer": new_buffer
@@ -164,64 +306,16 @@ Instructions:
                 violations = self._extract_max_length_violations(validation_error)
                 
                 if violations:
-                    # Rewrite-and-retry loop (max 1 retry)
+                    # Attempt 2: Retry with rewrite prompt
                     try:
-                        # Use extracted JSON if available, otherwise get raw output
+                        # Get raw output if not already extracted
                         if previous_output is None:
-                            # Get raw output to use in rewrite prompt
-                            raw_chain = self.summarize_prompt | self.base_llm
-                            raw_response = await raw_chain.ainvoke({
-                                "agent_id": agent_id,
-                                "summary_history": ",\n".join(summary_history),
-                                "latest_summary": latest_summary,
-                                "new_buffer": new_buffer
-                            })
-                            
-                            # Extract JSON from raw response
-                            content = raw_response.content if hasattr(raw_response, 'content') else str(raw_response)
-                            
-                            # Try to parse JSON from response
-                            try:
-                                # Look for JSON object in the response
-                                start_idx = content.find('{')
-                                if start_idx != -1:
-                                    # Find matching closing brace
-                                    brace_count = 0
-                                    in_string = False
-                                    escape_next = False
-                                    
-                                    for i in range(start_idx, len(content)):
-                                        char = content[i]
-                                        
-                                        if escape_next:
-                                            escape_next = False
-                                            continue
-                                        
-                                        if char == '\\':
-                                            escape_next = True
-                                            continue
-                                        
-                                        if char == '"' and not escape_next:
-                                            in_string = not in_string
-                                            continue
-                                        
-                                        if not in_string:
-                                            if char == '{':
-                                                brace_count += 1
-                                            elif char == '}':
-                                                brace_count -= 1
-                                                if brace_count == 0:
-                                                    json_str = content[start_idx:i+1]
-                                                    previous_output = json.loads(json_str)
-                                                    break
-                            except (json.JSONDecodeError, ValueError):
-                                # If we can't parse JSON, we can't create a rewrite prompt
-                                # Re-raise the original validation error
-                                raise validation_error
+                            previous_output = await self._get_raw_output(agent_ids_str, summary_history, latest_summary, new_buffer)
                         
                         if previous_output is None:
-                            # Couldn't extract previous output, re-raise
-                            raise validation_error
+                            # Can't extract output, use fallback truncation on a minimal dict
+                            # This shouldn't happen, but we'll handle it gracefully
+                            raise ValueError("Could not extract previous output for rewrite")
                         
                         # Create rewrite prompt
                         rewrite_prompt_text = self._create_rewrite_prompt(previous_output, violations)
@@ -238,8 +332,22 @@ Instructions:
                         return summary
                     
                     except Exception as retry_error:
-                        # If retry also fails, re-raise the original validation error
-                        raise validation_error
+                        # Attempt 3: Fallback truncation
+                        # Get the raw output if we don't have it
+                        if previous_output is None:
+                            previous_output = await self._get_raw_output(agent_ids_str, summary_history, latest_summary, new_buffer)
+                        
+                        if previous_output is None:
+                            # Last resort: re-raise the original validation error
+                            raise validation_error
+                        
+                        # Apply fallback truncation
+                        logger = logging.getLogger(__name__)
+                        logger.warning(
+                            f"Summarizer agent failed to comply with character limits after retry for agents {agent_ids_str}. "
+                            f"Applying fallback truncation to fields: {list(violations.keys())}"
+                        )
+                        return self._apply_fallback_truncation(previous_output)
                 else:
                     # Not a max_length violation, re-raise
                     raise validation_error
