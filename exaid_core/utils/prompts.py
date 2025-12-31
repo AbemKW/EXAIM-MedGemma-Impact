@@ -94,6 +94,7 @@ CRITICAL INSTRUCTIONS FOR EACH FIELD:
    - If an agent's contribution is unclear, still list them but note the uncertainty
    - MAX 150 characters
 
+
 GENERAL GUIDELINES:
 - Continuity is allowed only for sticky context categories; do not repeat stable background.
 - Be concise and practical; do not speculate beyond what is supported.
@@ -116,7 +117,7 @@ If ANY check fails, shorten that field immediately before submitting."""
 
 def get_summarizer_user_prompt() -> str:
     """Returns the user prompt template for the SummarizerAgent."""
-    return "Agent IDs in buffer: {agent_ids}\n\nSummary history:\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
+    return "Agent IDs in buffer: {agent_ids}\n\nSummary history (last k deltas):\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
 
 
 def get_buffer_agent_system_prompt() -> str:
@@ -306,4 +307,3 @@ This dual-path approach allows triggering on completed thoughts even when the to
 - Current Buffer: The unspoken thoughts accumulating right now.
 - New Trace: The latest sentence(s) added to the buffer.
 """
-
