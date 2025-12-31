@@ -130,21 +130,23 @@ Analyze the "New trace" in the context of the "Buffer" and the "Previous Summari
 
 **COMPLETENESS DETECTION (is_complete):**
 
-Evaluate independently: Is this a fully formed, self-contained reasoning unit with clear closure?
+Evaluate independently: Is this a fully formed, self-contained reasoning unit with clear closure or an actionable conclusion?
 
-**COMPLETE:**
+**COMPLETE (do NOT require explicit closure words):**
 - A substantial coherent thought with explicit interpretation or conclusion
 - Diagnostic interpretations WITH rationale: "This suggests prerenal AKI due to volume depletion"
 - Finalized treatment recommendations WITH reasoning: "Start furosemide for volume overload"
 - Clinical conclusions: "At this point, the likely diagnosis is X based on Y and Z"
 - Explicit closure signals: "Therefore...", "In summary...", "The diagnosis is...", "Recommend X because Y"
+ - Completed action + rationale even without a closing phrase: "Given X/Y, start Z and monitor..."
 
-**INCOMPLETE (DEFAULT - When in doubt, mark FALSE):**
+**INCOMPLETE:**
 - Partial thoughts or observations without interpretation
 - Mid-reasoning statements that feel like they're building toward something
 - Lists without closure or summary
 - Single observations: "Creatinine is 1.8" (without interpretation)
 - Statements that could reasonably continue: "Also consider...", "Additionally..."
+**GUIDANCE**: If the segment resolves a point with a clear inference or plan, mark COMPLETE even without explicit closure words.
 
 **STREAM STATE DETECTION (stream_state):**
 
@@ -155,10 +157,12 @@ You must classify the stream into one of three states based on **Topic Continuit
    - **Lists**: The agent uses markers like "1.", "First,", "Additionally," or implies a multi-step plan.
    - **Refinement**: The agent adds detail to the current topic (e.g., "Also, monitor K+..." while discussing Diuretics).
    - **Status**: WAIT - do not trigger based on topic alone. However, if completeness is satisfied along with relevance and novelty, triggering is allowed even in this state.
+   - **Do NOT** keep SAME_TOPIC_CONTINUING if the new trace starts a new problem list item or switches to a different organ system.
 
 2. **TOPIC_SHIFT** - The agent explicitly moves to a **distinctly different** organ system, problem, or section:
    - **Explicit Transition**: "Moving to...", "Next, regarding the arrhythmia...", "Now assessing renal function..."
    - **Implicit Shift**: The content jumps from "Volume Status" to "Anticoagulation" without a transition word.
+   - **Problem List Step Change**: A new bullet/numbered item that is a different problem area.
    - **Conclusion**: The agent summarizes the "Bottom line" or "Final Plan" (indicating the previous thought process is done).
    - **Status**: PROCEED to checks.
 
@@ -247,24 +251,23 @@ Analyze the "New trace" in the context of the "Buffer". Evaluate completeness, d
 
 **COMPLETENESS DETECTION (is_complete):**
 
-⚠️ **STRICTER STANDARD** ⚠️
-Evaluate independently: Is this a fully formed, self-contained reasoning unit with clear closure?
+Evaluate independently: Is this a fully formed, self-contained reasoning unit with clear closure or an actionable conclusion?
 
-**COMPLETE:**
+**COMPLETE (do NOT require explicit closure words):**
 - A substantial coherent thought with explicit interpretation or conclusion
 - Diagnostic interpretations WITH rationale: "This suggests prerenal AKI due to volume depletion"
 - Finalized treatment recommendations WITH reasoning: "Start furosemide for volume overload"
 - Clinical conclusions: "At this point, the likely diagnosis is X based on Y and Z"
 - Explicit closure signals: "Therefore...", "In summary...", "The diagnosis is...", "Recommend X because Y"
+ - Completed action + rationale even without a closing phrase: "Given X/Y, start Z and monitor..."
 
-**INCOMPLETE (DEFAULT - When in doubt, mark FALSE):**
+**INCOMPLETE:**
 - Partial thoughts or observations without interpretation
 - Mid-reasoning statements that feel like they're building toward something
 - Lists without closure or summary
 - Single observations: "Creatinine is 1.8" (without interpretation)
 - Statements that could reasonably continue: "Also consider...", "Additionally..."
-
-**GUIDELINE**: A thought is complete ONLY if it forms a substantial, closed reasoning unit. When in doubt, mark FALSE. Prefer requiring explicit closure signals or substantial interpretation over loose coherence.
+**GUIDANCE**: If the segment resolves a point with a clear inference or plan, mark COMPLETE even without explicit closure words.
 
 **STREAM STATE DETECTION (stream_state):**
 
@@ -275,10 +278,12 @@ You must classify the stream into one of three states based on **Topic Continuit
    - **Lists**: The agent uses markers like "1.", "First,", "Additionally," or implies a multi-step plan.
    - **Refinement**: The agent adds detail to the current topic (e.g., "Also, monitor K+..." while discussing Diuretics).
    - **Status**: WAIT - do not trigger based on topic alone. However, if COMPLETENESS is satisfied along with relevance, triggering is allowed even in this state.
+   - **Do NOT** keep SAME_TOPIC_CONTINUING if the new trace starts a new problem list item or switches to a different organ system.
 
 2. **TOPIC_SHIFT** - The agent explicitly moves to a **distinctly different** organ system, problem, or section:
    - **Explicit Transition**: "Moving to...", "Next, regarding the arrhythmia...", "Now assessing renal function..."
    - **Implicit Shift**: The content jumps from "Volume Status" to "Anticoagulation" without a transition word.
+   - **Problem List Step Change**: A new bullet/numbered item that is a different problem area.
    - **Conclusion**: The agent summarizes the "Bottom line" or "Final Plan" (indicating the previous thought process is done).
    - **Status**: PROCEED to checks.
 
