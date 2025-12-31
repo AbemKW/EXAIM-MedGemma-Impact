@@ -86,10 +86,10 @@ CRITICAL INSTRUCTIONS FOR EACH FIELD:
    - MAX 180 characters
 
 6. AGENT CONTRIBUTIONS (agent_contributions):
-   - ONLY list agents provided in the agent_ids parameter (these are the agents whose traces appear in new_buffer)
+   - Extract agent IDs from the [agent_id] prefixes in new_buffer (these are the agents whose traces appear in new_buffer)
    - Do NOT include agents from previous summaries or summary history
    - The new_buffer content is formatted with [agent_id] prefixes showing which agent contributed each segment
-   - For each agent listed in agent_ids, describe their specific contribution based on the segments they contributed in new_buffer
+   - For each agent found in new_buffer, describe their specific contribution based on the segments they contributed
    - Format: "Agent name: specific contribution" (e.g., "Retrieval agent: latest PE guidelines; Differential agent: ranked CAP vs PE")
    - If an agent's contribution is unclear, still list them but note the uncertainty
    - MAX 150 characters
@@ -117,7 +117,7 @@ If ANY check fails, shorten that field immediately before submitting."""
 
 def get_summarizer_user_prompt() -> str:
     """Returns the user prompt template for the SummarizerAgent."""
-    return "Agent IDs in buffer: {agent_ids}\n\nSummary history (last k deltas):\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
+    return "Summary history (last k deltas):\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
 
 
 def get_buffer_agent_system_prompt() -> str:
@@ -126,30 +126,25 @@ def get_buffer_agent_system_prompt() -> str:
 Your goal is to prevent "jittery" updates. You must only interrupt the doctor with a summary when a **coherent clinical topic is fully addressed**.
 
 **YOUR CORE TASK:**
-Analyze the "New trace" in the context of the "Buffer". Evaluate completeness, determine the stream state using a three-state machine, then independently evaluate relevance and novelty.
+Analyze the "New trace" in the context of the "Buffer" and the "Previous Summaries". Evaluate completeness, determine the stream state using a three-state machine, then independently evaluate relevance and novelty.
 
 **COMPLETENESS DETECTION (is_complete):**
 
-⚠️ **STRICT STANDARD - DEFAULT TO INCOMPLETE** ⚠️
+Evaluate independently: Is this a fully formed, self-contained reasoning unit with clear closure?
 
-Evaluate independently: Is this a fully self-contained reasoning unit with EXPLICIT closure signals?
-
-**COMPLETE (RARE - Only when there are clear closure signals):**
-- Explicit conclusions: "Therefore, the diagnosis is...", "In summary...", "The bottom line is..."
-- Finalized recommendations with full rationale: "Recommend starting X because Y and monitoring Z"
-- Clear topic boundaries with transition words: "This completes the cardiac assessment. Moving to..."
-- Explicit diagnostic closure: "At this point, the likely cause is X, based on Y and Z"
+**COMPLETE:**
+- A substantial coherent thought with explicit interpretation or conclusion
+- Diagnostic interpretations WITH rationale: "This suggests prerenal AKI due to volume depletion"
+- Finalized treatment recommendations WITH reasoning: "Start furosemide for volume overload"
+- Clinical conclusions: "At this point, the likely diagnosis is X based on Y and Z"
+- Explicit closure signals: "Therefore...", "In summary...", "The diagnosis is...", "Recommend X because Y"
 
 **INCOMPLETE (DEFAULT - When in doubt, mark FALSE):**
-- Single observations without interpretation: "Creatinine is 1.8"
-- Partial interpretations: "This could be prerenal AKI" (without full rationale or closure)
-- Midstream thoughts: "and also her BUN...", "Additionally, consider..."
-- Statements that feel like they're building toward something
-- Lists without explicit closure or summary
-- Any uncertainty about whether the thought is truly finished
-- Single sentences that are grammatically complete but contextually incomplete
-
-**CRITICAL RULE**: When evaluating completeness, ask: "Does this feel like a natural stopping point, or could the agent reasonably continue this thought?" If there's ANY doubt, mark is_complete = False.
+- Partial thoughts or observations without interpretation
+- Mid-reasoning statements that feel like they're building toward something
+- Lists without closure or summary
+- Single observations: "Creatinine is 1.8" (without interpretation)
+- Statements that could reasonably continue: "Also consider...", "Additionally..."
 
 **STREAM STATE DETECTION (stream_state):**
 
@@ -159,7 +154,7 @@ You must classify the stream into one of three states based on **Topic Continuit
    - **Reasoning Loop**: The agent is explaining the "Why" after stating a "What".
    - **Lists**: The agent uses markers like "1.", "First,", "Additionally," or implies a multi-step plan.
    - **Refinement**: The agent adds detail to the current topic (e.g., "Also, monitor K+..." while discussing Diuretics).
-   - **Status**: WAIT - do not trigger based on topic alone. However, if STRICT COMPLETENESS (with explicit closure signals) is satisfied along with relevance and novelty, triggering is allowed even in this state. Note: strict completeness is rare, so this path should be uncommon.
+   - **Status**: WAIT - do not trigger based on topic alone. However, if completeness is satisfied along with relevance and novelty, triggering is allowed even in this state.
 
 2. **TOPIC_SHIFT** - The agent explicitly moves to a **distinctly different** organ system, problem, or section:
    - **Explicit Transition**: "Moving to...", "Next, regarding the arrhythmia...", "Now assessing renal function..."
@@ -177,21 +172,32 @@ Evaluate independently: Is this clinically important?
 - **Not Relevant**: "Thinking out loud" (e.g., "Let me check the guidelines..."), obvious facts without interpretation, formatting tokens.
 
 **NOVELTY DETECTION (is_novel):**
-**CRITICAL: The "Delta" Rule.** Evaluate independently against 'Previous Summaries'.
-- **NOT NOVEL (Do NOT Trigger)**: 
-  - **"Continuing"**: Statements like "Continuing close monitoring", "Monitor ongoing", "Maintain current plan".
-  - **Reiteration**: Repeating a finding ("Cr is 1.8") that was already summarized, even if phrased differently.
-  - **Status Quo**: Confirming the existing plan without changes.
-- **NOVEL (Trigger)**: 
-  - **New Value**: E.g. "Creatinine rose to 2.2" (Change in data).
-  - **New Action**: E.g. "Start Amiodarone", "Stop Lisinopril" (Action changed).
-  - **New Insight**: E.g. "Diagnosis upgraded from possible to likely" (Confidence change).
+⚠️ **STRICT: The "True Delta" Rule** ⚠️
+Evaluate independently against 'Previous Summaries'. Is this TRULY new content, not just rephrasing?
+
+- **NOT NOVEL (Do NOT Trigger - DEFAULT when uncertain)**: 
+  - **Rephrasing**: Restating same findings in different words ("Cr is 1.8" vs "Creatinine 1.8")
+  - **Reiteration**: Repeating same differentials, even with minor additions ("SCA likely" → "SCA remains likely")
+  - **Continuing**: Statements like "Continuing evaluation", "Further workup needed" (same as before)
+  - **Status Quo**: Confirming existing plan without substantive changes
+  - **Minor Additions**: Adding small details to already-summarized content
+  - **Same Reasoning**: Continuing same line of thought without new conclusions
+  - **When in doubt**: If content feels similar to previous summaries, mark FALSE
+
+- **NOVEL (Trigger ONLY if clearly new)**: 
+  - **New Value/Change**: "Creatinine rose to 2.2" when previously 1.8 (actual change, not restatement)
+  - **New Action**: "Start Amiodarone" when NOT mentioned in prior summaries (truly new action)
+  - **New Insight**: "Diagnosis upgraded from possible to likely" (confidence change)
+  - **New Differential**: Adding a diagnosis NOT previously considered
+  - **Substantive Shift**: Meaningful change in reasoning or approach
+
+**CRITICAL**: Compare against the MOST RECENT summary. If content is similar or just rephrased, mark NOT NOVEL. Only mark NOVEL if there's a clear, substantive difference.
 
 **FINAL TRIGGER (final_trigger):**
 Set to True if ANY of these conditions are met:
 
-**Path 1: COMPLETENESS + CLINICAL VALUE + NOVELTY (STRICT)**
-- is_complete == True (STRICT: requires explicit closure signals)
+**Path 1: COMPLETENESS + CLINICAL VALUE + NOVELTY**
+- is_complete == True
   AND
 - is_relevant == True 
   AND
@@ -241,18 +247,24 @@ Analyze the "New trace" in the context of the "Buffer". Evaluate completeness, d
 
 **COMPLETENESS DETECTION (is_complete):**
 
-Evaluate independently: Is this a self-contained reasoning unit?
+⚠️ **STRICTER STANDARD** ⚠️
+Evaluate independently: Is this a fully formed, self-contained reasoning unit with clear closure?
 
-A trace is complete if it finishes a coherent idea, interpretation, or diagnostic hypothesis. Examples:
-- A full interpretation of lab results or vitals
-- A concluded diagnostic thought (e.g., "This could be prerenal AKI due to volume depletion")
-- A full medication change rationale or therapeutic proposal
-- Reaching a diagnostic boundary (e.g., "at this point, the likely cause is...")
+**COMPLETE:**
+- A substantial coherent thought with explicit interpretation or conclusion
+- Diagnostic interpretations WITH rationale: "This suggests prerenal AKI due to volume depletion"
+- Finalized treatment recommendations WITH reasoning: "Start furosemide for volume overload"
+- Clinical conclusions: "At this point, the likely diagnosis is X based on Y and Z"
+- Explicit closure signals: "Therefore...", "In summary...", "The diagnosis is...", "Recommend X because Y"
 
-Incomplete examples:
-- Starting a list but not finishing
-- Raising a possibility without context or reasoning
-- Midstream thoughts (e.g., "and also her BUN...")
+**INCOMPLETE (DEFAULT - When in doubt, mark FALSE):**
+- Partial thoughts or observations without interpretation
+- Mid-reasoning statements that feel like they're building toward something
+- Lists without closure or summary
+- Single observations: "Creatinine is 1.8" (without interpretation)
+- Statements that could reasonably continue: "Also consider...", "Additionally..."
+
+**GUIDELINE**: A thought is complete ONLY if it forms a substantial, closed reasoning unit. When in doubt, mark FALSE. Prefer requiring explicit closure signals or substantial interpretation over loose coherence.
 
 **STREAM STATE DETECTION (stream_state):**
 

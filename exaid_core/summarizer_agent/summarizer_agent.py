@@ -1,6 +1,6 @@
 from langchain_core.prompts import ChatPromptTemplate
 from exaid_core.schema.agent_summary import AgentSummary
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 from pydantic import ValidationError
 import json
 import logging
@@ -199,7 +199,6 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
 
     async def _get_raw_output(
         self,
-        agent_ids: str,
         summary_history: List[str],
         latest_summary: str,
         new_buffer: str,
@@ -212,7 +211,6 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         try:
             raw_chain = self.summarize_prompt | self.base_llm
             raw_response = await raw_chain.ainvoke({
-                "agent_ids": agent_ids,
                 "summary_history": ",\n".join(summary_history),
                 "latest_summary": latest_summary,
                 "new_buffer": new_buffer
@@ -258,20 +256,19 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         return None
     
     @staticmethod
-    def format_segments_for_prompt(segments: List[AgentSegment]) -> Tuple[str, str]:
-        agent_segments_map = {}
+    def format_segments_for_prompt(segments: List[AgentSegment]) -> str:
+        if not segments:
+            return "(Buffer empty)"
+
+        agent_segments_map: dict[str, list[str]] = {}
         for item in segments:
             agent_segments_map.setdefault(item.agent_id, []).append(item.segment)
 
         formatted_parts = ["BEGIN AGENT SEGMENTS"]
         for agent_id, grouped_segments in agent_segments_map.items():
-            combined_segments = " ".join(grouped_segments)
-            formatted_parts.append(f"[{agent_id}] {combined_segments}")
+            formatted_parts.append(f"[{agent_id}] " + " ".join(grouped_segments))
         formatted_parts.append("END AGENT SEGMENTS")
-
-        new_buffer = "\n".join(formatted_parts)
-        agent_ids_str = ", ".join(sorted(agent_segments_map.keys())) if agent_segments_map else "Unknown"
-        return new_buffer, agent_ids_str
+        return "\n".join(formatted_parts)
 
     async def summarize(
         self,
@@ -300,12 +297,11 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         """
         summarize_chain = self.summarize_prompt | self.llm
         
-        new_buffer, agent_ids_str = self.format_segments_for_prompt(segments_with_agents)
+        new_buffer = self.format_segments_for_prompt(segments_with_agents)
         
         # Attempt 1: Initial structured output
         try:
             summary = await summarize_chain.ainvoke({
-                "agent_ids": agent_ids_str,
                 "summary_history": ",\n".join(summary_history),
                 "latest_summary": latest_summary,
                 "new_buffer": new_buffer
@@ -325,7 +321,6 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
                         # Get raw output if not already extracted
                         if previous_output is None:
                             previous_output = await self._get_raw_output(
-                                agent_ids_str,
                                 summary_history,
                                 latest_summary,
                                 new_buffer,
@@ -355,7 +350,6 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
                         # Get the raw output if we don't have it
                         if previous_output is None:
                             previous_output = await self._get_raw_output(
-                                agent_ids_str,
                                 summary_history,
                                 latest_summary,
                                 new_buffer,
@@ -368,7 +362,7 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
                         # Apply fallback truncation
                         logger = logging.getLogger(__name__)
                         logger.warning(
-                            f"Summarizer agent failed to comply with character limits after retry for agents {agent_ids_str}. "
+                            f"Summarizer agent failed to comply with character limits after retry. "
                             f"Applying fallback truncation to fields: {list(violations.keys())}"
                         )
                         return self._apply_fallback_truncation(previous_output)
