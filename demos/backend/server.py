@@ -20,7 +20,7 @@ from demos.cdss_example.message_bus import message_queue
 
 # Add evals/src to path for trace replay engine
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "evals" / "src"))
-from trace_replay_engine import TraceReplayEngine, ReplayEvent
+from traces.trace_replay_engine import TraceReplayEngine, ReplayEvent
 from exaid_core.exaid import EXAID
 
 
