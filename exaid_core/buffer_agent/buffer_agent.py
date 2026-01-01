@@ -14,6 +14,53 @@ from exaid_core.utils.prompts import (
 class TraceData(BaseModel):
     count: int
 
+
+def compute_trigger(a) -> tuple[bool, str]:
+    """Compute trigger deterministically from BufferAnalysis-like object.
+    
+    Args:
+        a: BufferAnalysis or BufferAnalysisNoNovelty object
+        
+    Returns:
+        Tuple of (trigger: bool, path: str) where path is one of:
+        - "C" for CRITICAL_ALERT
+        - "A" for completed value path
+        - "B" for topic shift path
+        - "-" for no trigger
+    """
+    # Path C: Critical alert
+    if a.stream_state == "CRITICAL_ALERT":
+        return True, "C"
+    
+    # Use structural_closed from code + semantic_complete from model
+    # TODO: Compute structural_closed from code (text analysis) - currently using is_complete as temporary fallback
+    # semantic_complete comes from model (is_complete)
+    structural_closed = getattr(a, "structural_closed", a.is_complete)
+    semantic_complete = getattr(a, "semantic_complete", a.is_complete)
+    
+    # Path A: Completed value
+    if structural_closed and semantic_complete:
+        if hasattr(a, "is_novel"):
+            if a.is_relevant and a.is_novel:
+                return True, "A"
+        else:
+            # BufferAnalysisNoNovelty: no novelty check
+            if a.is_relevant:
+                return True, "A"
+    
+    # Path B: Topic shift
+    if a.stream_state == "TOPIC_SHIFT":
+        if hasattr(a, "is_novel"):
+            if a.is_relevant and a.is_novel:
+                return True, "B"
+        else:
+            # BufferAnalysisNoNovelty: no novelty check
+            if a.is_relevant:
+                return True, "B"
+    
+    return False, "-"
+
+
 class BufferAgent:
     def __init__(self, disable_novelty: bool = False):
         self.buffer: list[AgentSegment] = []
@@ -41,14 +88,16 @@ class BufferAgent:
         if not segments:
             return "(Buffer empty)"
 
-        lines = ["BEGIN TRACE"]
+        lines = []
         last_agent = None
         acc = []
 
         def flush():
             nonlocal acc, last_agent
             if acc and last_agent is not None:
-                lines.append(f"[{last_agent}] " + " ".join(acc))
+                # Simple newline-separated format: agent_id on its own line, then content
+                lines.append(f"{last_agent}:")
+                lines.append(" ".join(acc))
             acc = []
 
         for s in segments:
@@ -58,7 +107,6 @@ class BufferAgent:
             acc.append(s.segment)
 
         flush()
-        lines.append("END TRACE")
         return "\n".join(lines)
 
     async def addsegment(self, agent_id: str, segment: str, previous_summaries: list[str]) -> bool:
@@ -78,6 +126,20 @@ class BufferAgent:
         buffer_context = self.format_segments_for_prompt(prior_segments)
         new_trace_block = self.format_segments_for_prompt([self.buffer[-1]])
         
+        # DEBUG: Print the input to the buffer agent
+        YELLOW = "\033[1;33m"  # Bright yellow
+        RESET = "\033[0m"      # Reset color
+        print(f"{YELLOW}DEBUG [{agent_id}] Buffer Agent Input:{RESET}")
+        print(f"{YELLOW}  Agent ID: {agent_id}{RESET}")
+        print(f"{YELLOW}  New Segment: {new_text}{RESET}")
+        print(f"{YELLOW}  Previous Summaries ({len(previous_summaries)}):{RESET}")
+        for i, summary in enumerate(previous_summaries):
+            print(f"{YELLOW}    [{i+1}] {summary}{RESET}")
+        print(f"{YELLOW}  Previous Trace Context:{RESET}")
+        print(f"{YELLOW}    {buffer_context}{RESET}")
+        print(f"{YELLOW}  New Trace Block:{RESET}")
+        print(f"{YELLOW}    {new_trace_block}{RESET}")
+        
         chain = self.flag_prompt | self.llm
         
         try:
@@ -88,15 +150,23 @@ class BufferAgent:
             })
             self.last_analysis[agent_id] = analysis
             
+            # Compute trigger deterministically in code (not from model)
+            trigger, trigger_path = compute_trigger(analysis)
+            
             # DEBUG: Print the LLM's analysis to verify it's working
             novelty_str = f" | Novel={analysis.is_novel}" if hasattr(analysis, "is_novel") else ""
-            print(f"DEBUG [{agent_id}]: State={analysis.stream_state} | Complete={analysis.is_complete} | Relevant={analysis.is_relevant}{novelty_str} | Trigger={analysis.final_trigger}")
+            CYAN = "\033[1;36m"  # Bright cyan
+            RESET = "\033[0m"    # Reset color
+            print(f"{CYAN}DEBUG [{agent_id}]: State={analysis.stream_state} | Complete={analysis.is_complete} | Relevant={analysis.is_relevant}{novelty_str} | Trigger={trigger} (path={trigger_path}){RESET}")
+            print(f"{CYAN}DEBUG [{agent_id}] Rationale: {analysis.rationale}{RESET}")
             
-            return analysis.final_trigger
+            return trigger
 
         except Exception as e:
             # Fallback if structured output fails (fail closed/safe to avoid spam)
-            print(f"Buffer decision failed: {e}")
+            RED = "\033[1;31m"   # Bright red
+            RESET = "\033[0m"    # Reset color
+            print(f"{RED}Buffer decision failed: {e}{RESET}")
             self.last_analysis[agent_id] = None
             return False
     

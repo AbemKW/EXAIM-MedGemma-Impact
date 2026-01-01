@@ -202,6 +202,7 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         summary_history: List[str],
         latest_summary: str,
         new_buffer: str,
+        history_k: int = 3,
     ) -> Dict[str, Any]:
         """Get raw LLM output as a dictionary, extracting JSON if needed.
         
@@ -213,7 +214,8 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
             raw_response = await raw_chain.ainvoke({
                 "summary_history": ",\n".join(summary_history),
                 "latest_summary": latest_summary,
-                "new_buffer": new_buffer
+                "new_buffer": new_buffer,
+                "history_k": history_k
             })
             
             # Extract JSON from raw response
@@ -260,14 +262,16 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         if not segments:
             return "(Buffer empty)"
 
-        lines = ["BEGIN TRACE"]
+        lines = []
         last_agent = None
         acc = []
 
         def flush():
             nonlocal acc, last_agent
             if acc and last_agent is not None:
-                lines.append(f"[{last_agent}] " + " ".join(acc))
+                # Simple newline-separated format: agent_id on its own line, then content
+                lines.append(f"{last_agent}:")
+                lines.append(" ".join(acc))
             acc = []
 
         for s in segments:
@@ -277,7 +281,6 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
             acc.append(s.segment)
 
         flush()
-        lines.append("END TRACE")
         return "\n".join(lines)
 
     async def summarize(
@@ -285,6 +288,7 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         segments_with_agents: List[AgentSegment],
         summary_history: List[str],
         latest_summary: str,
+        history_k: int = 3,
     ) -> AgentSummary:
         """Summarize agent output with automatic retry and fallback truncation.
         
@@ -297,6 +301,7 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
             segments_with_agents: List of AgentSegment items representing agent contributions
             summary_history: List of previous summary strings
             latest_summary: Most recent summary string
+            history_k: The number of previous summaries to include in history
             
         Returns:
             AgentSummary object
@@ -314,7 +319,8 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
             summary = await summarize_chain.ainvoke({
                 "summary_history": ",\n".join(summary_history),
                 "latest_summary": latest_summary,
-                "new_buffer": new_buffer
+                "new_buffer": new_buffer,
+                "history_k": history_k
             })
             return summary
         except Exception as e:
@@ -334,6 +340,7 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
                                 summary_history,
                                 latest_summary,
                                 new_buffer,
+                                history_k,
                             )
                         
                         if previous_output is None:
@@ -363,6 +370,7 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
                                 summary_history,
                                 latest_summary,
                                 new_buffer,
+                                history_k,
                             )
                         
                         if previous_output is None:
