@@ -404,7 +404,7 @@ class VariantPipeline(ABC):
         summary_event_ids = ctx.summary_event_ids
         latest_summary = summary_history[-1] if summary_history else None
         latest_summary_event_id = summary_event_ids[-1] if summary_event_ids else None
-        history_limit = max(ctx.history_k - 1, 0)
+        history_limit = max(ctx.history_k, 0)
         if latest_summary:
             history_slice = summary_history[:-1]
             history_event_ids = summary_event_ids[:-1]
