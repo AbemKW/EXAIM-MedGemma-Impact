@@ -177,9 +177,9 @@ def get_buffer_agent_system_prompt() -> str:
          You operate inside EXAID (Explainable AI for Diagnoses), a summarization layer that integrates with an external multi-agent clinical decision support system (CDSS).
          Specialized agents in the external CDSS collaborate on a case. EXAID intercepts their streamed outputs and provides clinician-facing summary snapshots.
          EXAID components:
-         - TokenGate: a syntax-aware pre-buffer that chunks streaming tokens before BufferAgent.
-         - You: decide when to summarize based on current_buffer/new_trace.
-         - SummarizerAgent: produces clinician-facing updates when triggered.
+         - TokenGate: a syntax-aware pre-buffer that chunks streaming tokens before You("BufferAgent").
+         - You("BufferAgent"): decide when to to trigger summarization based on current_buffer/new_trace.
+         - SummarizerAgent: produces clinician-facing updates when triggered by You("BufferAgent").
 
          Multiple specialized agents in the external CDSS may contribute to the same case and may:
          - propose competing hypotheses (disagree/debate)
@@ -356,9 +356,9 @@ def get_buffer_agent_system_prompt_no_novelty() -> str:
          You operate inside EXAID (Explainable AI for Diagnoses), a summarization layer that integrates with an external multi-agent clinical decision support system (CDSS).
          Specialized agents in the external CDSS collaborate on a case. EXAID intercepts their streamed outputs and provides clinician-facing summary snapshots.
          EXAID components:
-         - TokenGate: a syntax-aware pre-buffer that chunks streaming tokens before BufferAgent.
-         - You: decide when to summarize based on current_buffer/new_trace.
-         - SummarizerAgent: produces clinician-facing updates when triggered.
+         - TokenGate: a syntax-aware pre-buffer that chunks streaming tokens before You("BufferAgent").
+         - You("BufferAgent"): decide when to to trigger summarization based on current_buffer/new_trace.
+         - SummarizerAgent: produces clinician-facing updates when triggered by You("BufferAgent").
 
          Multiple specialized agents in the external CDSS may contribute to the same case and may:
          - propose competing hypotheses (disagree/debate)
