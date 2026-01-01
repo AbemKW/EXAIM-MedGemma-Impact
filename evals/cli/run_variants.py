@@ -67,6 +67,7 @@ from ..src.config.config_loader import (
     get_stoplists_provenance,
 )
 from ..src.metrics.integrity import load_manifest_provenance
+from ..src.extraction.concept_extractor import ConceptExtractor
 from exaid_core.buffer_agent.buffer_agent import BufferAgent, BufferAnalysis, BufferAnalysisNoNovelty
 from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
 from exaid_core.schema.agent_segment import AgentSegment
@@ -99,6 +100,71 @@ def load_extractor_config(configs_dir: Path) -> dict:
     drift-proof evaluation with resolved stoplist paths (Section 6.1)"
     """
     return _load_extractor_config_central(configs_dir, resolve_paths=True, include_hashes=True)
+
+
+def get_extractor_version_info(extractor_config: dict) -> dict:
+    """
+    Get real version info from ConceptExtractor for provenance tracking.
+    
+    Paper hook: "Extractor provenance includes actual library versions
+    collected at runtime to ensure reproducibility (Section 6.1)"
+    
+    This function instantiates ConceptExtractor to collect actual installed
+    versions of spacy and scispacy, ensuring logged versions match what
+    would actually be used during extraction.
+    
+    Args:
+        extractor_config: Extractor configuration dict
+        
+    Returns:
+        Dict with version info including spacy_version, scispacy_version,
+        and other extractor metadata
+    """
+    try:
+        # Try with linking first to get full version info including KB version
+        extractor = ConceptExtractor(extractor_config, no_linking=False)
+        version_info = extractor.get_version_info()
+    except (RuntimeError, ImportError, Exception):
+        # Fall back to no_linking if linker unavailable
+        # This still gives us spacy/scispacy versions
+        try:
+            extractor = ConceptExtractor(extractor_config, no_linking=True)
+            version_info = extractor.get_version_info()
+        except Exception:
+            # Last resort: collect versions directly without loading model
+            import spacy
+            version_info = {
+                "spacy_version": spacy.__version__,
+                "scispacy_model": extractor_config.get("scispacy_model", "en_core_sci_sm"),
+                "scispacy_version": "unknown",
+                "concept_representation": extractor_config.get("concept_representation", "cui"),
+                "cui_normalization": extractor_config.get("cui_normalization", "uppercase"),
+            }
+            try:
+                import scispacy
+                version_info["scispacy_version"] = scispacy.__version__
+            except ImportError:
+                pass
+    
+    # Merge with config values to ensure all fields are present
+    return {
+        "spacy_version": version_info.get("spacy_version", "unknown"),
+        "scispacy_version": version_info.get("scispacy_version", "unknown"),
+        "scispacy_model": extractor_config.get("scispacy_model", "en_core_sci_sm"),
+        "linker_name": version_info.get("linker_name", extractor_config.get("linker_name", "umls")),
+        "linker_kb_version": version_info.get("linker_kb_version") or extractor_config.get("linker_kb_version", "2023AB"),
+        "linker_resolve_abbreviations": extractor_config.get("linker_resolve_abbreviations", True),
+        "linker_max_entities_per_mention": extractor_config.get("linker_max_entities_per_mention", 10),
+        "linker_threshold": extractor_config.get("linker_threshold", 0.7),
+        "cui_score_threshold": extractor_config.get("cui_score_threshold", 0.7),
+        "max_k": extractor_config.get("max_k", 10),
+        "min_entity_len": extractor_config.get("min_entity_len", 3),
+        "concept_representation": version_info.get("concept_representation", extractor_config.get("concept_representation", "cui")),
+        "cui_normalization": extractor_config.get("cui_normalization", "uppercase"),
+        "entity_types_kept": extractor_config.get("entity_types_kept", ["ALL"]),
+        "stop_entities_count": version_info.get("stop_entities_count", 0),
+        "stop_cuis_count": version_info.get("stop_cuis_count", 0)
+    }
 
 
 def run_async(ctx: "RunContext", coro):
@@ -440,7 +506,8 @@ class VariantPipeline(ABC):
             self.summarizer_agent.summarize(
                 segments,
                 summary_history_strs,
-                latest_summary_str
+                latest_summary_str,
+                ctx.history_k
             )
         )
         latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -594,7 +661,6 @@ class VariantPipeline(ABC):
         return TokenGate(
             min_words=token_gate_config.get("min_words", 35),
             max_words=token_gate_config.get("max_words", 90),
-            boundary_cues=token_gate_config.get("boundary_cues", ".?!\n"),
             silence_timer=token_gate_config.get("silence_timer", 15),
             max_wait_timeout=token_gate_config.get("max_wait_timeout", 40),
             clock=ctx.clock
@@ -639,7 +705,7 @@ class VariantPipeline(ABC):
             flushed_text = run_async(ctx, token_gate.add_token(agent_id, text))
 
             if flushed_text:
-                flush_reason = token_gate.get_last_flush_reason(agent_id) or "threshold"
+                flush_reason = token_gate.get_last_flush_reason(agent_id) or "max_words"
                 if flush_reason == "silence_timer":
                     flush_start = state["window_start"] if state["window_start"] is not None else seq
                     flush_end = previous_last_seq if previous_last_seq is not None else seq
@@ -1146,24 +1212,7 @@ def execute_run(
         "trace_file_hash": compute_file_hash(trace_file),
         "trace_dataset_hash": trace_dataset_hash,
         "tokengate_config_hash": compute_tokengate_config_hash(variant_config),
-        "concept_extractor": {
-            "spacy_version": "3.7.4",
-            "scispacy_version": "0.5.4",
-            "scispacy_model": extractor_config.get("scispacy_model", "en_core_sci_sm"),
-            "linker_name": extractor_config.get("linker_name", "umls"),
-            "linker_kb_version": extractor_config.get("linker_kb_version", "2023AB"),
-            "linker_resolve_abbreviations": extractor_config.get("linker_resolve_abbreviations", True),
-            "linker_max_entities_per_mention": extractor_config.get("linker_max_entities_per_mention", 10),
-            "linker_threshold": extractor_config.get("linker_threshold", 0.7),
-            "cui_score_threshold": extractor_config.get("cui_score_threshold", 0.7),
-            "max_k": extractor_config.get("max_k", 10),
-            "min_entity_len": extractor_config.get("min_entity_len", 3),
-            "concept_representation": extractor_config.get("concept_representation", "cui"),
-            "cui_normalization": extractor_config.get("cui_normalization", "uppercase"),
-            "entity_types_kept": extractor_config.get("entity_types_kept", ["ALL"]),
-            "stop_entities_count": 0,
-            "stop_cuis_count": 0
-        },
+        "concept_extractor": get_extractor_version_info(extractor_config),
         "stoplists_provenance": stoplists_provenance,
         "timestamp_derivation": timestamps.get_stats(),
         "determinism": {

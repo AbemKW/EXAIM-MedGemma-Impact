@@ -338,7 +338,6 @@ def write_chosen_params_yaml(output_path: Path, selected_policy: PolicyMetrics) 
         "token_gate": {
             "min_words": selected_policy.min_words,
             "max_words": selected_policy.max_words,
-            "boundary_cues": ".?!\n",  # Fixed
             "silence_timer": selected_policy.silence_timer_ms / 1000.0,  # Convert to seconds
             "max_wait_timeout": selected_policy.max_wait_timeout_ms / 1000.0,  # Convert to seconds
         }

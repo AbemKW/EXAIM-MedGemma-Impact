@@ -237,7 +237,8 @@
         },
         "trigger_reason": {
           "type": "string",
-          "enum": ["threshold", "boundary_cue", "timeout", "turn_end"]
+          "enum": ["max_words", "boundary_cue", "silence_timer", "max_wait_timeout", "end_of_trace", "turn_end"],
+          "description": "Reason for TokenGate flush: max_words (word count exceeded), boundary_cue (sentence boundary detected), silence_timer (inactivity timeout), max_wait_timeout (maximum wait exceeded), end_of_trace (trace ended), turn_end (turn boundary, V1 only)"
         },
         "text_hash": {
           "type": "string",

@@ -261,7 +261,7 @@ One record per TokenGate flush event. Note: TokenGate accumulates text and flush
   "start_seq": 0,
   "end_seq": 10,
   "accumulated_ctu": 45,
-  "trigger_reason": "threshold",
+  "trigger_reason": "max_words",
   "text_hash": "sha256:..."
 }
 ```
@@ -270,9 +270,11 @@ One record per TokenGate flush event. Note: TokenGate accumulates text and flush
 
 | Reason | Description |
 |--------|-------------|
-| `threshold` | Accumulated word count exceeded threshold |
-| `boundary_cue` | Sentence boundary detected |
-| `timeout` | Time limit reached |
+| `max_words` | Accumulated word count exceeded max_words threshold |
+| `boundary_cue` | Sentence boundary detected (after min_words reached) |
+| `silence_timer` | Inactivity timeout (no tokens received for silence_timer seconds) |
+| `max_wait_timeout` | Maximum wait timeout exceeded (buffer existed for max_wait_timeout seconds) |
+| `end_of_trace` | Trace ended, flush remaining buffer |
 | `turn_end` | Turn boundary (V1 only) |
 
 ---

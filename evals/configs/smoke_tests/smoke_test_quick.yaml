@@ -34,8 +34,7 @@ parameter_grid:
   
   # Total combinations: 2×2×1×1 = 4 policies (absolute minimum)
   
-  # Fixed parameter
-  boundary_cues: ".?!\n"
+  # Note: Boundary cues are hardcoded to .?!\n and cannot be calibrated
 
 # Policy Validity Constraints
 validity_constraints:

@@ -89,7 +89,6 @@ async def replay_case_with_policy(
     token_gate = TokenGate(
         min_words=policy.min_words,
         max_words=policy.max_words,
-        boundary_cues=policy.boundary_cues,
         silence_timer=policy.silence_timer_ms / 1000.0,  # Convert ms to seconds
         max_wait_timeout=policy.max_wait_timeout_ms / 1000.0,  # Convert ms to seconds
         clock=clock,
