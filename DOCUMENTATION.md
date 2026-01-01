@@ -124,17 +124,26 @@ async def received_trace(self, agent_id: str, text: str) -> Optional[AgentSummar
     was triggered, None otherwise."""
     # Prepare previous summaries for buffer agent evaluation
     all_summaries = self.get_all_summaries()
-    previous_summaries = self._format_summaries_history(all_summaries)
+    previous_summaries = self._get_limited_history(all_summaries)
     
-    trigger = await self.buffer_agent.addsegment(id, text, previous_summaries)
+    trigger = await self.buffer_agent.addsegment(
+        agent_id,
+        text,
+        previous_summaries,
+        flush_reason="full_trace",
+        history_k=self.history_k
+    )
     if trigger:
-        agent_buffer = self.buffer_agent.flush()
-        buffer_str = "\n".join(agent_buffer)
-        
-        # Get previous summaries for context
+        agent_segments = self.buffer_agent.flush()
         all_summaries = self.get_all_summaries()
-        summary_history_strs = self._format_summaries_history(all_summaries[:-1]) if len(all_summaries) > 1 else []
+        summary_history_strs = self._get_limited_history(all_summaries[:-1])
         latest_summary_str = self._format_summary_for_history(all_summaries[-1]) if all_summaries else "No summaries yet."
+        summary = await self.summarizer_agent.summarize(
+            agent_segments,
+            summary_history_strs,
+            latest_summary_str,
+            self.history_k
+        )
         
         # Generate summary
         summary = await self.summarizer_agent.summarize(
@@ -194,49 +203,59 @@ Processes a single streaming token from an agent using TokenGate for intelligent
 ```python
 class BufferAnalysis(BaseModel):
     """Structured analysis of stream state for buffer agent decision-making."""
-    reasoning: str
+    rationale: str  # Brief justification for the decision
     stream_state: Literal["SAME_TOPIC_CONTINUING", "TOPIC_SHIFT", "CRITICAL_ALERT"]
     is_relevant: bool
     is_novel: bool
-    final_trigger: bool
+    is_complete: bool  # Phrase-level structural closure
 
 class TraceData(BaseModel):
     count: int
 
 class BufferAgent:
-    def __init__(self):
-        self.buffer: list[str] = []
+    def __init__(self, disable_novelty: bool = False):
+        self.buffer: list[AgentSegment] = []
+        self.tail_segments: list[AgentSegment] = []  # Deferred segments from non-trigger flushes
         self.base_llm = get_llm(LLMRole.BUFFER_AGENT)
         self.llm = self.base_llm.with_structured_output(BufferAnalysis)
         self.flag_prompt = ChatPromptTemplate.from_messages([...])
         self.traces: dict[str, TraceData] = {}
+        self.last_analysis: dict[str, Union[BufferAnalysis, BufferAnalysisNoNovelty, None]] = {}
 ```
 
 **Core Methods**:
 
-#### `addsegment(agent_id: str, segment: str, previous_summaries: list[str]) -> bool`
+#### `addsegment(agent_id: str, segment: str, previous_summaries: list[str], flush_reason: str | None = None, history_k: int = 3) -> bool`
 
 **Parameters**:
 - `agent_id`: Identifier for the agent generating the trace
 - `segment`: The trace text segment to add to the buffer
 - `previous_summaries`: List of string-formatted previous summaries for novelty comparison
+- `flush_reason`: Reason why TokenGate emitted this chunk (e.g., "max_words", "silence_timer", "boundary_cue", or None)
+- `history_k`: Number of previous summaries to include in the prompt context
 
 Adds a trace segment to the buffer and determines if summarization should be triggered using a structured state machine approach.
 
 **Process**:
-1. Tags the segment with agent ID: `| {agent_id} | {segment}`
-2. Records the trace count in `traces` dictionary
-3. Adds the tagged segment to the buffer
-4. Uses an LLM with structured output to evaluate stream state, relevance, and novelty
-5. Returns `True` if summarization should be triggered, `False` otherwise
+1. Records the trace count in `traces` dictionary
+2. Adds the segment as an `AgentSegment` object to the buffer
+3. Prepares context: includes `tail_segments` (deferred segments) + `buffer[:-1]` (prior segments)
+4. Formats the new segment separately for the prompt
+5. Uses an LLM with structured output to evaluate stream state, relevance, novelty, and completeness
+6. Computes trigger deterministically from the analysis (not from model output)
+7. Returns `True` if summarization should be triggered, `False` otherwise
 
 **Structured Output Model**:
-The buffer uses a `BufferAnalysis` Pydantic model that decouples three evaluation dimensions:
+The buffer uses a `BufferAnalysis` Pydantic model that decouples four evaluation dimensions:
 
 - **Stream State** (`stream_state`): Three-state machine based on topic continuity:
   - `SAME_TOPIC_CONTINUING`: Agent is still refining, listing, or explaining the same clinical issue (wait)
   - `TOPIC_SHIFT`: Agent moves to a different organ system, problem, or section (proceed to checks)
   - `CRITICAL_ALERT`: Immediate life-safety notification (proceed immediately)
+
+- **Completeness** (`is_complete`): Phrase-level structural closure evaluation
+  - Complete: Finished clauses, complete action statements, resolved inference units
+  - Incomplete: Mid-clause, unresolved dependencies, incomplete reasoning chains
 
 - **Relevance** (`is_relevant`): Independent evaluation of clinical importance
   - Relevant: New diagnosis, refined differential, specific treatment dose/plan, condition changes
@@ -246,65 +265,98 @@ The buffer uses a `BufferAnalysis` Pydantic model that decouples three evaluatio
   - Novel: New values, new actions, new insights not already covered
   - Not Novel: Continuing statements, reiteration, status quo confirmations
 
-- **Final Trigger** (`final_trigger`): Only `True` when `(stream_state == TOPIC_SHIFT OR CRITICAL_ALERT) AND is_relevant AND is_novel`
+**Trigger Logic**:
+The trigger decision is computed deterministically in code (via `compute_trigger()`) based on the analysis:
+- Path C: `stream_state == "CRITICAL_ALERT"` → trigger immediately
+- Path A: `is_complete AND is_relevant AND is_novel` → trigger (completed value)
+- Path B: `stream_state == "TOPIC_SHIFT" AND is_relevant AND is_novel` → trigger (topic shift)
+- Otherwise: no trigger
 
 **Code Snippet**:
 ```python
-class BufferAnalysis(BaseModel):
-    reasoning: str  # Chain-of-thought analysis
-    stream_state: Literal["SAME_TOPIC_CONTINUING", "TOPIC_SHIFT", "CRITICAL_ALERT"]
-    is_relevant: bool
-    is_novel: bool
-    final_trigger: bool  # True only if all conditions met
-
-async def addsegment(self, agent_id: str, segment: str, previous_summaries: list[str]) -> bool:
-    tagged_segment = f"| {agent_id} | {segment}"
-    if agent_id not in self.traces:
-        self.traces[agent_id] = TraceData(count=0)
-    self.traces[agent_id].count += 1
+async def addsegment(
+    self,
+    agent_id: str,
+    segment: str,
+    previous_summaries: list[str],
+    flush_reason: str | None = None,
+    history_k: int = 3
+) -> bool:
+    # Add to buffer
+    self.buffer.append(AgentSegment(agent_id=agent_id, segment=segment))
     
-    # Add to buffer first
-    self.buffer.append(tagged_segment)
-    
-    # Prepare context: rest of buffer separate from new segment
-    buffer_context = "\n".join(self.buffer[:-1]) if len(self.buffer) > 1 else "(Buffer empty)"
+    # Prepare context: tail_segments + buffer[:-1] (includes deferred segments)
+    prior_segments = self.tail_segments + self.buffer[:-1]
+    buffer_context = self.format_segments_for_prompt(prior_segments)
+    new_trace_block = self.format_segments_for_prompt([self.buffer[-1]])
     
     # Invoke LLM with structured output
     chain = self.flag_prompt | self.llm
     analysis: BufferAnalysis = await chain.ainvoke({
         "summaries": previous_summaries,
         "previous_trace": buffer_context,
-        "new_trace": tagged_segment
+        "new_trace": new_trace_block,
+        "flush_reason": flush_reason or "none",
+        "history_k": history_k
     })
     
-    return analysis.final_trigger
+    # Compute trigger deterministically from analysis
+    trigger, trigger_path = compute_trigger(analysis)
+    return trigger
 ```
 
-#### `peek() -> list[str]`
+#### `flush() -> list[AgentSegment]`
 
-Returns a copy of the current buffer without flushing it. Useful for capturing buffer state before summarization.
+Flushes tail segments + live buffer and returns segments with their corresponding agent IDs. Tail segments are deferred content parked by `park_tail()` when a forced flush occurs without a BufferAgent trigger. They are included in the `buffer_context` passed to `addsegment()` decisions so trigger logic can consider them, and they are prepended here so the next summarization includes them with their original agent IDs.
 
-#### `flush() -> list[str]`
+**Returns**: List of `AgentSegment` items, preserving original agent attribution
 
-Returns a copy of the buffer and clears it. Called after summarization is triggered.
+#### `park_tail(segments: list[AgentSegment]) -> None`
+
+Appends leftover segments to the tail buffer without summarizing. Used when a forced flush occurs without a BufferAgent trigger, allowing these segments to be considered in future trigger decisions.
 
 #### `get_trace_count(agent_id: str) -> int`
 
 Returns the total number of traces received from a specific agent.
 
+#### `get_last_analysis(agent_id: str) -> Union[BufferAnalysis, BufferAnalysisNoNovelty, None]`
+
+Returns the last analysis result for the given agent, or `None` if no analysis has been performed yet.
+
 **Prompt Template**:
-The buffer agent uses a structured prompt that instructs the LLM to analyze stream state, relevance, and novelty independently. The prompt template is defined in `exaid_core/utils/prompts.py` and includes:
+The buffer agent uses a structured prompt that instructs the LLM to analyze stream state, completeness, relevance, and novelty independently. The prompt template is defined in `exaid_core/utils/prompts.py` and includes:
 
 - **Stream State Detection**: Classifies the stream into one of three states based on topic continuity:
   - `SAME_TOPIC_CONTINUING`: Agent is still refining the same clinical issue (wait)
   - `TOPIC_SHIFT`: Agent moves to a different topic or concludes a thought (proceed)
   - `CRITICAL_ALERT`: Immediate life-safety notification (proceed immediately)
 
+- **Completeness Detection**: Evaluates phrase-level structural closure
+
 - **Relevance Detection**: Evaluates if the content is clinically important
 
 - **Novelty Detection**: Compares against previous summaries to determine if information is new
 
-- **Final Trigger Logic**: Only triggers when `(TOPIC_SHIFT OR CRITICAL_ALERT) AND is_relevant AND is_novel`
+- **Flush Reason**: Includes TokenGate flush reason (e.g., "max_words", "silence_timer", "boundary_cue") to provide context about why the chunk was emitted
+
+- **History K**: Includes the number of previous summaries being considered for novelty comparison
+
+The prompt template format:
+```
+Previous Summaries (last {history_k}):
+{summaries}
+
+Current Buffer (Unsummarized Context):
+{previous_trace}
+
+New Trace (Latest Segment Block):
+{new_trace}
+
+Flush Reason (TokenGate):
+{flush_reason}
+
+Analyze completeness, stream state, relevance, and novelty. Provide structured analysis.
+```
 
 The prompt uses structured output via Pydantic to ensure consistent, parseable responses:
 
@@ -314,10 +366,6 @@ self.flag_prompt = ChatPromptTemplate.from_messages([
     ("user", get_buffer_agent_user_prompt())
 ])
 self.llm = self.base_llm.with_structured_output(BufferAnalysis)
-```
-    "Be decisive - prefer YES when in doubt, as summaries help track agent progress."),
-    ("user", "Previous traces in buffer:\n{previous_trace}\n\nNew trace to evaluate:\n{new_trace}\n\nShould this trigger summarization? Reply with only 'YES' or 'NO'."),
-])
 ```
 
 ---

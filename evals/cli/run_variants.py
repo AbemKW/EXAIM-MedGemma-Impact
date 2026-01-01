@@ -492,13 +492,14 @@ class VariantPipeline(ABC):
             else "No summaries yet."
         )
 
-        prompt_parts = []
-        if summary_history_strs:
-            prompt_parts.append("\n".join(summary_history_strs))
-        prompt_parts.append(latest_summary_str)
-        new_buffer, _ = self.summarizer_agent.format_segments_for_prompt(segments)
-        prompt_parts.append(new_buffer)
-        prompt_text = "\n".join(prompt_parts)
+        new_buffer = self.summarizer_agent.format_segments_for_prompt(segments)
+        
+        # Reconstruct the exact prompt text that SummarizerAgent uses
+        # Match the format from get_summarizer_user_prompt() template:
+        # "Summary history (last {history_k}):\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary..."
+        # where summary_history is joined with ",\n" (comma + newline) as in summarizer_agent.py lines 215 and 320
+        summary_history_formatted = ",\n".join(summary_history_strs) if summary_history_strs else ""
+        prompt_text = f"Summary history (last {ctx.history_k}):\n[ {summary_history_formatted} ]\n\nLatest summary:\n{latest_summary_str}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
 
         start_time = time.perf_counter()
         summary = run_async(
@@ -581,18 +582,35 @@ class VariantPipeline(ABC):
         ctx.decision_count += 1
 
         summary_history = ctx.summaries[-ctx.history_k:]
-        summary_history = [
+        summary_history_strs = [
             format_summary_for_history(summary) for summary in summary_history
         ]
-        buffer_context = self.buffer_agent.format_segments_for_prompt(self.buffer_agent.buffer)
-
-        prompt_text = "\n".join([
-            f"agent_id: {agent_id}",
-            "summaries:",
-            "\n".join(summary_history),
-            f"previous_trace: {buffer_context}",
-            f"new_trace: {segment_text}"
+        
+        # Reconstruct the exact prompt that addsegment() will use:
+        # - prior_segments = tail_segments + buffer[:-1] (before adding new segment)
+        # - new_trace_block = formatted new segment
+        # - includes flush_reason and history_k
+        prior_segments = self.buffer_agent.tail_segments + self.buffer_agent.buffer[:-1]
+        buffer_context = self.buffer_agent.format_segments_for_prompt(prior_segments)
+        new_trace_block = self.buffer_agent.format_segments_for_prompt([
+            AgentSegment(agent_id=agent_id, segment=segment_text)
         ])
+        
+        # Format prompt text exactly as the template does
+        flush_reason_str = flush_reason or "none"
+        prompt_text = f"""Previous Summaries (last {ctx.history_k}):
+{"\n".join(summary_history_strs)}
+
+Current Buffer (Unsummarized Context):
+{buffer_context}
+
+New Trace (Latest Segment Block):
+{new_trace_block}
+
+Flush Reason (TokenGate):
+{flush_reason_str}
+
+Analyze completeness, stream state, relevance, and novelty. Provide structured analysis."""
 
         start_time = time.perf_counter()
         should_trigger = run_async(
@@ -600,8 +618,9 @@ class VariantPipeline(ABC):
             self.buffer_agent.addsegment(
                 agent_id,
                 segment_text,
-                summary_history,
-                flush_reason=flush_reason
+                summary_history_strs,
+                flush_reason=flush_reason,
+                history_k=ctx.history_k
             )
         )
         latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -640,7 +659,7 @@ class VariantPipeline(ABC):
             start_seq=ctx.buffer_window_start_seq or 0,
             end_seq=ctx.buffer_window_end_seq or 0,
             timestamp=ctx.timestamps.get_window_timestamp(ctx.buffer_window_end_seq or 0),
-            input_ctu=compute_ctu(buffer_context + "\n" + segment_text),
+            input_ctu=compute_ctu(buffer_context + "\n" + new_trace_block),
             decision="summarize" if should_trigger else "buffer",
             filter_results=filter_results,
             llm_usage={
@@ -659,10 +678,10 @@ class VariantPipeline(ABC):
         """Create a TokenGate with deterministic clock and config."""
         token_gate_config = self.config.get("components", {}).get("token_gate", {})
         return TokenGate(
-            min_words=token_gate_config.get("min_words", 35),
-            max_words=token_gate_config.get("max_words", 90),
-            silence_timer=token_gate_config.get("silence_timer", 15),
-            max_wait_timeout=token_gate_config.get("max_wait_timeout", 40),
+            min_words=token_gate_config.get("min_words", 60),
+            max_words=token_gate_config.get("max_words", 100),
+            silence_timer=token_gate_config.get("silence_timer", 1),
+            max_wait_timeout=token_gate_config.get("max_wait_timeout", 4),
             clock=ctx.clock
         )
 
@@ -784,39 +803,13 @@ class VariantPipeline(ABC):
                     flushes.append(flush)
                     ctx.flush_count += 1
 
+                    # Core behavior: flush_agent() parks segments without summarizing
+                    # Match this behavior for end_of_trace flushes
                     if use_buffer_agent:
-                        if not self.buffer_agent.buffer:
-                            ctx.buffer_window_start_seq = flush_start
-                        ctx.buffer_window_end_seq = flush_end
-
-                        should_trigger, decision = self.evaluate_buffer_agent(
-                            ctx, agent_id, flushed_text, "end_of_trace"
-                        )
-                        decisions.append(decision)
-
-                        if should_trigger:
-                            flushed_segments = self.buffer_agent.flush()
-                            summary = self.generate_summary(
-                                ctx,
-                                ctx.buffer_window_start_seq or flush_start,
-                                ctx.buffer_window_end_seq or flush_end,
-                                flushed_segments,
-                                agent_id,
-                                trigger_type="buffer_agent"
-                            )
-                            summaries.append(summary)
-                            ctx.buffer_window_start_seq = None
-                            ctx.buffer_window_end_seq = None
-                    else:
-                        summary = self.generate_summary(
-                            ctx,
-                            flush_start,
-                            flush_end,
-                            [AgentSegment(agent_id=agent_id, segment=flushed_text)],
-                            agent_id,
-                            trigger_type="tokengate_flush"
-                        )
-                        summaries.append(summary)
+                        # Park the segments in tail buffer without evaluation or summarization
+                        self.buffer_agent.park_tail([AgentSegment(agent_id=agent_id, segment=flushed_text)])
+                    # For V2 (no buffer agent), also don't summarize - just record the flush
+                    # This matches core behavior where flush_agent() is non-summarizing
 
         return summaries, decisions, flushes
 
@@ -1007,29 +1000,11 @@ class V3_NoTokenGate(VariantPipeline):
                 accumulated_ctu = 0
                 window_start = seq + 1
         
+        # End-of-trace handling: park remaining segments without summarizing
+        # (matches production flush_agent() behavior)
         if accumulated_ctu > 0 and last_seq_seen is not None:
-            if not self.buffer_agent.buffer:
-                ctx.buffer_window_start_seq = window_start
-            ctx.buffer_window_end_seq = last_seq_seen
-
-            should_trigger, decision = self.evaluate_buffer_agent(
-                ctx, last_agent_id, accumulated_text, "end_of_trace"
-            )
-            decisions.append(decision)
-
-            if should_trigger:
-                flushed_segments = self.buffer_agent.flush()
-                summary = self.generate_summary(
-                    ctx,
-                    ctx.buffer_window_start_seq or window_start,
-                    ctx.buffer_window_end_seq or last_seq_seen,
-                    flushed_segments,
-                    last_agent_id,
-                    trigger_type="buffer_agent"
-                )
-                summaries.append(summary)
-                ctx.buffer_window_start_seq = None
-                ctx.buffer_window_end_seq = None
+            # Park the segments in tail buffer without evaluation or summarization
+            self.buffer_agent.park_tail([AgentSegment(agent_id=last_agent_id, segment=accumulated_text)])
         
         return summaries, decisions, flushes
 
