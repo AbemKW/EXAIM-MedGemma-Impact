@@ -112,7 +112,8 @@ class EXAID:
             summary = await self.summarizer_agent.summarize(
                 agent_segments,
                 summary_history_strs,
-                latest_summary_str
+                latest_summary_str,
+                self.history_k
             )
             if summary is not None:
                 self.summaries.append(summary)
@@ -169,7 +170,8 @@ class EXAID:
             summary = await self.summarizer_agent.summarize(
                 agent_segments,
                 summary_history_strs,
-                latest_summary_str
+                latest_summary_str,
+                self.history_k
             )
             if summary is not None:
                 self.summaries.append(summary)
