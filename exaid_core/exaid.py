@@ -103,7 +103,12 @@ class EXAID:
         all_summaries = self.get_all_summaries()
         previous_summaries = self._get_limited_history(all_summaries)
         
-        trigger = await self.buffer_agent.addsegment(agent_id, text, previous_summaries)
+        trigger = await self.buffer_agent.addsegment(
+            agent_id,
+            text,
+            previous_summaries,
+            flush_reason="full_trace"
+        )
         if trigger:
             agent_segments = self.buffer_agent.flush()
             all_summaries = self.get_all_summaries()
@@ -144,23 +149,32 @@ class EXAID:
         # Process chunk if complete
         if chunk:
             summaries = self.get_all_summaries()
-            return await self._process_chunk(agent_id, chunk, summaries)
+            flush_reason = self.token_gate.get_last_flush_reason(agent_id)
+            return await self._process_chunk(agent_id, chunk, summaries, flush_reason)
 
         # Check TokenGate timers
         timer_chunk = await self.token_gate.check_timers(agent_id)
         if timer_chunk:
             summaries = self.get_all_summaries()
-            return await self._process_chunk(agent_id, timer_chunk, summaries)
+            flush_reason = self.token_gate.get_last_flush_reason(agent_id)
+            return await self._process_chunk(agent_id, timer_chunk, summaries, flush_reason)
 
         return None
 
-    async def _process_chunk(self, agent_id: str, chunk: str, summaries: list[AgentSummary]) -> Optional[AgentSummary]:
+    async def _process_chunk(
+        self,
+        agent_id: str,
+        chunk: str,
+        summaries: list[AgentSummary],
+        flush_reason: str | None = None
+    ) -> Optional[AgentSummary]:
         """Process a chunk of text for summarization."""
         previous_summaries = self._get_limited_history(summaries)
         trigger = await self.buffer_agent.addsegment(
             agent_id,
             chunk,
-            previous_summaries
+            previous_summaries,
+            flush_reason=flush_reason
         )
         if trigger:
             # Flush returns deferred tail + current buffer content.
