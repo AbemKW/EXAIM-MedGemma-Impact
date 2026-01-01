@@ -502,7 +502,8 @@ class VariantPipeline(ABC):
         self,
         ctx: RunContext,
         agent_id: str,
-        segment_text: str
+        segment_text: str,
+        flush_reason: Optional[str]
     ) -> tuple[bool, BufferDecisionResult]:
         """Run BufferAgent on a segment and build a decision result.
         
@@ -529,7 +530,12 @@ class VariantPipeline(ABC):
         start_time = time.perf_counter()
         should_trigger = run_async(
             ctx,
-            self.buffer_agent.addsegment(agent_id, segment_text, summary_history)
+            self.buffer_agent.addsegment(
+                agent_id,
+                segment_text,
+                summary_history,
+                flush_reason=flush_reason
+            )
         )
         latency_ms = int((time.perf_counter() - start_time) * 1000)
         analysis: BufferAnalysis | BufferAnalysisNoNovelty | None = self.buffer_agent.get_last_analysis(agent_id)
@@ -663,7 +669,7 @@ class VariantPipeline(ABC):
                     ctx.buffer_window_end_seq = flush_end
 
                     should_trigger, decision = self.evaluate_buffer_agent(
-                        ctx, agent_id, flushed_text
+                        ctx, agent_id, flushed_text, flush_reason
                     )
                     decisions.append(decision)
 
@@ -718,7 +724,7 @@ class VariantPipeline(ABC):
                         ctx.buffer_window_end_seq = flush_end
 
                         should_trigger, decision = self.evaluate_buffer_agent(
-                            ctx, agent_id, flushed_text
+                            ctx, agent_id, flushed_text, "end_of_trace"
                         )
                         decisions.append(decision)
 
@@ -913,7 +919,7 @@ class V3_NoTokenGate(VariantPipeline):
                 ctx.buffer_window_end_seq = seq
 
                 should_trigger, decision = self.evaluate_buffer_agent(
-                    ctx, last_agent_id, accumulated_text
+                    ctx, last_agent_id, accumulated_text, "fixed_ctu"
                 )
                 decisions.append(decision)
 
@@ -941,7 +947,7 @@ class V3_NoTokenGate(VariantPipeline):
             ctx.buffer_window_end_seq = last_seq_seen
 
             should_trigger, decision = self.evaluate_buffer_agent(
-                ctx, last_agent_id, accumulated_text
+                ctx, last_agent_id, accumulated_text, "end_of_trace"
             )
             decisions.append(decision)
 
