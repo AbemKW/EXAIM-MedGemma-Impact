@@ -463,13 +463,14 @@ class TokenGate:
         self,
         min_words: int = 60,
         max_words: int = 100,
-        boundary_cues: str = ".?!\n",
         silence_timer: float = 1,
         max_wait_timeout: float = 4
     ):
 ```
 
-**Note**: Evaluation configurations (e.g., `evals/configs/summarizer.yaml`, `evals/configs/variants/V0.yaml`) use calibrated values (`min_words=35`, `max_words=90`, `silence_timer=15`, `max_wait_timeout=40`) which differ from these runtime defaults. The runtime defaults are optimized for general use, while eval configs are calibrated for specific evaluation scenarios.
+**Note**: Evaluation configurations (e.g., `evals/configs/variants/V0.yaml`) use calibrated values (`min_words=35`, `max_words=90`, `silence_timer=15`, `max_wait_timeout=40`) which differ from these runtime defaults. The runtime defaults are optimized for general use, while eval configs are calibrated for specific evaluation scenarios.
+
+Boundary cues are hardcoded to `.?!\n` (period, question mark, exclamation, newline) and cannot be configured.
 
 **Core Methods**:
 

@@ -114,7 +114,8 @@ class BufferAgent:
         agent_id: str,
         segment: str,
         previous_summaries: list[str],
-        flush_reason: str | None = None
+        flush_reason: str | None = None,
+        history_k: int = 3
     ) -> bool:
         new_text = segment
         if agent_id not in self.traces:
@@ -154,7 +155,8 @@ class BufferAgent:
                 "summaries": previous_summaries,
                 "previous_trace": buffer_context,
                 "new_trace": new_trace_block,
-                "flush_reason": flush_reason or "none"
+                "flush_reason": flush_reason or "none",
+                "history_k": history_k
             })
             self.last_analysis[agent_id] = analysis
             

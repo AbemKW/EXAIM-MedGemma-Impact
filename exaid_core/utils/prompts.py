@@ -155,7 +155,7 @@ def get_summarizer_system_prompt() -> str:
 
 def get_summarizer_user_prompt() -> str:
     """Returns the user prompt template for the SummarizerAgent."""
-    return "Summary history (last {history_k} deltas):\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
+    return "Summary history (last {history_k}):\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
 
 
 def get_buffer_agent_system_prompt() -> str:
@@ -322,7 +322,7 @@ def get_buffer_agent_system_prompt() -> str:
 
 def get_buffer_agent_user_prompt() -> str:
     """Returns the user prompt template for the BufferAgent."""
-    return """Previous Summaries:
+    return """Previous Summaries (last {history_k}):
 {summaries}
 
 Current Buffer (Unsummarized Context):

@@ -83,6 +83,9 @@ class TokenGate:
         at min_words ONLY if a boundary cue is detected near the end; otherwise the
         buffer waits for max_words or timer triggers.
         
+        Boundary cues are hardcoded to `.?!\n` (period, question mark, exclamation,
+        newline). Tabs are excluded as formatting noise.
+        
         Examples that trigger flush:
         - "Hello world." → True (ends with period)
         - "He said 'Yes.'" → True (period + closing quote)
@@ -99,7 +102,6 @@ class TokenGate:
         self,
         min_words: int = 60,
         max_words: int = 100,
-        boundary_cues: str = ".?!\n",
         silence_timer: float = 1,
         max_wait_timeout: float = 4,
         clock: Optional[Clock] = None
@@ -109,22 +111,17 @@ class TokenGate:
         Args:
             min_words: Minimum word threshold (whitespace-delimited) before flushing (default: 60)
             max_words: Maximum word cap (whitespace-delimited) to force flush (default: 100)
-            boundary_cues: Punctuation/newline characters that trigger flush at end of buffer
-                after min_words (default: ".?!\n"). Note: tabs are excluded as formatting noise.
-                This parameter is fixed and not calibrated.
             silence_timer: Seconds of inactivity before flush (default: 1)
             max_wait_timeout: Maximum seconds before forced flush (default: 4)
             clock: Optional clock/time provider for deterministic timing. If None, uses real
                 wall-clock time. Use `ManualClock` for trace replay calibration.
         
-        Note: Evaluation configurations (e.g., evals/configs/summarizer.yaml) use calibrated
-        values (min_words=35, max_words=90, silence_timer=15, max_wait_timeout=40) which differ
-        from these runtime defaults. The runtime defaults are optimized for general use, while
-        eval configs are calibrated for specific evaluation scenarios.
+        
+        Boundary cues are hardcoded to `.?!\n` (period, question mark, exclamation, newline)
+        and cannot be configured.
         """
         self.min_words = min_words
         self.max_words = max_words
-        self.boundary_cues = boundary_cues
         self.silence_timer = silence_timer
         self.max_wait_timeout = max_wait_timeout
         self.clock = clock

@@ -344,13 +344,42 @@ Turns with empty or whitespace-only text (`turn_text.strip() == ""`) are classif
 **TokenGate Calibration:**
 
 ```python
-# TokenGate consumes content_plane stream but gets FULL timing
+from exaid_core.token_gate.token_gate import TokenGate, ManualClock
+from datetime import datetime, timezone
+
+# Initialize TokenGate with ManualClock for deterministic timing
+t0_datetime = datetime.fromtimestamp(trace_meta.t0_emitted_ms / 1000.0, tz=timezone.utc)
+clock = ManualClock(t0_datetime)
+token_gate = TokenGate(
+    min_words=35,
+    max_words=90,
+    silence_timer=15.0,
+    max_wait_timeout=40.0,
+    clock=clock
+)
+
+# TokenGate consumes content_plane stream with timing preserved via clock
 for event in engine.replay_content_plane():
-    if event.event_type == "delta":
-        tokengate.accumulate(
-            text=event.delta_text,
-            virtual_time_ms=event.virtual_time_ms  # Gaps preserved
-        )
+    # Advance clock to match event timing (preserves gaps)
+    event_datetime = datetime.fromtimestamp(
+        (trace_meta.t0_emitted_ms + event.virtual_time_ms) / 1000.0,
+        tz=timezone.utc
+    )
+    clock.set_time(event_datetime)
+    
+    if event.event_type == "delta" and event.delta_text:
+        # Add token (returns flushed chunk if flush triggered, None otherwise)
+        flushed_text = await token_gate.add_token(event.agent_id, event.delta_text)
+        if flushed_text:
+            # Handle flush event
+            flush_reason = token_gate.get_last_flush_reason(event.agent_id)
+            process_flush(flushed_text, flush_reason)
+        
+        # Check timers after add_token (may trigger additional flushes)
+        timer_flush = await token_gate.check_timers(event.agent_id)
+        if timer_flush:
+            flush_reason = token_gate.get_last_flush_reason(event.agent_id)
+            process_flush(timer_flush, flush_reason)
 ```
 
 **Metrics Scripts:**
@@ -921,7 +950,6 @@ evals/
 │   ├── extractor.yaml             # Concept extractor config
 │   ├── dataset.yaml               # Dataset selection + MAC case policy
 │   ├── mas_generation.yaml        # MAS trace generation (MAC config)
-│   ├── summarizer.yaml            # Summarizer params (history_k=3)
 │   ├── metrics.yaml               # Metric computation params
 │   ├── stop_entities.txt          # Surface-form stoplist
 │   ├── stop_cuis.txt              # CUI stoplist

@@ -107,7 +107,8 @@ class EXAID:
             agent_id,
             text,
             previous_summaries,
-            flush_reason="full_trace"
+            flush_reason="full_trace",
+            history_k=self.history_k
         )
         if trigger:
             agent_segments = self.buffer_agent.flush()
@@ -174,7 +175,8 @@ class EXAID:
             agent_id,
             chunk,
             previous_summaries,
-            flush_reason=flush_reason
+            flush_reason=flush_reason,
+            history_k=self.history_k
         )
         if trigger:
             # Flush returns deferred tail + current buffer content.

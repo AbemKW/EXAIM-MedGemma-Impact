@@ -23,7 +23,6 @@ def generate_policy_grid(config: dict) -> List[Policy]:
                             max_words=max_words,
                             silence_timer_ms=silence_timer_ms,
                             max_wait_timeout_ms=max_wait_timeout_ms,
-                            boundary_cues=grid.get("boundary_cues", ".?!\n"),
                         )
                     )
                     policy_idx += 1

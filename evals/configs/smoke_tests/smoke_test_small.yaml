@@ -31,8 +31,7 @@ parameter_grid:
   
   # Total combinations: 3×3×2×2 = 36 policies
   
-  # Fixed parameter
-  boundary_cues: ".?!\n"
+  # Note: Boundary cues are hardcoded to .?!\n and cannot be calibrated
 
 # Policy Validity Constraints
 validity_constraints:

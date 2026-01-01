@@ -18,7 +18,6 @@ components:
     enabled: true
     min_words: 35
     max_words: 90
-    boundary_cues: ".?!\n"
   
   # BufferAgent: 3-layer filter (completeness, value, novelty)
   buffer_agent:

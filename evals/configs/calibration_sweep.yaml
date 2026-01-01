@@ -22,8 +22,7 @@ parameter_grid:
   
   # Total combinations: 5×5×5×5 = 625 policies
   
-  # Fixed parameter (not calibrated)
-  boundary_cues: ".?!\n"
+  # Note: Boundary cues are hardcoded to .?!\n and cannot be calibrated
 
 # =============================================================================
 # Policy Validity Constraints

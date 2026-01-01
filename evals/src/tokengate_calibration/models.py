@@ -13,7 +13,6 @@ class Policy:
     max_words: int
     silence_timer_ms: int
     max_wait_timeout_ms: int
-    boundary_cues: str = ".?!\n"
 
 
 @dataclass
