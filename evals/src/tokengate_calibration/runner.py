@@ -68,7 +68,7 @@ async def replay_case_with_policy(
     - Advance clock to event time
     - Call add_token() (which internally checks silence timer before adding)
     - Call check_timers() after add_token() (matching production line 144)
-    - On turn_end, call flush() with reason="turn_end" (matching production flush_agent())
+    - On turn_end, call flush() with reason="turn_end" (for calibration metrics only, not summarization)
 
     We do NOT simulate timer expiries during gaps between events, as production
     has no background/tick loop. Timers are only checked synchronously after
@@ -180,11 +180,14 @@ async def replay_case_with_policy(
                     )
                 )
 
-        # Process turn_end event (explicit flush, matching production flush_agent())
+        # Process turn_end event (explicit flush for calibration metrics)
         elif event.event_type == "turn_end":
             agent_id = event.agent_id
 
-            # Explicitly flush buffer at turn end (matching production flush_agent() behavior)
+            # Explicitly flush buffer at turn end (for calibration metrics only)
+            # Note: This differs from production flush_agent() which is called at end-of-trace
+            # and parks segments without summarizing. Turn-end flushes here are mid-trace
+            # and only record flush events for calibration, not for summarization.
             flushed_text = await token_gate.flush(agent_id, reason="turn_end")
 
             if flushed_text:

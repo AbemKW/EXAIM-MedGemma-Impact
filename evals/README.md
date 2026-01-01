@@ -351,10 +351,10 @@ from datetime import datetime, timezone
 t0_datetime = datetime.fromtimestamp(trace_meta.t0_emitted_ms / 1000.0, tz=timezone.utc)
 clock = ManualClock(t0_datetime)
 token_gate = TokenGate(
-    min_words=35,
-    max_words=90,
-    silence_timer=15.0,
-    max_wait_timeout=40.0,
+    min_words=60,  # Core default
+    max_words=100,  # Core default
+    silence_timer=1.0,  # Core default
+    max_wait_timeout=4.0,  # Core default
     clock=clock
 )
 
@@ -669,7 +669,8 @@ evals/data/calibration/calib_<hash8>_<hash8>_<hash8>/
 3. **Production-Faithful Replay**: Deterministic replay matching production behavior exactly
    - Uses `TokenGate` with `ManualClock` for virtual time
    - Timers checked synchronously: inside `add_token()` (silence check) and after `add_token()` via `check_timers()`
-   - Explicit TokenGate flush at `turn_end` events (matching production `flush_agent()` behavior)
+   - Explicit TokenGate flush at `turn_end` events (for calibration metrics only; does not trigger summarization)
+   - End-of-trace flush parks segments without summarizing (matching production `flush_agent()` behavior)
    - **No gap-based timer processing** (production has no background/tick loop)
    - Multi-agent support (per-agent buffers)
 
@@ -873,6 +874,12 @@ Note: TokenGate uses whitespace-delimited word counts (not model tokenizer token
 | **V2** | `no_buffer` | TokenGate flush → Summarizer (skip BufferAgent) |
 | **V3** | `no_tokengate` | Fixed chunk/time + BufferAgent + Summarizer |
 | **V4** | `no_novelty` | TokenGate (word thresholds) + BufferAgent (completeness + value only) + Summarizer |
+
+**Note on turn_end behavior:**
+- **V1 variant**: Summarizes on `turn_end` events (ablation variant to measure TokenGate/BufferAgent contribution)
+- **Production `flush_agent()`**: Called at end-of-trace only, parks segments without summarizing
+- **TokenGate calibration**: Flushes at `turn_end` for metrics only (no summarization)
+- **Evaluation end-of-trace**: Parks segments without summarizing (matches production `flush_agent()` behavior)
 
 ### V3 Calibration
 
