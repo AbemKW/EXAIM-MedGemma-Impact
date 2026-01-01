@@ -109,7 +109,13 @@ class BufferAgent:
         flush()
         return "\n".join(lines)
 
-    async def addsegment(self, agent_id: str, segment: str, previous_summaries: list[str]) -> bool:
+    async def addsegment(
+        self,
+        agent_id: str,
+        segment: str,
+        previous_summaries: list[str],
+        flush_reason: str | None = None
+    ) -> bool:
         new_text = segment
         if agent_id not in self.traces:
             self.traces[agent_id] = TraceData(count=0)
@@ -132,6 +138,7 @@ class BufferAgent:
         print(f"{YELLOW}DEBUG [{agent_id}] Buffer Agent Input:{RESET}")
         print(f"{YELLOW}  Agent ID: {agent_id}{RESET}")
         print(f"{YELLOW}  New Segment: {new_text}{RESET}")
+        print(f"{YELLOW}  Flush Reason: {flush_reason or 'none'}{RESET}")
         print(f"{YELLOW}  Previous Summaries ({len(previous_summaries)}):{RESET}")
         for i, summary in enumerate(previous_summaries):
             print(f"{YELLOW}    [{i+1}] {summary}{RESET}")
@@ -146,7 +153,8 @@ class BufferAgent:
             analysis: Union[BufferAnalysis, BufferAnalysisNoNovelty] = await chain.ainvoke({
                 "summaries": previous_summaries,
                 "previous_trace": buffer_context,
-                "new_trace": new_trace_block
+                "new_trace": new_trace_block,
+                "flush_reason": flush_reason or "none"
             })
             self.last_analysis[agent_id] = analysis
             
