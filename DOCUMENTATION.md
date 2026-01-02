@@ -98,10 +98,12 @@ Generates structured summaries from buffered traces. Features:
 
 ```python
 class EXAID:
-    def __init__(self):
+    def __init__(self, history_k: int = 3):
         self.buffer_agent = BufferAgent()
         self.summarizer_agent = SummarizerAgent()
+        self.token_gate = TokenGate()
         self.summaries: list[AgentSummary] = []
+        self.history_k = history_k
 ```
 
 **Core Methods**:
@@ -145,15 +147,9 @@ async def received_trace(self, agent_id: str, text: str) -> Optional[AgentSummar
             self.history_k
         )
         
-        # Generate summary
-        summary = await self.summarizer_agent.summarize(
-            summary_history_strs,
-            latest_summary_str,
-            buffer_str
-        )
-        
         # Store summary
-        self.summaries.append(summary)
+        if summary is not None:
+            self.summaries.append(summary)
         
         return summary
     return None
@@ -396,36 +392,41 @@ class SummarizerAgent:
 
 **Core Methods**:
 
-#### `summarize(summary_history: List[str], latest_summary: str, new_buffer: str) -> AgentSummary`
+#### `summarize(segments_with_agents: List[AgentSegment], summary_history: List[str], latest_summary: str, history_k: int = 3) -> AgentSummary`
 
 Generates a structured summary from buffered traces.
 
 **Parameters**:
+- `segments_with_agents`: List of AgentSegment items representing agent contributions
 - `summary_history`: List of previous summary strings (excluding the latest)
 - `latest_summary`: The most recent summary string
-- `new_buffer`: New reasoning buffer content to summarize
+- `history_k`: The number of previous summaries to include in history (default: 3)
 
 **Process**:
-1. Formats the prompt with summary history, latest summary, and new buffer
-2. Invokes LLM with structured output to generate `AgentSummary`
-3. Returns the structured summary object
+1. Formats agent segments into a buffer string
+2. Formats the prompt with summary history, latest summary, and new buffer
+3. Invokes LLM with structured output to generate `AgentSummary`
+4. Returns the structured summary object
 
 **Code Snippet**:
 ```python
 async def summarize(
-    self, 
-    summary_history: List[str], 
-    latest_summary: str, 
-    new_buffer: str
+    self,
+    segments_with_agents: List[AgentSegment],
+    summary_history: List[str],
+    latest_summary: str,
+    history_k: int = 3,
 ) -> AgentSummary:
-    """Updates the summary given the summary history (as a list), latest summary, 
-    and new reasoning buffer."""
+    """Summarize agent output with automatic retry and fallback truncation."""
     summarize_chain = self.summarize_prompt | self.llm
+    
+    new_buffer = self.format_segments_for_prompt(segments_with_agents)
     
     summary = await summarize_chain.ainvoke({
         "summary_history": ",\n".join(summary_history),
         "latest_summary": latest_summary,
-        "new_buffer": new_buffer
+        "new_buffer": new_buffer,
+        "history_k": history_k
     })
     return summary
 ```
@@ -515,6 +516,8 @@ class AgentSummary(BaseModel):
 
 **Note**: TokenGate counts **whitespace-delimited words** (not model tokenizer tokens) for its min/max thresholds. The class name "TokenGate" refers to its role in gating streaming tokens from the LLM, not to the counting method.
 
+**Input Flexibility**: TokenGate accepts streaming outputs from agents, which may be individual tokens or larger chunks (delta text). The implementation is agnostic to the input granularity - it accumulates text regardless of whether it receives single tokens or multi-token chunks. This design allows TokenGate to work seamlessly with both real-time token streams and trace replay scenarios where traces store delta_text chunks with timing information. Evaluation replays correctly use delta_text chunks because that's how traces were originally generated and stored.
+
 **Key Components**:
 
 ```python
@@ -536,7 +539,7 @@ Boundary cues are hardcoded to `.?!\n` (period, question mark, exclamation, newl
 
 #### `async add_token(agent_id: str, token: str) -> Optional[str]`
 
-Adds a token to the buffer for the given agent. If flush conditions are met, returns the buffered text and clears the buffer.
+Adds a token or chunk to the buffer for the given agent. The parameter name "token" is historical - it accepts any text string, whether it's a single token, a multi-token chunk, or delta text from trace replay. If flush conditions are met, returns the buffered text and clears the buffer.
 
 **Flush Conditions**:
 - Maximum word cap reached (`max_words`)
@@ -545,6 +548,8 @@ Adds a token to the buffer for the given agent. If flush conditions are met, ret
 - Max wait timeout expired (buffer has existed for `max_wait_timeout` seconds)
 
 **Returns**: Flushed chunk text if flush triggered, `None` otherwise
+
+**Note**: This method works identically whether receiving individual tokens from a live stream or delta_text chunks during trace replay. The evaluation system correctly replays delta_text chunks because that's how traces were originally generated and stored with their timing information.
 
 #### `async flush(agent_id: str) -> Optional[str]`
 
@@ -985,14 +990,15 @@ Check if timers have expired and flush if needed.
 
 ### SummarizerAgent Class
 
-#### `async summarize(summary_history: List[str], latest_summary: str, new_buffer: str) -> AgentSummary`
+#### `async summarize(segments_with_agents: List[AgentSegment], summary_history: List[str], latest_summary: str, history_k: int = 3) -> AgentSummary`
 
 Generate a structured summary from buffered traces.
 
 **Parameters**:
+- `segments_with_agents` (List[AgentSegment]): List of AgentSegment items representing agent contributions
 - `summary_history` (List[str]): Previous summary strings
 - `latest_summary` (str): Most recent summary string
-- `new_buffer` (str): New buffer content to summarize
+- `history_k` (int): The number of previous summaries to include in history (default: 3)
 
 **Returns**: `AgentSummary` object
 

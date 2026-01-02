@@ -32,9 +32,6 @@ def compute_trigger(a) -> tuple[bool, str]:
     if a.stream_state == "CRITICAL_ALERT":
         return True, "C"
     
-    # Use structural_closed from code + semantic_complete from model
-    # TODO: Compute structural_closed from code (text analysis) - currently using is_complete as temporary fallback
-    # semantic_complete comes from model (is_complete)
     structural_closed = getattr(a, "structural_closed", a.is_complete)
     semantic_complete = getattr(a, "semantic_complete", a.is_complete)
     

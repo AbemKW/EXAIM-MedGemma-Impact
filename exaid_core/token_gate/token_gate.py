@@ -297,14 +297,18 @@ class TokenGate:
         return None
     
     async def add_token(self, agent_id: str, token: str) -> Optional[str]:
-        """Add a token to the buffer for the given agent.
+        """Add a token or chunk to the buffer for the given agent.
+        
+        The parameter name "token" is historical - this method accepts any text string,
+        whether it's a single token, a multi-token chunk, or delta text from trace replay.
+        TokenGate is agnostic to input granularity and accumulates text regardless.
         
         If flush conditions are met, returns the buffered text and clears the buffer.
         Otherwise, returns None.
         
         Args:
             agent_id: Agent identifier
-            token: Token string to add (streaming token from LLM)
+            token: Text string to add (may be a single token, chunk, or delta_text)
             
         Returns:
             Flushed chunk text if flush triggered, None otherwise

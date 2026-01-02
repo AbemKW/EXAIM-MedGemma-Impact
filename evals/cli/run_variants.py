@@ -966,10 +966,10 @@ class V3_NoTokenGate(VariantPipeline):
         # Fixed chunk size from calibration
         chunk_size_ctu = self.config.get("fixed_trigger", {}).get("chunk_size_ctu", 125)
         
-        accumulated_text = ""
+        # Track segments with agent_id attribution (instead of merging text)
+        accumulated_segments: list[AgentSegment] = []
         accumulated_ctu = 0
         window_start = 0
-        last_agent_id = "unknown"
         last_seq_seen: Optional[int] = None
         
         for event in ctx.replay_events:
@@ -981,13 +981,20 @@ class V3_NoTokenGate(VariantPipeline):
             if not text:
                 continue
 
-            if not accumulated_text:
+            if not accumulated_segments:
                 window_start = seq
-            last_agent_id = event.agent_id
+            
             chunk_ctu = compute_ctu(text)
             last_seq_seen = seq
             
-            accumulated_text += text
+            # Append text to current agent's segment, or create new segment if agent_id changed
+            if accumulated_segments and accumulated_segments[-1].agent_id == event.agent_id:
+                # Append to existing segment for same agent
+                accumulated_segments[-1].segment += text
+            else:
+                # Create new segment for new agent (or first segment)
+                accumulated_segments.append(AgentSegment(agent_id=event.agent_id, segment=text))
+            
             accumulated_ctu += chunk_ctu
             
             if accumulated_ctu >= chunk_size_ctu:
@@ -995,34 +1002,44 @@ class V3_NoTokenGate(VariantPipeline):
                     ctx.buffer_window_start_seq = window_start
                 ctx.buffer_window_end_seq = seq
 
+                # Add all accumulated segments to BufferAgent's buffer, preserving agent_id attribution
+                # Add all segments except the last one directly to buffer (without evaluation)
+                # Note: Trace counting is handled by addsegment() for the last segment
+                for segment in accumulated_segments[:-1]:
+                    self.buffer_agent.buffer.append(segment)
+                
+                # Evaluate BufferAgent on the last segment (which adds it and evaluates)
+                last_segment = accumulated_segments[-1]
                 should_trigger, decision = self.evaluate_buffer_agent(
-                    ctx, last_agent_id, accumulated_text, "fixed_ctu"
+                    ctx, last_segment.agent_id, last_segment.segment, "fixed_ctu"
                 )
                 decisions.append(decision)
 
                 if should_trigger:
                     flushed_segments = self.buffer_agent.flush()
+                    # Use the first segment's agent_id for summary attribution (or could use all agent_ids)
+                    summary_agent_id = accumulated_segments[0].agent_id if accumulated_segments else "unknown"
                     summary = self.generate_summary(
                         ctx,
                         ctx.buffer_window_start_seq or window_start,
                         ctx.buffer_window_end_seq or seq,
                         flushed_segments,
-                        last_agent_id,
+                        summary_agent_id,
                         trigger_type="buffer_agent"
                     )
                     summaries.append(summary)
                     ctx.buffer_window_start_seq = None
                     ctx.buffer_window_end_seq = None
                 
-                accumulated_text = ""
+                accumulated_segments = []
                 accumulated_ctu = 0
                 window_start = seq + 1
         
         # End-of-trace handling: park remaining segments without summarizing
         # (matches production flush_agent() behavior)
-        if accumulated_ctu > 0 and last_seq_seen is not None:
-            # Park the segments in tail buffer without evaluation or summarization
-            self.buffer_agent.park_tail([AgentSegment(agent_id=last_agent_id, segment=accumulated_text)])
+        if accumulated_segments and last_seq_seen is not None:
+            # Park all remaining segments in tail buffer without evaluation or summarization
+            self.buffer_agent.park_tail(accumulated_segments)
         
         return summaries, decisions, flushes
 
