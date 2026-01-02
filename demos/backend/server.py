@@ -11,9 +11,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, model_validator
 from typing import Literal, Optional
-import sys
 
 from demos.cdss_example.cdss import CDSS
 from demos.cdss_example.message_bus import message_queue
@@ -471,9 +470,8 @@ async def replay_trace_file(trace_file_path: str):
         logger.error(f"Error initializing trace replay engine: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to initialize trace replay: {str(e)}")
     
-    # Track timing and accumulated text per agent
+    # Track timing per agent
     last_time_ms = None
-    current_turn_text: Dict[str, str] = {}  # agent_id -> accumulated text
     
     try:
         # Replay content_plane stream only (excludes control_plane turns like orchestrator summaries)

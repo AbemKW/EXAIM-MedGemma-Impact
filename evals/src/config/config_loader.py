@@ -87,16 +87,17 @@ def load_extractor_config(
             # Handle relative paths
             stop_entities_path = Path(stop_entities_file)
             if not stop_entities_path.is_absolute():
-                # Resolve relative to workspace root (parent of evals/)
-                workspace_root = get_evals_root().parent
-                stop_entities_path = workspace_root / stop_entities_file
+                # Resolve relative to evals/ working directory
+                evals_root = get_evals_root()
+                stop_entities_path = evals_root / stop_entities_file
             config["stop_entities_file"] = str(stop_entities_path)
         
         if stop_cuis_file:
             stop_cuis_path = Path(stop_cuis_file)
             if not stop_cuis_path.is_absolute():
-                workspace_root = get_evals_root().parent
-                stop_cuis_path = workspace_root / stop_cuis_file
+                # Resolve relative to evals/ working directory
+                evals_root = get_evals_root()
+                stop_cuis_path = evals_root / stop_cuis_file
             config["stop_cuis_file"] = str(stop_cuis_path)
     
     # Add file hashes for provenance
