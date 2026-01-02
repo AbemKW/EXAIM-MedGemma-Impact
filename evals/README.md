@@ -533,7 +533,7 @@ docker compose -f docker-compose.evals.yml build
 docker compose -f docker-compose.evals.yml run --rm evals -c "python --version && spacy validate"
 
 # Run validation (passes with empty directories in scaffold mode)
-docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
+docker compose -f docker-compose.evals.yml run --rm evals scripts/validate.sh
 ```
 
 ---
@@ -571,7 +571,7 @@ docker compose -f docker-compose.evals.yml run --rm \
 ### Step 3: Validate Schemas
 
 ```bash
-docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
+docker compose -f docker-compose.evals.yml run --rm evals scripts/validate.sh
 ```
 
 ### Step 4: Run Summarizer Variants
@@ -583,10 +583,10 @@ docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
 
 ```bash
 # Run all variants (V0-V4)
-docker compose -f docker-compose.evals.yml run --rm evals scripts/02_run_variants.sh
+docker compose -f docker-compose.evals.yml run --rm evals scripts/run_variants.sh
 
 # Run specific variant
-docker compose -f docker-compose.evals.yml run --rm evals scripts/02_run_variants.sh V3
+docker compose -f docker-compose.evals.yml run --rm evals scripts/run_variants.sh V3
 
 # Or use Python directly with more options
 docker compose -f docker-compose.evals.yml run --rm evals \
@@ -596,7 +596,7 @@ docker compose -f docker-compose.evals.yml run --rm evals \
 ### Step 5: Compute Metrics
 
 ```bash
-docker compose -f docker-compose.evals.yml run --rm evals scripts/03_compute_metrics.sh
+docker compose -f docker-compose.evals.yml run --rm evals scripts/compute_metrics.sh
 
 # Or use Python directly
 docker compose -f docker-compose.evals.yml run --rm evals \
@@ -630,7 +630,7 @@ Calibrates TokenGate trigger parameters (`min_words`, `max_words`, `silence_time
 
 ```bash
 # Run calibration sweep
-docker compose -f docker-compose.evals.yml run --rm evals scripts/05_calibrate_tokengate.sh
+docker compose -f docker-compose.evals.yml run --rm evals scripts/calibrate_tokengate.sh
 
 # Or use Python directly
 docker compose -f docker-compose.evals.yml run --rm evals \
@@ -996,10 +996,12 @@ evals/
 │   ├── validate_logs.py           # Schema validation
 │   └── generate_stoplists.py      # Stoplist generation
 └── scripts/                       # Orchestration scripts (shell scripts)
-    ├── 00_validate.sh
-    ├── 01_make_traces.sh
-    ├── 02_run_variants.sh
-    └── 03_compute_metrics.sh
+    ├── validate.sh
+    ├── make_traces.sh
+    ├── run_variants.sh
+    ├── compute_metrics.sh
+    ├── calibrate_tokengate.sh
+    └── calibrate_tokengate_smoke.sh
 ```
 
 ---
