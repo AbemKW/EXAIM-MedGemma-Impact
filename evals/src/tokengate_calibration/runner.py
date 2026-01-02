@@ -416,7 +416,8 @@ async def run_calibration(
     # Verify trace hashes once before calibration (matching make_traces.py: hash uncompressed content)
     if config.get("safety", {}).get("verify_trace_hashes", True):
         log("\nVerifying trace file integrity...")
-        verify_trace_hashes(trace_entries, traces_dir, log)
+        strict_hash_check = config.get("safety", {}).get("strict_hash_check", False)
+        verify_trace_hashes(trace_entries, traces_dir, log, strict=strict_hash_check)
 
     # Run calibration for each valid policy
     log(

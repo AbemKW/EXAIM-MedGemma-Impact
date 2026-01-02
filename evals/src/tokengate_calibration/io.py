@@ -52,14 +52,33 @@ def verify_trace_hashes(
     trace_entries: List[dict],
     traces_dir: Path,
     log: Callable[[str], None],
+    strict: bool = False,
 ) -> None:
-    """Verify trace hashes against manifest entries."""
+    """
+    Verify trace hashes against manifest entries.
+    
+    Args:
+        trace_entries: List of trace entry dicts from manifest
+        traces_dir: Directory containing trace files
+        log: Logging function
+        strict: If True, raise ValueError on hash mismatch instead of warning
+        
+    Raises:
+        ValueError: If strict=True and any hash mismatch is detected
+    """
+    mismatches = []
+    missing_files = []
+    
     for trace_entry in trace_entries:
         case_id = trace_entry["case_id"]
         trace_file = traces_dir / trace_entry["file"]
 
         if not trace_file.exists():
-            log(f"WARNING: Trace file not found: {trace_file}")
+            msg = f"Trace file not found: {trace_file}"
+            if strict:
+                missing_files.append(msg)
+            else:
+                log(f"WARNING: {msg}")
             continue
 
         # Hash uncompressed content (matching make_traces.py behavior)
@@ -70,13 +89,40 @@ def verify_trace_hashes(
             actual_hash = hashlib.sha256(content_bytes).hexdigest()
             expected_hash = trace_entry.get("sha256", "").replace("sha256:", "")
             if expected_hash and actual_hash != expected_hash:
-                log(
-                    f"WARNING: Trace hash mismatch for {case_id}: expected {expected_hash[:8]}, got {actual_hash[:8]}"
+                msg = (
+                    f"Trace hash mismatch for {case_id}: "
+                    f"expected {expected_hash[:8]}..., got {actual_hash[:8]}... "
+                    f"(full: expected {expected_hash}, got {actual_hash})"
                 )
-                log("  This may indicate the trace file was modified after manifest creation.")
-                log("  Continuing calibration, but results may not be reproducible.")
+                if strict:
+                    mismatches.append(msg)
+                else:
+                    log(f"WARNING: {msg}")
+                    log("  This may indicate the trace file was modified after manifest creation.")
+                    log("  Continuing calibration, but results may not be reproducible.")
         except (OSError, gzip.BadGzipFile, UnicodeDecodeError) as exc:
-            log(f"WARNING: Failed to verify hash for {case_id}: {exc}")
+            msg = f"Failed to verify hash for {case_id}: {exc}"
+            if strict:
+                mismatches.append(msg)
+            else:
+                log(f"WARNING: {msg}")
+    
+    # Raise if strict mode and any issues found
+    if strict and (mismatches or missing_files):
+        error_parts = []
+        if missing_files:
+            error_parts.append(f"Missing files ({len(missing_files)}):")
+            error_parts.extend(f"  - {msg}" for msg in missing_files[:5])
+            if len(missing_files) > 5:
+                error_parts.append(f"  ... and {len(missing_files) - 5} more")
+        if mismatches:
+            error_parts.append(f"Hash mismatches ({len(mismatches)}):")
+            error_parts.extend(f"  - {msg}" for msg in mismatches[:5])
+            if len(mismatches) > 5:
+                error_parts.append(f"  ... and {len(mismatches) - 5} more")
+        raise ValueError(
+            "Trace hash verification failed in strict mode:\n" + "\n".join(error_parts)
+        )
 
 
 def load_config(config_path: Path) -> dict:
@@ -92,11 +138,22 @@ def compute_trace_dataset_hash(manifest_path: Path) -> str:
     Schema: SHA256 of JSON: {mas_run_id, case_list_hash, sorted [(case_id, trace_sha256)]}
     
     Uses the same computation as integrity.compute_manifest_hash for consistency.
+    Enforces manifest hash validation - raises ValueError if hash doesn't match.
     """
     from ..metrics.integrity import compute_manifest_hash, load_manifest_provenance
     
-    # Use the validated implementation from integrity.py
+    # Load and validate manifest
     manifest_info = load_manifest_provenance(manifest_path)
+    
+    # Enforce hash validation - fail fast if manifest is corrupted
+    if not manifest_info.get("manifest_hash_valid", False):
+        raise ValueError(
+            f"Manifest hash validation failed for {manifest_path}: "
+            f"stored hash {manifest_info.get('manifest_hash', 'missing')} != "
+            f"computed hash {manifest_info.get('computed_hash', 'missing')}. "
+            "Manifest may be corrupted or modified."
+        )
+    
     return manifest_info["computed_hash"]
 
 
@@ -112,7 +169,7 @@ def compute_config_hash(config: dict) -> str:
     }
 
     canonical_json = json.dumps(canonical_config, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+    return f"sha256:{hashlib.sha256(canonical_json.encode('utf-8')).hexdigest()}"
 
 
 def get_exaid_commit(repo_root: Path) -> str:
@@ -136,7 +193,11 @@ def generate_calibration_run_id(
     exaid_commit: str,
 ) -> str:
     """Generate deterministic calibration run ID."""
-    return f"calib_{trace_dataset_hash[:8]}_{config_hash[:8]}_{exaid_commit[:8]}"
+    # Remove "sha256:" prefix if present before slicing
+    trace_hash_clean = trace_dataset_hash.replace("sha256:", "")[:8]
+    config_hash_clean = config_hash.replace("sha256:", "")[:8]
+    exaid_commit_clean = exaid_commit[:8] if exaid_commit != "unknown" else "unknown"
+    return f"calib_{trace_hash_clean}_{config_hash_clean}_{exaid_commit_clean}"
 
 
 def write_config_copy(output_path: Path, config: dict) -> None:
@@ -265,12 +326,12 @@ def write_summary_json(
         "calibration_run_id": calibration_run_id,
         "reproducibility": {
             "trace_dataset_hash": trace_dataset_hash,
-            "trace_dataset_hash8": trace_dataset_hash[:8],
+            "trace_dataset_hash8": trace_dataset_hash.replace("sha256:", "")[:8],
             "mas_run_id": mas_run_id,
             "exaid_commit": exaid_commit,
-            "exaid_commit8": exaid_commit[:8],
+            "exaid_commit8": exaid_commit[:8] if exaid_commit != "unknown" else "unknown",
             "calibration_config_hash": config_hash,
-            "config_hash8": config_hash[:8],
+            "config_hash8": config_hash.replace("sha256:", "")[:8],
         },
         "policy_validity": {
             "valid_policies_count": valid_policies_count,

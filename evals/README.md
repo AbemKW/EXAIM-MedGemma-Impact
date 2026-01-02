@@ -422,15 +422,14 @@ for turn_id, cls in engine.get_turn_classifications().items():
 
 ### eval_run_id (Evaluation)
 
-**Format:** `eval-<variant>-<trace_dataset_hash_8>-<exaid_commit_8>`
+**Format:** `eval-<trace_dataset_hash_8>-<exaid_commit_8>`
 
-- `variant`: V0, V1, V2, V3, V4
-- `trace_dataset_hash_8`: First 8 chars of trace_dataset_hash
-- `exaid_commit_8`: First 8 chars of EXAID commit
+- `trace_dataset_hash_8`: First 8 chars of trace_dataset_hash (from manifest)
+- `exaid_commit_8`: First 8 chars of EXAID commit hash
 
-**Example:** `eval-V0-b2c3d4e5-8d45cbb1`
+**Example:** `eval-b2c3d4e5-8d45cbb1`
 
-**Note:** Used during evaluation; not used in trace generation. Format uses hyphens to match schema pattern `^eval-[a-z0-9-]+$`.
+**Note:** Batch-level identifier shared across all variants in an evaluation run. Deterministic: same trace dataset and code version produce the same ID. Format enforced by schema pattern `^eval-[a-f0-9]{8}-[a-f0-9]{8}$`.
 
 ### trace_dataset_hash
 
@@ -443,6 +442,84 @@ canonical = {
     "traces": sorted([(case_id, trace_sha256), ...])
 }
 ```
+
+---
+
+## Reproducibility Guarantees and Limitations
+
+### Deterministic Evaluation Results
+
+**Evaluation results are fully reproducible** when run with:
+- Same trace files (verified via SHA256 hashes)
+- Same configuration files
+- Same code version (EXAID commit hash)
+- Same MAC submodule commit
+
+All evaluation logic uses deterministic algorithms:
+- Trace replay uses virtual time from trace data (not system time)
+- TokenGate uses ManualClock synchronized to trace timestamps
+- All random operations use fixed seeds
+- JSON serialization uses deterministic formatting (`sort_keys=True`, compact separators)
+- gzip compression uses `mtime=0` for deterministic archives
+
+### Metadata Timestamps and Byte-Level Reproducibility
+
+**Important Limitation:** Some output files include metadata timestamps (`created_at`, `generated_at`) that use `datetime.now(timezone.utc)`. These timestamps will differ on each run, preventing **byte-identical file verification**.
+
+**Affected Files:**
+- `trace_meta` records in trace files (`created_at`)
+- `manifest_meta` records in manifest files (`created_at`)
+- `run_meta` records in run logs (`created_at`)
+- Run summary JSON files (`generated_at`)
+
+**Impact:**
+- ✅ **Evaluation results are reproducible** - timestamps don't affect computation
+- ✅ **Hash-based verification works** - content hashes exclude timestamp fields
+- ❌ **Byte-level file comparison fails** - files differ due to timestamps
+
+**Workaround:** For byte-level verification, compare files excluding timestamp fields, or use hash-based verification (recommended).
+
+**Future Improvement:** Consider using deterministic timestamps derived from trace data or config for full byte-level reproducibility.
+
+---
+
+## Trace Provenance Fields
+
+### Provenance in Manifest
+
+The manifest `provenance` record includes the following fields for reproducibility:
+
+| Field | Purpose | Critical for Trace Reproducibility? |
+|-------|---------|-----------------------------------|
+| `mac_commit` | MAC submodule commit hash | ✅ **Yes** - Required to reproduce trace content |
+| `mac_fork_url` | MAC repository URL | ✅ **Yes** - Identifies source repository |
+| `model` | LLM model name | ✅ **Yes** - Required for trace generation |
+| `decoding` | Decoding parameters | ✅ **Yes** - Affects trace content |
+| `case_list_hash` | Case list file hash | ✅ **Yes** - Identifies input cases |
+| `config_hash` | Configuration hash | ✅ **Yes** - Captures generation config |
+| `exaid_commit` | EXAID repository commit | ⚠️ **Partial** - Tracks trace generation code version |
+
+### exaid_commit Field
+
+**Purpose:** Records the Git commit hash of the EXAID repository used during trace generation.
+
+**Why it might be "unknown":**
+- The trace generation script was run from a directory that wasn't a git repository
+- Git was not available in the PATH during trace generation
+- The git command failed for other reasons (permissions, corrupted repo, etc.)
+
+**Impact on Reproducibility:**
+- **Trace reproducibility:** ✅ **Not affected** - Trace content depends on MAC commit, model, decoding params, and case list (all present)
+- **Evaluation reproducibility:** ✅ **Not affected** - Evaluation runs capture EXAID commit in `eval_run_id` format
+- **Documentation:** ⚠️ **Minor gap** - Missing documentation of which EXAID code version ran trace generation
+
+**For Research Papers:**
+- Traces with `exaid_commit: "unknown"` are valid and reproducible
+- The missing field is a documentation gap, not a data integrity issue
+- Trace reproducibility is ensured via MAC commit and other provenance fields
+- Future traces will have full provenance after the fix is deployed
+
+**Note:** The `exaid_commit` field is required by the schema but accepts any string value, including `"unknown"`. This allows existing traces to remain valid while documenting the provenance gap transparently.
 
 ---
 

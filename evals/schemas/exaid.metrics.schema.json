@@ -86,7 +86,7 @@
           "properties": {
             "metrics_type": {"const": "per_case"},
             "case_id": {"type": "string"},
-            "variant_id": {"type": "string", "pattern": "^V[0-9]+$"},
+            "variant_id": {"type": "string", "pattern": "^V[0-4]$"},
             "m1_update_count": {"type": "integer", "minimum": 0},
             "m2_output_ctu": {"type": "integer", "minimum": 0},
             "m3_redundancy_jaccard_mean": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
