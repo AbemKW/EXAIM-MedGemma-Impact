@@ -4,7 +4,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from infra import get_llm, LLMRole
 from exaid_core.exaid import EXAID
-from demos.cdss_example.callbacks.agent_streaming_callback import AgentStreamingCallback
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +54,10 @@ class InternalMedicineAgent(DemoBaseAgent):
         ])
 
         chain = prompt | self.llm
-        callback = AgentStreamingCallback(agent_id=self.agent_id)
 
         try:
             # LIVE token streaming loop
-            async for chunk in chain.astream({}, callbacks=[callback]):
+            async for chunk in chain.astream({}):
                 token = self._extract_token(chunk)
                 if not token:
                     continue

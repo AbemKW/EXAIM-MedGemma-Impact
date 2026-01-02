@@ -124,13 +124,13 @@ class EXAID:
             if summary is not None:
                 self.summaries.append(summary)
                 self._print_summary(summary)
-            
-            # Emit summary event to callbacks
-            for callback in self.summary_callbacks:
-                try:
-                    callback(summary)
-                except Exception as e:
-                    print(f"Error in summary callback: {e}")
+                
+                # Emit summary event to callbacks
+                for callback in self.summary_callbacks:
+                    try:
+                        callback(summary)
+                    except Exception as e:
+                        print(f"Error in summary callback: {e}")
             
             return summary
         return None
