@@ -196,7 +196,8 @@ def generate_calibration_run_id(
     # Remove "sha256:" prefix if present before slicing
     trace_hash_clean = trace_dataset_hash.replace("sha256:", "")[:8]
     config_hash_clean = config_hash.replace("sha256:", "")[:8]
-    exaid_commit_clean = exaid_commit[:8] if exaid_commit != "unknown" else "unknown"
+    # Pad "unknown" to 8 chars to maintain format consistency with expected {exaid_commit8} format
+    exaid_commit_clean = exaid_commit[:8] if exaid_commit != "unknown" else "unknown0"
     return f"calib_{trace_hash_clean}_{config_hash_clean}_{exaid_commit_clean}"
 
 
@@ -329,7 +330,7 @@ def write_summary_json(
             "trace_dataset_hash8": trace_dataset_hash.replace("sha256:", "")[:8],
             "mas_run_id": mas_run_id,
             "exaid_commit": exaid_commit,
-            "exaid_commit8": exaid_commit[:8] if exaid_commit != "unknown" else "unknown",
+            "exaid_commit8": exaid_commit[:8] if exaid_commit != "unknown" else "unknown0",
             "calibration_config_hash": config_hash,
             "config_hash8": config_hash.replace("sha256:", "")[:8],
         },
