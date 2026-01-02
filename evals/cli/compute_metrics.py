@@ -473,7 +473,7 @@ def main():
         print(f"  {key}: {value}")
     print()
     
-    extractor = ConceptExtractorWrapper(extractor_config, no_linking=True)
+    extractor = ConceptExtractorWrapper(extractor_config, no_linking=False)
     print(f"Extractor: {extractor.get_version_info()}")
     print()
 
