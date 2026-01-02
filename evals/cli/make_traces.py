@@ -49,7 +49,6 @@ import yaml
 # Type Aliases
 # =============================================================================
 TurnTrace = Any  # From MAC instrumentation
-DeltaEmission = Any  # From MAC instrumentation (stream delta/chunk, not tokenizer token)
 
 
 # =============================================================================
@@ -1248,7 +1247,7 @@ def main():
         safe_case_id = re.sub(r'[^a-z0-9-]', '-', case_id.lower())
         output_file = args.output / f"{safe_case_id}.trace.jsonl.gz"
         
-        record_count, trace_hash = write_trace_file(
+        _, trace_hash = write_trace_file(
             case_id=case_id,
             records=records,
             t0_emitted_ms=t0,

@@ -278,9 +278,7 @@ def generate_stoplists_with_linking(
     import spacy
     try:
         from scispacy.linking import EntityLinker
-        HAS_LINKER = True
     except ImportError:
-        HAS_LINKER = False
         print("WARNING: scispaCy EntityLinker not available, using surface-only mode")
         return generate_stoplists_simple(traces_dir, output_dir, threshold, verbose)
     

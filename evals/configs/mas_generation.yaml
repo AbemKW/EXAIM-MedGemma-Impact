@@ -65,13 +65,13 @@ dataset_id:
 
 # Placeholder for future evaluation runs
 eval_run_id:
-  # Format: eval_<variant>_<trace_dataset_hash_8>_<exaid_commit_8>
+  # Format: eval-<variant>-<trace_dataset_hash_8>-<exaid_commit_8>
   # - variant: V0, V1, V2, V3, V4
   # - trace_dataset_hash_8: first 8 chars of trace_dataset_hash
   # - exaid_commit_8: first 8 chars of EXAID commit
   policy: "input_derived"
   note: "Used for EXAID variant evaluation"
-  example: "eval_V0_b2c3d4e5_8d45cbb1"
+  example: "eval-V0-b2c3d4e5-8d45cbb1"
 
 # =============================================================================
 # Raw Stream Capture (No Derived Units)

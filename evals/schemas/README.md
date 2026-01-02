@@ -52,8 +52,8 @@ First record in every run log file.
   "created_at": "2025-12-21T10:30:00.000Z",
   "case_id": "case-33651373",
   "variant_id": "V0",
-  "mas_run_id": "mas-a409b17b8df09635",
-  "eval_run_id": "eval-20251221-103000",
+  "mas_run_id": "mas_1d5b227a_gpt4omini_0ad5f2b4_d22060bf",
+  "eval_run_id": "eval-V0-b2c3d4e5-8d45cbb1",
   "history_k": 3,
   "trigger_policy": "full_exaid",
   

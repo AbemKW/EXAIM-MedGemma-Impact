@@ -63,7 +63,7 @@
         },
         "mas_run_id": {
           "type": "string",
-          "pattern": "^mas-[a-f0-9]+$",
+          "pattern": "^mas_[a-z0-9_]+$",
           "description": "Trace generation campaign ID"
         },
         "eval_run_id": {

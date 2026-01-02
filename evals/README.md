@@ -422,15 +422,15 @@ for turn_id, cls in engine.get_turn_classifications().items():
 
 ### eval_run_id (Evaluation)
 
-**Format:** `eval_<variant>_<trace_dataset_hash_8>_<exaid_commit_8>`
+**Format:** `eval-<variant>-<trace_dataset_hash_8>-<exaid_commit_8>`
 
 - `variant`: V0, V1, V2, V3, V4
 - `trace_dataset_hash_8`: First 8 chars of trace_dataset_hash
 - `exaid_commit_8`: First 8 chars of EXAID commit
 
-**Example:** `eval_V0_b2c3d4e5_8d45cbb1`
+**Example:** `eval-V0-b2c3d4e5-8d45cbb1`
 
-**Note:** Used during evaluation; not used in trace generation.
+**Note:** Used during evaluation; not used in trace generation. Format uses hyphens to match schema pattern `^eval-[a-z0-9-]+$`.
 
 ### trace_dataset_hash
 

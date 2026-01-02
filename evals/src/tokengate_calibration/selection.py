@@ -219,7 +219,7 @@ def build_pareto_frontier_3d(
         # Extract active dimensions for point i
         active_i = [vec_i[d] for d in active_dimensions]
 
-        for j, (pm_j, vec_j) in enumerate(points):
+        for j, (_, vec_j) in enumerate(points):
             if i == j:
                 continue
 
