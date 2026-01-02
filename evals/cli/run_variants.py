@@ -64,10 +64,10 @@ from ..src.deterministic.io import (
 from ..src.config.config_loader import (
     load_extractor_config as _load_extractor_config_central,
     load_variant_config as _load_variant_config_central,
-    get_stoplists_provenance,
 )
 from ..src.metrics.integrity import load_manifest_provenance
 from ..src.extraction.concept_extractor import ConceptExtractor
+from ..src.tokengate_calibration.io import get_exaid_commit
 from exaid_core.buffer_agent.buffer_agent import BufferAgent, BufferAnalysis, BufferAnalysisNoNovelty
 from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
 from exaid_core.schema.agent_segment import AgentSegment
@@ -1368,24 +1368,13 @@ def main():
     print("=" * 60)
     print()
     
-    # Generate eval_run_id if not provided
-    eval_run_id = args.eval_run_id
-    if not eval_run_id:
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        eval_run_id = f"eval-{timestamp}"
-    
-    print(f"Traces: {args.traces}")
-    print(f"Output: {args.output}")
-    print(f"Eval Run ID: {eval_run_id}")
-    print()
-    
     # Load extractor config
     extractor_config = load_extractor_config(args.configs)
     
     # Stub stoplists provenance (will be populated from actual stoplists)
     stoplists_provenance = {
-        "stop_entities_hash": "sha256:0" * 64,
-        "stop_cuis_hash": "sha256:0" * 64,
+        "stop_entities_hash": "sha256:" + "0" * 64,
+        "stop_cuis_hash": "sha256:" + "0" * 64,
         "stoplists_generated_at": datetime.now(timezone.utc).isoformat(),
         "stoplists_generated_by_commit": None
     }
@@ -1405,6 +1394,55 @@ def main():
     trace_files = sorted(args.traces.glob("*.jsonl.gz"))
     if not trace_files:
         trace_files = sorted(args.traces.glob("*.jsonl"))
+    
+    # Compute trace_dataset_hash early (needed for deterministic eval_run_id)
+    trace_dataset_hash = None
+    if trace_files:
+        try:
+            trace_dataset_hash = compute_trace_dataset_hash(trace_files[0].parent, manifest_path=args.manifest)
+        except (ValueError, FileNotFoundError) as e:
+            if args.eval_run_id:
+                # If eval_run_id provided, continue (user knows what they're doing)
+                trace_dataset_hash = "unknown"
+            else:
+                print(f"ERROR: Cannot compute trace_dataset_hash: {e}")
+                print("Please provide --eval-run-id manually or ensure manifest file is available.")
+                return 1
+    
+    # Generate deterministic eval_run_id if not provided
+    eval_run_id = args.eval_run_id
+    if not eval_run_id:
+        if trace_dataset_hash and trace_dataset_hash != "unknown":
+            # Get EXAID commit hash
+            evals_root = Path(__file__).resolve().parents[1]  # cli -> evals
+            repo_root = evals_root.parent  # evals -> repo root
+            exaid_commit = get_exaid_commit(repo_root)
+            
+            # Extract hash portions (remove "sha256:" prefix if present)
+            trace_hash_clean = trace_dataset_hash.replace("sha256:", "")[:8]
+            
+            # Handle "unknown" exaid_commit: use deterministic placeholder "00000000"
+            # This allows evaluation to proceed with traces that have unknown commit provenance
+            if exaid_commit != "unknown":
+                exaid_commit_clean = exaid_commit[:8]
+            else:
+                exaid_commit_clean = "00000000"  # Deterministic placeholder for unknown commits
+                print("WARNING: EXAID commit hash is 'unknown'. Using placeholder '00000000' in eval_run_id.")
+                print("  This allows evaluation to proceed, but full reproducibility requires a valid commit hash.")
+            
+            eval_run_id = f"eval-{trace_hash_clean}-{exaid_commit_clean}"
+        else:
+            print("ERROR: Cannot compute deterministic eval_run_id.")
+            print("For reproducibility, provide --eval-run-id manually or ensure manifest is available.")
+            print("Schema requires deterministic format: eval-<trace_hash_8>-<exaid_commit_8>")
+            return 1
+    
+    print(f"Traces: {args.traces}")
+    print(f"Output: {args.output}")
+    print(f"Eval Run ID: {eval_run_id}")
+    if trace_dataset_hash:
+        print(f"Trace Dataset Hash: {trace_dataset_hash[:20]}...")
+    print()
     
     if not trace_files:
         print(f"ERROR: No trace files found in {args.traces}")
@@ -1447,7 +1485,7 @@ def main():
 
     # Process each trace file
     total_runs = 0
-    trace_dataset_hash = compute_trace_dataset_hash(trace_files[0].parent, manifest_path=args.manifest)
+    # trace_dataset_hash already computed above
     variant_case_results = {variant_id: [] for variant_id in variants}
     
     for trace_file in trace_files:

@@ -68,8 +68,8 @@
         },
         "eval_run_id": {
           "type": "string",
-          "pattern": "^eval-[a-z0-9-]+$",
-          "description": "Evaluation execution batch ID"
+          "pattern": "^eval-[a-f0-9]{8}-[a-f0-9]{8}$",
+          "description": "Deterministic evaluation batch ID: eval-<trace_dataset_hash_8>-<exaid_commit_8>"
         },
         "history_k": {
           "type": "integer",

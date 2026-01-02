@@ -53,7 +53,7 @@ First record in every run log file.
   "case_id": "case-33651373",
   "variant_id": "V0",
   "mas_run_id": "mas_1d5b227a_gpt4omini_0ad5f2b4_d22060bf",
-  "eval_run_id": "eval-V0-b2c3d4e5-8d45cbb1",
+  "eval_run_id": "eval-b2c3d4e5-8d45cbb1",
   "history_k": 3,
   "trigger_policy": "full_exaid",
   
@@ -363,3 +363,77 @@ python -m evals.cli.validate_logs data/runs/V0/*.jsonl.gz --schema schemas/exaid
 Readers should check `schema_version` and handle:
 - Single-record format (v1.2.x and earlier)
 - Multi-record JSONL format (v1.3.0+)
+
+---
+
+## Manifest Schema v2.0.0
+
+**Paper hook: Section 3.1**
+
+The manifest schema defines a multi-record JSONL format for dataset manifests with full provenance tracking.
+
+### Record Types
+
+| Type | Purpose | Key Fields |
+|------|---------|------------|
+| `manifest_meta` | Dataset metadata | First record in file |
+| `provenance` | Full provenance information | MAC commit, EXAID commit, model, config |
+| `trace_entry` | Per-trace metadata | Case ID, file path, SHA256 hash |
+| `summary` | Dataset statistics | Total cases, deltas, turns |
+
+### Provenance Record
+
+The `provenance` record captures all information needed for trace reproducibility:
+
+```json
+{
+  "record_type": "provenance",
+  "mac_fork_url": "https://github.com/AbemKW/mac-streaming-traces",
+  "mac_commit": "1d5b227afa64fe3dd5eb7b7c0ef778a09501b220",
+  "exaid_commit": "8d45cbb1234567890abcdef1234567890abcdef12",
+  "model": "gpt-4o-mini",
+  "decoding": {
+    "temperature": 1.0,
+    "top_p": null,
+    "max_tokens": 4096,
+    "seed": null
+  },
+  "case_list_hash": "sha256:d22060bfce58b04cf0b3a24d09166a9bdeb5bb4be168022e15e87fba346ee087",
+  "config_hash": "sha256:c0835d0b63db015be789810e84962e2456d703c95874c3caccf848ec74cb2bc4",
+  "trace_dataset_hash": "sha256:c173b1f838a346f2aab8c44e10e3807140c4f28cf105f315ba55fbbf681b12b8"
+}
+```
+
+### Provenance Field Importance
+
+| Field | Critical for Trace Reproducibility? | Notes |
+|-------|-----------------------------------|-------|
+| `mac_commit` | ✅ **Yes** | Required to reproduce trace content |
+| `mac_fork_url` | ✅ **Yes** | Identifies source repository |
+| `model` | ✅ **Yes** | Required for trace generation |
+| `decoding` | ✅ **Yes** | Affects trace content |
+| `case_list_hash` | ✅ **Yes** | Identifies input cases |
+| `config_hash` | ✅ **Yes** | Captures generation config |
+| `exaid_commit` | ⚠️ **Partial** | Tracks trace generation code version |
+
+### exaid_commit Field
+
+**Purpose:** Records the Git commit hash of the EXAID repository used during trace generation.
+
+**Why it might be "unknown":**
+- Trace generation script was run from a non-git directory
+- Git was not available in PATH during generation
+- Git command failed (permissions, corrupted repo, etc.)
+
+**Impact:**
+- **Trace reproducibility:** ✅ Not affected - Trace content depends on MAC commit, model, decoding params, and case list (all present)
+- **Evaluation reproducibility:** ✅ Not affected - Evaluation runs capture EXAID commit in `eval_run_id` format
+- **Documentation:** ⚠️ Minor gap - Missing documentation of which EXAID code version ran trace generation
+
+**Schema Behavior:**
+- Field is **required** by schema (cannot be omitted)
+- Accepts any string value, including `"unknown"`
+- Allows existing traces to remain valid while documenting provenance gap transparently
+
+**For Research Papers:**
+Traces with `exaid_commit: "unknown"` are valid and reproducible. The missing field is a documentation gap, not a data integrity issue. Trace reproducibility is ensured via MAC commit and other provenance fields.

@@ -151,7 +151,7 @@ def compute_trace_dataset_hash(
         "traces": sorted(trace_entries)  # Sort for determinism
     }
     
-    canonical_json = json.dumps(canonical, sort_keys=True, separators=(',', ':'))
+    canonical_json = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
     hash_digest = hashlib.sha256(canonical_json.encode()).hexdigest()
     return f"sha256:{hash_digest}"
 
@@ -192,9 +192,12 @@ def compute_config_hash(*config_paths: Path) -> str:
 
 def get_exaid_commit() -> str:
     """Get current EXAID repository commit hash."""
+    # Get repo root (go up from evals/cli/)
+    repo_root = Path(__file__).resolve().parents[2]  # cli -> evals -> repo root
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
             capture_output=True,
             text=True,
             check=True
@@ -292,7 +295,7 @@ def write_case_list(case_ids: List[str], output_path: Path) -> str:
     lines = []
     for idx, case_id in enumerate(case_ids):
         record = {"index": idx, "case_id": case_id}
-        lines.append(json.dumps(record, sort_keys=True, separators=(',', ':')))
+        lines.append(json.dumps(record, sort_keys=True, separators=(",", ":")))
     
     content = "\n".join(lines) + "\n"
     content_bytes = content.encode("utf-8")
@@ -792,9 +795,9 @@ def write_trace_file(
     
     # Write with deterministic gzip (mtime=0)
     lines = []
-    lines.append(json.dumps(trace_meta, sort_keys=True, separators=(',', ':')))
+    lines.append(json.dumps(trace_meta, sort_keys=True, separators=(",", ":")))
     for record in records:
-        lines.append(json.dumps(record, sort_keys=True, separators=(',', ':')))
+        lines.append(json.dumps(record, sort_keys=True, separators=(",", ":")))
     
     content = "\n".join(lines) + "\n"
     content_bytes = content.encode("utf-8")
@@ -910,7 +913,7 @@ def write_manifest(
     # Write JSONL
     with open(output_path, "w", encoding="utf-8") as f:
         for record in records:
-            f.write(json.dumps(record, sort_keys=True, separators=(',', ':')) + "\n")
+            f.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
 
 
 # =============================================================================
@@ -1139,32 +1142,47 @@ def main():
     # Write case list and compute hash
     config_hash = compute_config_hash(args.config, args.dataset_config)
     
-    # Compute case list hash (for ID generation before writing)
+    # Compute case list hash from in-memory content (for initial ID generation)
+    # Note: This should match the file hash, but we verify below
     case_list_content = "\n".join([
-        json.dumps({"index": i, "case_id": cid}, sort_keys=True, separators=(',', ':'))
+        json.dumps({"index": i, "case_id": cid}, sort_keys=True, separators=(",", ":"))
         for i, cid in enumerate(selected_cases)
     ]) + "\n"
-    case_list_hash = f"sha256:{hashlib.sha256(case_list_content.encode()).hexdigest()}"
+    case_list_hash = f"sha256:{hashlib.sha256(case_list_content.encode('utf-8')).hexdigest()}"
     
-    # Generate deterministic IDs
+    # Generate deterministic IDs (will regenerate if hash mismatch detected)
     mas_run_id = generate_mas_run_id(mac_commit, model, decoding, case_list_hash)
     dataset_id = generate_dataset_id(mac_commit, decoding, case_list_hash)
+    
+    # Write case list file
+    case_list_path = args.manifests / f"{dataset_id}.case_list.jsonl"
+    actual_case_list_hash = write_case_list(selected_cases, case_list_path)
+    
+    # Verify hash matches - if not, regenerate IDs and rename file
+    if actual_case_list_hash != case_list_hash:
+        print(f"WARNING: Case list hash mismatch detected!")
+        print(f"  Expected: {case_list_hash[:30]}...")
+        print(f"  Actual:   {actual_case_list_hash[:30]}...")
+        print(f"  Regenerating IDs with actual hash...")
+        
+        # Regenerate IDs with actual hash
+        case_list_hash = actual_case_list_hash
+        mas_run_id = generate_mas_run_id(mac_commit, model, decoding, case_list_hash)
+        dataset_id = generate_dataset_id(mac_commit, decoding, case_list_hash)
+        
+        # Rename file to match new dataset_id
+        new_case_list_path = args.manifests / f"{dataset_id}.case_list.jsonl"
+        if case_list_path != new_case_list_path:
+            case_list_path.rename(new_case_list_path)
+            case_list_path = new_case_list_path
+            print(f"  Renamed case list file to: {case_list_path}")
     
     print(f"MAS Run ID: {mas_run_id}")
     print(f"Dataset ID: {dataset_id}")
     print(f"Case list hash: {case_list_hash[:30]}...")
     print(f"Config hash: {config_hash[:30]}...")
-    print()
-    
-    # Write case list file
-    case_list_path = args.manifests / f"{dataset_id}.case_list.jsonl"
-    actual_case_list_hash = write_case_list(selected_cases, case_list_path)
     print(f"Case list written: {case_list_path}")
-    
-    # Verify hash matches
-    if actual_case_list_hash != case_list_hash:
-        print(f"WARNING: Case list hash mismatch!")
-        case_list_hash = actual_case_list_hash
+    print()
     
     # DRY RUN: Stop here if requested
     if args.dry_run:
