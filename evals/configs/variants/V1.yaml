@@ -20,9 +20,6 @@ components:
   # BufferAgent: DISABLED (summarize directly)
   buffer_agent:
     enabled: false
-    completeness_check: false
-    value_check: false
-    novelty_check: false
   
   # Summarizer: generates summaries
   summarizer:

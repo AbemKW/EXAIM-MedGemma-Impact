@@ -14,16 +14,17 @@ trigger_policy: "no_novelty"
 # Component configuration
 components:
   # TokenGate: accumulates chunks until word threshold (whitespace-delimited)
+  # Uses calibrated defaults: min_words=60, max_words=100, silence_timer=1, max_wait_timeout=4
   token_gate:
     enabled: true
-    min_words: 35
-    max_words: 90
+    min_words: 60
+    max_words: 100
+    silence_timer: 1
+    max_wait_timeout: 4
   
-  # BufferAgent: completeness and value checks only
+  # BufferAgent: novelty check disabled for ablation (completeness and relevance always evaluated)
   buffer_agent:
     enabled: true
-    completeness_check: true
-    value_check: true
     novelty_check: false  # DISABLED for this ablation
   
   # Summarizer: generates summaries

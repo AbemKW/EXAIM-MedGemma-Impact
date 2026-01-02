@@ -587,19 +587,26 @@ class VariantPipeline(ABC):
         ]
         
         # Reconstruct the exact prompt that addsegment() will use:
-        # - prior_segments = tail_segments + buffer[:-1] (before adding new segment)
+        # - addsegment() appends the new segment first, then uses buffer[:-1] to get prior segments
+        # - So before calling addsegment(), the full buffer is what will become buffer[:-1] after append
+        # - prior_segments = tail_segments + buffer (full buffer before append)
         # - new_trace_block = formatted new segment
         # - includes flush_reason and history_k
-        prior_segments = self.buffer_agent.tail_segments + self.buffer_agent.buffer[:-1]
+        prior_segments = self.buffer_agent.tail_segments + self.buffer_agent.buffer
         buffer_context = self.buffer_agent.format_segments_for_prompt(prior_segments)
         new_trace_block = self.buffer_agent.format_segments_for_prompt([
             AgentSegment(agent_id=agent_id, segment=segment_text)
         ])
         
         # Format prompt text exactly as the template does
+        # Note: LangChain's ChatPromptTemplate formats list variables using str(), which for a list
+        # of strings produces the Python list representation like "['item1', 'item2']"
+        # We need to match this format exactly to ensure eval logs reflect actual core behavior
         flush_reason_str = flush_reason or "none"
+        # Format summaries the same way LangChain would format a list passed to {summaries}
+        summaries_formatted = str(summary_history_strs)
         prompt_text = f"""Previous Summaries (last {ctx.history_k}):
-{"\n".join(summary_history_strs)}
+{summaries_formatted}
 
 Current Buffer (Unsummarized Context):
 {buffer_context}
@@ -804,12 +811,23 @@ Analyze completeness, stream state, relevance, and novelty. Provide structured a
                     ctx.flush_count += 1
 
                     # Core behavior: flush_agent() parks segments without summarizing
-                    # Match this behavior for end_of_trace flushes
+                    # For V0/V4: Park segments in tail buffer (they'll be included in next BufferAgent evaluation)
+                    # For V2: Summarize directly since V2's design is "every TokenGate flush → Summarizer"
                     if use_buffer_agent:
                         # Park the segments in tail buffer without evaluation or summarization
+                        # These will be included in the next BufferAgent evaluation (if there is one)
                         self.buffer_agent.park_tail([AgentSegment(agent_id=agent_id, segment=flushed_text)])
-                    # For V2 (no buffer agent), also don't summarize - just record the flush
-                    # This matches core behavior where flush_agent() is non-summarizing
+                    else:
+                        # V2: Summarize end-of-trace flush directly to match "TokenGate → Summarizer" design
+                        summary = self.generate_summary(
+                            ctx,
+                            flush_start,
+                            flush_end,
+                            [AgentSegment(agent_id=agent_id, segment=flushed_text)],
+                            agent_id,
+                            trigger_type="tokengate_flush"
+                        )
+                        summaries.append(summary)
 
         return summaries, decisions, flushes
 

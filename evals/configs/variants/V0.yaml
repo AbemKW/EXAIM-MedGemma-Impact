@@ -2,7 +2,7 @@
 # Full EXAID Pipeline (Reference Implementation)
 #
 # Paper hook: "V0 implements the complete EXAID pipeline with TokenGate,
-# BufferAgent (completeness/value/novelty checks), and Summarizer (Section 4.1)"
+# BufferAgent (evaluates completeness, relevance, and novelty), and Summarizer (Section 4.1)"
 
 variant_id: V0
 name: "Full EXAID"
@@ -14,17 +14,18 @@ trigger_policy: "full_exaid"
 # Component configuration
 components:
   # TokenGate: accumulates chunks until word threshold (whitespace-delimited)
+  # Uses calibrated defaults: min_words=60, max_words=100, silence_timer=1, max_wait_timeout=4
   token_gate:
     enabled: true
-    min_words: 35
-    max_words: 90
+    min_words: 60
+    max_words: 100
+    silence_timer: 1
+    max_wait_timeout: 4
   
-  # BufferAgent: 3-layer filter (completeness, value, novelty)
+  # BufferAgent: evaluates completeness and relevance (always enabled), novelty check can be disabled
   buffer_agent:
     enabled: true
-    completeness_check: true
-    value_check: true
-    novelty_check: true  # All three filters active
+    novelty_check: true  # Only configurable check - completeness and relevance are always evaluated
   
   # Summarizer: generates summaries
   summarizer:
