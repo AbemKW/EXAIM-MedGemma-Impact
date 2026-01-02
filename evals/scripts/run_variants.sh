@@ -21,7 +21,7 @@ echo ""
 
 if [ ! -d "data/traces" ] || [ -z "$(ls -A data/traces 2>/dev/null)" ]; then
     echo "WARNING: No traces found in data/traces/"
-    echo "Run ./scripts/01_make_traces.sh first"
+    echo "Run ./scripts/make_traces.sh first"
     echo ""
 fi
 
@@ -37,4 +37,4 @@ echo "========================================"
 echo ""
 echo "Output: data/runs/V{0-4}/"
 echo ""
-echo "Next step: ./scripts/03_compute_metrics.sh"
+echo "Next step: ./scripts/compute_metrics.sh"

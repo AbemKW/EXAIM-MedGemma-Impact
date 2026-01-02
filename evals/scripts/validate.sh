@@ -56,9 +56,9 @@ if [ $FILES_FOUND -eq 0 ]; then
     echo ""
     echo "This is expected for a fresh scaffold."
     echo "Run the following to generate data:"
-    echo "  ./scripts/01_make_traces.sh"
-    echo "  ./scripts/02_run_variants.sh"
-    echo "  ./scripts/03_compute_metrics.sh"
+    echo "  ./scripts/make_traces.sh"
+    echo "  ./scripts/run_variants.sh"
+    echo "  ./scripts/compute_metrics.sh"
     exit 0
 elif [ $OVERALL_STATUS -eq 0 ]; then
     echo "RESULT: PASSED - All validations successful"

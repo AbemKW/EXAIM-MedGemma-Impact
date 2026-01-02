@@ -21,7 +21,7 @@ echo ""
 
 if [ ! -d "data/runs" ] || [ -z "$(ls -A data/runs 2>/dev/null)" ]; then
     echo "WARNING: No runs found in data/runs/"
-    echo "Run ./scripts/02_run_variants.sh first"
+    echo "Run ./scripts/run_variants.sh first"
     echo ""
 fi
 
