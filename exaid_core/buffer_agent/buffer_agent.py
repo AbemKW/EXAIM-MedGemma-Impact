@@ -150,6 +150,43 @@ class BufferAgent:
         
         chain = self.flag_prompt | self.llm
         
+        # DEBUG: Format the prompt to see how LangChain actually formats the summaries list
+        try:
+            formatted_prompt = self.flag_prompt.format_messages(
+                summaries=previous_summaries,
+                previous_trace=buffer_context,
+                new_trace=new_trace_block,
+                flush_reason=flush_reason or "none",
+                history_k=history_k
+            )
+            # Extract the user message content to see the formatted summaries
+            user_message_content = formatted_prompt[-1].content if formatted_prompt else None
+            print(f"{YELLOW}DEBUG [{agent_id}] ===== LANGCHAIN FORMATTED PROMPT (summaries section) ====={RESET}")
+            print(f"{YELLOW}DEBUG [{agent_id}] Raw summaries list passed to template: {repr(previous_summaries)}{RESET}")
+            if user_message_content:
+                # Extract just the summaries section for easier reading
+                lines = user_message_content.split('\n')
+                summaries_start = None
+                for i, line in enumerate(lines):
+                    if 'Previous Summaries' in line:
+                        summaries_start = i
+                        break
+                if summaries_start is not None:
+                    # Print from "Previous Summaries" line until the next section
+                    print(f"{YELLOW}DEBUG [{agent_id}] LangChain formatted summaries section:{RESET}")
+                    for i in range(summaries_start, min(summaries_start + 15, len(lines))):
+                        print(f"{YELLOW}  {repr(lines[i])}{RESET}")
+                        if i < len(lines) - 1 and lines[i+1].startswith('Current Buffer'):
+                            break
+                else:
+                    print(f"{YELLOW}DEBUG [{agent_id}] Could not find 'Previous Summaries' in formatted message{RESET}")
+                    print(f"{YELLOW}DEBUG [{agent_id}] Full user message content (first 500 chars): {repr(user_message_content[:500])}{RESET}")
+            else:
+                print(f"{YELLOW}DEBUG [{agent_id}] No user message content found in formatted prompt{RESET}")
+            print(f"{YELLOW}DEBUG [{agent_id}] ===== END LANGCHAIN FORMATTED PROMPT ====={RESET}")
+        except Exception as e:
+            print(f"{YELLOW}DEBUG [{agent_id}] Error formatting prompt for debug: {e}{RESET}")
+        
         try:
             analysis: Union[BufferAnalysis, BufferAnalysisNoNovelty] = await chain.ainvoke({
                 "summaries": previous_summaries,

@@ -217,11 +217,14 @@ class BufferAgent:
         self.buffer: list[AgentSegment] = []
         self.tail_segments: list[AgentSegment] = []  # Deferred segments from non-trigger flushes
         self.base_llm = get_llm(LLMRole.BUFFER_AGENT)
+        # Conditionally use BufferAnalysis (with novelty) or BufferAnalysisNoNovelty based on disable_novelty
         self.llm = self.base_llm.with_structured_output(BufferAnalysis)
         self.flag_prompt = ChatPromptTemplate.from_messages([...])
         self.traces: dict[str, TraceData] = {}
         self.last_analysis: dict[str, Union[BufferAnalysis, BufferAnalysisNoNovelty, None]] = {}
 ```
+
+**Note**: BufferAgent always evaluates completeness (`is_complete`) and relevance (`is_relevant`) as part of the LLM's structured output. The only configurable check is novelty (`is_novel`), which can be disabled via the `disable_novelty` parameter. When disabled, the agent uses `BufferAnalysisNoNovelty` and the trigger logic omits the novelty requirement.
 
 **Core Methods**:
 
@@ -231,7 +234,14 @@ class BufferAgent:
 - `agent_id`: Identifier for the agent generating the trace
 - `segment`: The trace text segment to add to the buffer
 - `previous_summaries`: List of string-formatted previous summaries for novelty comparison
-- `flush_reason`: Reason why TokenGate emitted this chunk (e.g., "max_words", "silence_timer", "boundary_cue", or None)
+- `flush_reason`: Reason why TokenGate emitted this chunk. Possible values:
+  - `"max_words"`: Buffer reached maximum word count
+  - `"silence_timer"`: No tokens received for silence_timer seconds
+  - `"boundary_cue"`: Boundary cue detected at end of buffer (with min_words reached)
+  - `"max_wait_timeout"`: Buffer has existed for max_wait_timeout seconds
+  - `"full_trace"`: Non-streaming trace sent as complete text (used in core)
+  - `"end_of_trace"`: End of trace reached (used in evals)
+  - `None`: No specific flush reason
 - `history_k`: Number of previous summaries to include in the prompt context
 
 Adds a trace segment to the buffer and determines if summarization should be triggered using a structured state machine approach.
@@ -271,6 +281,8 @@ The trigger decision is computed deterministically in code (via `compute_trigger
 - Path A: `is_complete AND is_relevant AND is_novel` → trigger (completed value)
 - Path B: `stream_state == "TOPIC_SHIFT" AND is_relevant AND is_novel` → trigger (topic shift)
 - Otherwise: no trigger
+
+**Note**: Completeness (`is_complete`) and relevance (`is_relevant`) are always evaluated by the LLM as part of the structured output. Only the novelty check (`is_novel`) can be disabled via the `disable_novelty` parameter. When novelty is disabled, the trigger logic uses `BufferAnalysisNoNovelty` and only checks `is_complete AND is_relevant` (without the novelty requirement).
 
 **Code Snippet**:
 ```python
@@ -337,7 +349,7 @@ The buffer agent uses a structured prompt that instructs the LLM to analyze stre
 
 - **Novelty Detection**: Compares against previous summaries to determine if information is new
 
-- **Flush Reason**: Includes TokenGate flush reason (e.g., "max_words", "silence_timer", "boundary_cue") to provide context about why the chunk was emitted
+- **Flush Reason**: Includes TokenGate flush reason to provide context about why the chunk was emitted. Possible values: `"max_words"`, `"silence_timer"`, `"boundary_cue"`, `"max_wait_timeout"`, `"full_trace"` (non-streaming traces), `"end_of_trace"` (end of trace in evals), or `None`
 
 - **History K**: Includes the number of previous summaries being considered for novelty comparison
 
@@ -516,7 +528,7 @@ class TokenGate:
     ):
 ```
 
-**Note**: Evaluation configurations (e.g., `evals/configs/variants/V0.yaml`) use calibrated values (`min_words=35`, `max_words=90`, `silence_timer=15`, `max_wait_timeout=40`) which differ from these runtime defaults. The runtime defaults are optimized for general use, while eval configs are calibrated for specific evaluation scenarios.
+**Note**: Evaluation variant configurations (e.g., `evals/configs/variants/V0.yaml`) use the same calibrated default values as the TokenGate class (`min_words=60`, `max_words=100`, `silence_timer=1`, `max_wait_timeout=4`). These defaults were chosen after calibration tests and are used consistently across all evaluations. Configs explicitly specify these values to match the defaults, ensuring no overrides occur.
 
 Boundary cues are hardcoded to `.?!\n` (period, question mark, exclamation, newline) and cannot be configured.
 
