@@ -1,0 +1,5 @@
+token_gate:
+  min_words: 60
+  max_words: 100
+  silence_timer: 1.0
+  max_wait_timeout: 4.0
