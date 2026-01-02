@@ -28,6 +28,10 @@ RUN pip install --no-cache-dir --no-deps scispacy==0.5.4
 RUN pip install \
   https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz
 
+# Install scispaCy UMLS linker knowledge base
+RUN pip install --no-cache-dir \
+  https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/umls_linking_0.5.4.tar.gz
+
 # Copy MAC submodule (upstream trace generator)
 COPY third_party/mac/ /app/third_party/mac/
 

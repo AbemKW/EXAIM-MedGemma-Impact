@@ -275,9 +275,8 @@ def generate_stoplists_with_linking(
         Generation report dict
     """
     # Import here to allow fallback mode without these deps
-    import spacy
     try:
-        from scispacy.linking import EntityLinker
+        from scispacy.linking import EntityLinker  # noqa: F401
     except ImportError:
         print("WARNING: scispaCy EntityLinker not available, using surface-only mode")
         return generate_stoplists_simple(traces_dir, output_dir, threshold, verbose)
@@ -303,23 +302,18 @@ def generate_stoplists_with_linking(
     # Step 3: Initialize NLP pipeline
     if verbose:
         print("Loading scispaCy model with UMLS linker...")
-    
-    nlp = spacy.load(extractor_config.get("scispacy_model", "en_core_sci_sm"))
-    
-    # Add UMLS linker with config from extractor settings
-    linker_config = {
-        "resolve_abbreviations": extractor_config.get("linker_resolve_abbreviations", True),
-        "linker_name": extractor_config.get("linker_name", "umls"),
-        "max_entities_per_mention": extractor_config.get("linker_max_entities_per_mention", 10),
-        "threshold": extractor_config.get("linker_threshold", 0.7)
-    }
-    
-    try:
-        nlp.add_pipe("scispacy_linker", config=linker_config)
-    except Exception as e:
-        print(f"WARNING: Failed to add UMLS linker: {e}")
-        print("Falling back to surface-only mode")
+
+    from ..src.extraction.concept_extractor import ConceptExtractor
+
+    extractor = ConceptExtractor(extractor_config, no_linking=False)
+    version_info = extractor.get_version_info()
+    linker_kb_version = version_info.get("linker_kb_version")
+    print(f"Linker KB version: {linker_kb_version}")
+    if extractor.no_linking:
+        print("WARNING: UMLS linker unavailable, falling back to surface-only mode")
         return generate_stoplists_simple(traces_dir, output_dir, threshold, verbose)
+
+    nlp = extractor.nlp
     
     min_entity_len = extractor_config.get("min_entity_len", 3)
     cui_score_threshold = extractor_config.get("cui_score_threshold", 0.7)
