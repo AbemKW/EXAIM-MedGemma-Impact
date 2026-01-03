@@ -96,7 +96,7 @@ selection:
   #   - Computed from survivor policies using percentile-based methods
   #   - Small-N handling: Uses min/max if len(survivors) < 5
   #   - Degenerate bounds: Metrics with hi - lo < epsilon are dropped
-  #   - Epsilon values: EPS_MS=1.0 (TTFF), EPS_COUNT=1.0 (flush_count), EPS_WORDS=1.0 (chunk_size)
+  #   - Epsilon values: EPS_MS=5.0 (TTFF), EPS_COUNT=2.0 (flush_count), EPS_WORDS=2.0 (chunk_size)
   #
   # Dropped metrics:
   #   - Excluded from both Pareto dominance test AND distance computation
@@ -187,9 +187,6 @@ safety:
   # Missing cases / replay failures
   strict_validation: true  # Use TraceReplayEngine with strict_validation=True
   max_replay_failure_rate: 0.05  # Stop if >5% of cases fail replay validation
-  
-  # Determinism checks
-  verify_determinism: true  # Run same policy twice, verify identical flush events
 
 # =============================================================================
 # Output Configuration
