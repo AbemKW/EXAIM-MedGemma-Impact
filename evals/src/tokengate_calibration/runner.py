@@ -185,9 +185,9 @@ async def replay_case_with_policy(
             agent_id = event.agent_id
 
             # Explicitly flush buffer at turn end (for calibration metrics only)
-            # Note: This differs from production flush_agent() which is called at end-of-trace
-            # and parks segments without summarizing. Turn-end flushes here are mid-trace
-            # and only record flush events for calibration, not for summarization.
+            # Note: Production flush_agent() is also called at turn_end (when agent stream ends),
+            # and parks segments without summarizing. Turn-end flushes here match production timing
+            # but only record flush events for calibration metrics, not for summarization.
             flushed_text = await token_gate.flush(agent_id, reason="turn_end")
 
             if flushed_text:
@@ -251,12 +251,9 @@ async def run_calibration(
     config_path: Path,
     output_root: Path,
     allow_stub: bool = False,
-    verify_determinism: bool = False,
     log: Callable[[str], None] = print,
 ) -> None:
     """Run TokenGate calibration with explicit inputs and outputs."""
-    if verify_determinism:
-        log("NOTE: verify_determinism is not implemented in the calibration runner.")
     config = load_config(config_path)
 
     # Find manifest file
@@ -432,6 +429,7 @@ async def run_calibration(
             log(f"  Progress: {policy_idx + 1}/{len(valid_policies)} policies")
 
         case_metrics_for_policy: List[CaseMetrics] = []
+        replay_failures = 0
 
         for trace_entry in trace_entries:
             case_id = trace_entry["case_id"]
@@ -439,6 +437,7 @@ async def run_calibration(
 
             if not trace_file.exists():
                 log(f"WARNING: Trace file not found: {trace_file}")
+                replay_failures += 1
                 continue
 
             # Load trace and replay
@@ -462,8 +461,19 @@ async def run_calibration(
 
             except (StubTraceError, TraceValidationError) as exc:
                 log(f"ERROR: Failed to replay {case_id}: {exc}")
+                replay_failures += 1
                 if config.get("safety", {}).get("strict_validation", True):
                     raise
+
+        # Check max_replay_failure_rate threshold
+        if len(trace_entries) > 0:
+            failure_rate = replay_failures / len(trace_entries)
+            max_failure_rate = config.get("safety", {}).get("max_replay_failure_rate")
+            if max_failure_rate is not None and failure_rate > max_failure_rate:
+                raise RuntimeError(
+                    f"Replay failure rate {failure_rate:.2%} exceeds threshold {max_failure_rate:.2%} "
+                    f"for policy {policy.policy_id} ({replay_failures}/{len(trace_entries)} failures)"
+                )
 
         # Aggregate metrics for this policy
         policy_metrics = aggregate_policy_metrics(policy, case_metrics_for_policy)
