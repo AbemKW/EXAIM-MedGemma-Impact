@@ -24,3 +24,4 @@ services:
     tty: true
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SCISPACY_LINKER_PATH=/app/scispacy_linkers
