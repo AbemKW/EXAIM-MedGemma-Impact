@@ -443,7 +443,7 @@ def generate_stoplists_with_linking(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "phase4_config_used": str(phase4_config_path),
         "extraction_mode": "cui_linking",
-        "linker_config": linker_config,
+        "linker_config": extractor.linker_config,
         "validation_report": validation_report
     }
 

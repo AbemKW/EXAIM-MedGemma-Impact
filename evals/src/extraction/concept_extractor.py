@@ -74,6 +74,9 @@ class ConceptExtractor:
         self.linker_config = None
         if not no_linking:
             try:
+                # Import EntityLinker to register the factory
+                from scispacy.linking import EntityLinker
+                
                 # Check if linker already in pipeline
                 if "scispacy_linker" not in self.nlp.pipe_names:
                     self.linker_config = {

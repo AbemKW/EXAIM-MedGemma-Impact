@@ -50,11 +50,6 @@ def main() -> None:
         action="store_true",
         help="Allow stub traces (for testing only)",
     )
-    parser.add_argument(
-        "--verify-determinism",
-        action="store_true",
-        help="Verify determinism by running same policy twice",
-    )
 
     args = parser.parse_args()
     
@@ -83,7 +78,6 @@ def main() -> None:
         config_path=args.config,
         output_root=args.output,
         allow_stub=args.allow_stub,
-        verify_determinism=args.verify_determinism,
     )
 
 

@@ -93,7 +93,6 @@ These smoke test configs differ from `calibration_sweep.yaml` in several ways:
 2. **Relaxed constraints**: Higher thresholds so more policies pass validation
 3. **Disabled safety checks**: 
    - `verify_trace_hashes: false` - Skips hash verification for speed
-   - `verify_determinism: false` - Skips determinism checks for speed
 4. **Relaxed failure rates**: Higher `max_replay_failure_rate` tolerance
 
 ## What to Verify

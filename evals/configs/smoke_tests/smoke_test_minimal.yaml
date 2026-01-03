@@ -103,7 +103,6 @@ safety:
   verify_trace_hashes: false  # Disabled for faster smoke tests
   strict_validation: true
   max_replay_failure_rate: 0.10  # Relaxed from 0.05
-  verify_determinism: false  # Disabled for faster smoke tests
 
 # Output Configuration
 output:
