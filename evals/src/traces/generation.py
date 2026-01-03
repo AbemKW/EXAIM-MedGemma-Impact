@@ -111,7 +111,7 @@ def compute_config_hash(*config_paths: Path) -> str:
 
 def get_exaid_commit() -> str:
     """Get current EXAID repository commit hash."""
-    # Get repo root (go up from evals/src/)
+    # Get repo root (go up from evals/src/traces/)
     repo_root = Path(__file__).resolve().parents[2]  # src -> evals -> repo root
     try:
         result = subprocess.run(
