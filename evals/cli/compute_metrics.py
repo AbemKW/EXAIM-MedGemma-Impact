@@ -5,7 +5,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..src.metrics.runner import _percentile_threshold, apply_outlier_flags, run_metrics
+from ..src.metrics.runner import run_metrics
 
 
 def main() -> int:
