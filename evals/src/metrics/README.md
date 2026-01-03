@@ -9,3 +9,4 @@ Shared metric helpers and dataclasses used by evaluation pipelines.
 - `integrity.py`: Manifest and trace provenance helpers.
 - `constants.py`: Metric constants and schema versions.
 - `types.py`: Dataclasses for per-case and aggregate metrics.
+- `runner.py`: Metrics computation workflow used by `cli/compute_metrics.py`.
