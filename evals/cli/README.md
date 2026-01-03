@@ -13,6 +13,8 @@ Command-line entry points for trace generation, replay, validation, and metrics.
 - `replay_trace.py`: Inspect trace replay output.
 - `calibrate_tokengate.py`: Run TokenGate calibration.
 
+Each CLI is a thin argparse wrapper over a core module in `evals/src/`.
+
 ## Usage
 Run via modules from the repo root, e.g.:
 

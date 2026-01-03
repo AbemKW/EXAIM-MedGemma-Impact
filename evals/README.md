@@ -133,7 +133,11 @@ python -m evals.cli.validate_traces --traces data/traces/ --verbose
 The Trace Replay Engine provides deterministic replay of v2.0.0 traces with virtual time and turn classification. It enables downstream evaluation components (TokenGate, metrics) to consume traces in a consistent, reproducible manner.
 
 **File Organization:**
-- `src/traces/trace_replay_engine.py` - Core library module (importable)
+- `src/traces/trace_replay_engine.py` - Backward-compatible replay API (importable)
+- `src/traces/models.py` - Replay dataclasses and exceptions
+- `src/traces/parser.py` - Trace record parsing + agent label derivation
+- `src/traces/classifier.py` - Conservative turn classification rules
+- `src/traces/replay.py` - Replay engine implementation
 - `cli/replay_trace.py` - CLI tool for inspection/debugging (runnable)
 - `tests/test_trace_replay_engine.py` - Unit and integration tests
 - `cli/calibrate_tokengate.py` - TokenGate calibration CLI wrapper (argument parsing + orchestration)
@@ -144,6 +148,11 @@ The Trace Replay Engine provides deterministic replay of v2.0.0 traces with virt
   - `metrics.py` - Per-case + aggregate metrics, constraints, percentiles
   - `selection.py` - Pareto/utopia selection + weighted fallback logic
   - `io.py` - Hashing, manifest/config loading, artifact I/O
+
+**CLI Core Modules:**
+- `src/traces/generation.py` - Trace generation workflow (`cli/make_traces.py`)
+- `src/variants/runner.py` - Variant replay runner (`cli/run_variants.py`)
+- `src/metrics/runner.py` - Metrics computation runner (`cli/compute_metrics.py`)
 
 **Note:** `cli/` contains runnable inspection/debug tools; `src/` contains importable library code.
 
