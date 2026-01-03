@@ -53,7 +53,6 @@ from ..deterministic.utils import (
 )
 from ..deterministic.io import (
     RunLogBuilder,
-    write_run_log_deterministic,
     compute_file_hash,
     write_json_deterministic,
 )
