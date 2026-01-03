@@ -1,0 +1,130 @@
+# EXAID Evaluation - TokenGate Calibration Smoke Test (Small)
+# 
+# Purpose: Small smoke test with slightly more coverage (3×3×2×2 = 36 policies)
+# This provides better validation while still running quickly
+#
+# Usage (run from evals/ directory):
+#   # Bash/Linux/Mac:
+#   cd evals
+#   python -m evals.cli.calibrate_tokengate \
+#       --traces data/traces/ \
+#       --manifest data/manifests/exaid_traces_*.manifest.jsonl \
+#       --config configs/smoke_tests/smoke_test_small.yaml \
+#       --output data/calibration_smoke/
+#   
+#   # PowerShell (Windows): use backticks (`) for line continuation
+#   cd evals
+#   python -m evals.cli.calibrate_tokengate `
+#       --traces data/traces/ `
+#       --manifest data/manifests/exaid_traces_*.manifest.jsonl `
+#       --config configs/smoke_tests/smoke_test_small.yaml `
+#       --output data/calibration_smoke/
+#   
+#   # From repo root (Windows PowerShell):
+#   python -m evals.cli.calibrate_tokengate --traces evals/data/traces/ --manifest evals/data/manifests/exaid_traces_*.manifest.jsonl --config evals/configs/smoke_tests/smoke_test_small.yaml --output evals/data/calibration_smoke/
+
+parameter_grid:
+  min_words: [30, 50, 70]  # Small range: 3 values
+  max_words: [80, 120, 160]  # Small range: 3 values
+  silence_timer_ms: [1500, 2500]  # Minimal range: 2 values
+  max_wait_timeout_ms: [5000, 7000]  # Minimal range: 2 values
+  
+  # Total combinations: 3×3×2×2 = 36 policies
+  
+  # Note: Boundary cues are hardcoded to .?!\n and cannot be calibrated
+
+# Policy Validity Constraints
+validity_constraints:
+  min_words_lt_max_words: true
+  max_wait_gte_silence: true
+  min_gap_between_min_max: 10
+
+# Constraint Thresholds (Relaxed for smoke tests)
+constraints:
+  ttff_content_p95_ms: 60000  # Relaxed from 30000
+  spam_pct_mean: 20.0  # Relaxed from 10.0
+  timer_under_min_pct_mean: 30.0  # Relaxed from 20.0
+  chunk_size_p50_min_ratio: 0.5  # Relaxed from 0.6
+  chunk_size_p95_max: 200  # Relaxed from 150
+  worst_wait_p95_ms: 120000  # Relaxed from 60000
+  
+  # Cost constraints (relaxed)
+  flush_count_mean: 150  # Relaxed from 100
+  chunk_size_p50_min: 30  # Relaxed from 50
+
+# Selection Rule Configuration
+selection:
+  pareto:
+    x_metric: "ttff_content_p50_ms"
+    y_metric: "chunk_size_p50"
+    knee_detection_method: "curvature"
+  
+  weighted_score:
+    enabled: true
+    weights:
+      ttff_content_p50_ms: 0.25
+      flush_count_mean: 0.15
+      chunk_size_p50: 0.30
+      spam_pct_mean: 0.15
+      worst_wait_p95_ms: 0.15
+    
+    # Fallback normalization bounds
+    normalization_bounds:
+      chunk_size_p50:
+        lower: 30
+        upper: 160
+      flush_count_mean:
+        lower: 40
+        upper: 150
+      ttff_content_p50_ms:
+        lower: 500
+        upper: 5000
+      spam_pct_mean:
+        lower: 0
+        upper: 20
+      worst_wait_p95_ms:
+        lower: 2000
+        upper: 120000
+
+# Spam Definition
+spam:
+  alpha_default: 0.7
+  alpha_sensitivity: [0.5, 0.6, 0.7, 0.8]
+  exclude_end_of_trace: true
+
+# Reproducibility Configuration
+reproducibility:
+  run_id_format: "calib_{trace_dataset_hash8}_{config_hash8}_{exaid_commit8}"
+  hash_truncate: 8
+
+# Safety and Guardrails (Relaxed for smoke tests)
+safety:
+  strict_stub_guard: true
+  verify_trace_hashes: false  # Disabled for faster smoke tests
+  strict_validation: true
+  max_replay_failure_rate: 0.10  # Relaxed from 0.05
+
+# Output Configuration
+output:
+  base_dir: "data/calibration_smoke"
+  
+  artifacts:
+    - calibration_results.csv
+    - calibration_per_case.jsonl
+    - calibration_summary.json
+    - chosen_tokengate_params.yaml
+    - calibration_report.md
+    - calibration_config.yaml
+    - spam_sensitivity.json
+
+# Documentation
+literature_sources:
+  min_words_range:
+    note: "Smoke test: small range (30-70 words)"
+  max_words_range:
+    note: "Smoke test: small range (80-160 words)"
+  silence_timer_range:
+    note: "Smoke test: minimal range (1.5-2.5s)"
+  max_wait_timeout_range:
+    note: "Smoke test: minimal range (5-7s)"
+

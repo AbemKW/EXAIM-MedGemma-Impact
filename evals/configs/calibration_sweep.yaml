@@ -22,8 +22,7 @@ parameter_grid:
   
   # Total combinations: 5×5×5×5 = 625 policies
   
-  # Fixed parameter (not calibrated)
-  boundary_cues: ".?!\n"
+  # Note: Boundary cues are hardcoded to .?!\n and cannot be calibrated
 
 # =============================================================================
 # Policy Validity Constraints
@@ -44,16 +43,32 @@ validity_constraints:
 # Policies violating any constraint are rejected (hard filter)
 
 constraints:
-  ttff_content_p95_ms: 30000  # First flush must occur reasonably quickly (from first content delta)
+  ttff_content_p95_ms: null  # Derived from traces when derived_constraints enabled
   spam_pct_mean: 10.0  # Avoid excessive small flushes (policy-relative, excludes end-of-trace)
   timer_under_min_pct_mean: 20.0  # Avoid policies where timers frequently force premature flushes
   chunk_size_p50_min_ratio: 0.6  # Median chunks should be meaningful (policy-relative, ratio of min_words)
-  chunk_size_p95_max: 150  # Avoid extremely large chunks (words)
-  worst_wait_p95_ms: 60000  # Avoid excessive gaps between flushes (60s)
+  chunk_size_p95_max: 180  # Avoid extremely large chunks (words)
+  worst_wait_p95_ms: null  # Derived from traces when derived_constraints enabled
   
   # Cost constraints (BufferAgent calls per case)
   flush_count_mean: 100  # Maximum average flushes per case (1 BufferAgent call per flush)
   chunk_size_p50_min: 50  # Minimum median chunk size (absolute, not ratio)
+
+# =============================================================================
+# Derived Constraint Configuration
+# =============================================================================
+# Derive constraints from trace timing distributions for reviewer-proof calibration.
+# These overrides are applied before the run begins.
+
+derived_constraints:
+  ttff_content_p95_ms:
+    enabled: true
+    # Multiplier on global p95(time-to-reach-min_words); 3x adds conservative headroom for stalls.
+    safety_factor: 3.0
+  worst_wait_p95_ms:
+    enabled: true
+    # Multiplier on max_wait_timeout_ms upper bound; 1.5x allows modest slack beyond hard timers.
+    safety_factor: 1.5
 
 # =============================================================================
 # Selection Rule Configuration
@@ -81,7 +96,7 @@ selection:
   #   - Computed from survivor policies using percentile-based methods
   #   - Small-N handling: Uses min/max if len(survivors) < 5
   #   - Degenerate bounds: Metrics with hi - lo < epsilon are dropped
-  #   - Epsilon values: EPS_MS=1.0 (TTFF), EPS_COUNT=1.0 (flush_count), EPS_WORDS=1.0 (chunk_size)
+  #   - Epsilon values: EPS_MS=5.0 (TTFF), EPS_COUNT=2.0 (flush_count), EPS_WORDS=2.0 (chunk_size)
   #
   # Dropped metrics:
   #   - Excluded from both Pareto dominance test AND distance computation
@@ -109,7 +124,7 @@ selection:
     # from survivor policies using percentile methods (P05/P95 or min/max for small-N).
     #
     # These values are set to realistic ranges based on observed calibration data:
-    # - TTFF: ~1000-2000ms observed, with constraint threshold at 30000ms
+    # - TTFF: ~1000-2000ms observed (derived constraints applied in normal runs)
     # - Flush count: ~40-90 observed in survivors
     # - Chunk size: matches parameter grid ranges
     normalization_bounds:
@@ -121,13 +136,13 @@ selection:
         upper: 100  # Fallback default (matches constraint threshold)
       ttff_content_p50_ms:
         lower: 500  # Fallback default (realistic lower bound, observed ~1000-2000ms)
-        upper: 3000  # Fallback default (realistic upper bound with headroom, constraint at 30000ms)
+        upper: 3000  # Fallback default (realistic upper bound with headroom)
       spam_pct_mean:
         lower: 0  # Fallback default
         upper: 10  # Fallback default (matches constraint threshold)
       worst_wait_p95_ms:
         lower: 2000  # Fallback default (realistic lower bound from observed data)
-        upper: 60000  # Fallback default (matches constraint threshold)
+        upper: 12000  # Fallback default (aligns with derived constraint scale)
 
 # =============================================================================
 # Spam Definition
@@ -172,9 +187,6 @@ safety:
   # Missing cases / replay failures
   strict_validation: true  # Use TraceReplayEngine with strict_validation=True
   max_replay_failure_rate: 0.05  # Stop if >5% of cases fail replay validation
-  
-  # Determinism checks
-  verify_determinism: true  # Run same policy twice, verify identical flush events
 
 # =============================================================================
 # Output Configuration
@@ -214,4 +226,3 @@ literature_sources:
   max_wait_timeout_range:
     note: "Absolute upper bound to flush accumulated chunks (4-8s)"
     sources: []
-

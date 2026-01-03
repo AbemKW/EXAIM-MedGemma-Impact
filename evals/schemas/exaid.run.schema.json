@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://exaid.ai/schemas/exaid.run.schema.json",
-  "title": "EXAID Run Log Schema v1.3.0",
+  "title": "EXAID Run Log Schema v1.5.0",
   "description": "Multi-record JSONL schema for EXAID evaluation run logs. Each line is a record of type: run_meta, tokengate_flush, buffer_decision, or summary_event.",
   
   "$comment": "Paper hook: Run logs use multi-record JSONL format for M6b reconstructability and per-event instrumentation (Section 3.2)",
@@ -28,6 +28,9 @@
         "mas_run_id",
         "eval_run_id",
         "history_k",
+        "trace_file_hash",
+        "trace_dataset_hash",
+        "tokengate_config_hash",
         "concept_extractor",
         "stoplists_provenance",
         "timestamp_derivation",
@@ -43,7 +46,7 @@
         "schema_version": {
           "type": "string",
           "pattern": "^\\d+\\.\\d+\\.\\d+$",
-          "default": "1.3.0"
+          "default": "1.5.0"
         },
         "created_at": {
           "type": "string",
@@ -60,13 +63,13 @@
         },
         "mas_run_id": {
           "type": "string",
-          "pattern": "^mas-[a-f0-9]+$",
+          "pattern": "^mas_[a-z0-9_]+$",
           "description": "Trace generation campaign ID"
         },
         "eval_run_id": {
           "type": "string",
-          "pattern": "^eval-[a-z0-9-]+$",
-          "description": "Evaluation execution batch ID"
+          "pattern": "^eval-[a-f0-9]{8}-[a-f0-9]{8}$",
+          "description": "Deterministic evaluation batch ID: eval-<trace_dataset_hash_8>-<exaid_commit_8>"
         },
         "history_k": {
           "type": "integer",
@@ -192,6 +195,16 @@
         "trace_file_hash": {
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "trace_dataset_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "Hash of the trace dataset inputs"
+        },
+        "tokengate_config_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "Hash of TokenGate config for the variant"
         }
       }
     },
@@ -224,7 +237,8 @@
         },
         "trigger_reason": {
           "type": "string",
-          "enum": ["threshold", "boundary_cue", "timeout", "turn_end"]
+          "enum": ["max_words", "boundary_cue", "silence_timer", "max_wait_timeout", "end_of_trace", "turn_end"],
+          "description": "Reason for TokenGate flush: max_words (word count exceeded), boundary_cue (sentence boundary detected), silence_timer (inactivity timeout), max_wait_timeout (maximum wait exceeded), end_of_trace (trace ended), turn_end (turn boundary, V1 only)"
         },
         "text_hash": {
           "type": "string",
@@ -298,6 +312,11 @@
         "schema_ok",
         "summary_semantics_text",
         "summary_ctu",
+        "trigger_type",
+        "summary_history_event_ids",
+        "summarizer_input_hash",
+        "limits_ok",
+        "failure_mode",
         "llm_usage"
       ],
       "properties": {
@@ -318,6 +337,36 @@
         "end_seq": {
           "type": "integer",
           "description": "End of window for M6a/M6b"
+        },
+        "trigger_type": {
+          "type": "string",
+          "enum": ["turn_end", "tokengate_flush", "buffer_agent"],
+          "description": "Trigger mechanism used to generate the summary"
+        },
+        "summary_history_event_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^case-[a-zA-Z0-9-]+-V[0-4]-se-\\d{3}$"
+          },
+          "description": "Event IDs used in the summary history context"
+        },
+        "summarizer_input_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "Hash of summarizer input text"
+        },
+        "summarizer_input_text": {
+          "type": "string",
+          "description": "Optional raw summarizer input text"
+        },
+        "limits_ok": {
+          "type": "boolean",
+          "description": "True if summarizer inputs respected configured limits"
+        },
+        "failure_mode": {
+          "type": ["string", "null"],
+          "description": "Failure mode label when limits_ok or schema_ok is false"
         },
         "schema_ok": {
           "type": "boolean",

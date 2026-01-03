@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 class AgentSummary(BaseModel):
     """Structured summary for medical multi-agent reasoning, optimized for physician understanding.
@@ -58,25 +58,3 @@ class AgentSummary(BaseModel):
         "Limit: ~15-25 words (~90-150 chars). Evidence: Human-centered XAI design patterns recommend high-level, filtered explanation "
         "of pipelines; proof-based frameworks (SeXAI, Eccher et al.) explicitly omit intermediate steps to keep explanations short."
     )
-    
-    @model_validator(mode='before')
-    @classmethod
-    def truncate_fields(cls, data):
-        """Truncate fields to meet length constraints if they exceed limits."""
-        if isinstance(data, dict):
-            # Field-specific character limits (evidence-based)
-            field_limits = {
-                'status_action': 150,
-                'key_findings': 180,
-                'differential_rationale': 210,
-                'uncertainty_confidence': 120,
-                'recommendation_next_step': 180,
-                'agent_contributions': 150
-            }
-            
-            for field, max_len in field_limits.items():
-                if field in data and len(data.get(field, '')) > max_len:
-                    # Leave room for '...' truncation indicator
-                    truncate_len = max_len - 3
-                    data[field] = data[field][:truncate_len] + '...'
-        return data

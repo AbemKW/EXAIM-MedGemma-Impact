@@ -14,18 +14,17 @@ trigger_policy: "no_buffer"
 # Component configuration
 components:
   # TokenGate: accumulates chunks until word threshold (whitespace-delimited)
+  # Uses calibrated defaults: min_words=60, max_words=100, silence_timer=1, max_wait_timeout=4
   token_gate:
     enabled: true
-    min_words: 35
-    max_words: 90
-    boundary_cues: ".?!\n"
+    min_words: 60
+    max_words: 100
+    silence_timer: 1
+    max_wait_timeout: 4
   
   # BufferAgent: DISABLED (bypass all checks)
   buffer_agent:
     enabled: false
-    completeness_check: false
-    value_check: false
-    novelty_check: false
   
   # Summarizer: generates summaries
   summarizer:

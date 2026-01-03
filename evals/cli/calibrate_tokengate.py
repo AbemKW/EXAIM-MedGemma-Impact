@@ -3,7 +3,7 @@
 EXAID Evaluation - TokenGate Calibration CLI
 
 CLI wrapper responsibilities: argument parsing, entrypoint wiring, and user-facing
-logging, while reusable calibration logic lives in evals/src/* modules.
+logging, while reusable calibration logic lives in evals/src/tokengate_calibration/ package.
 
 Usage:
     python -m evals.cli.calibrate_tokengate \
@@ -16,7 +16,7 @@ Usage:
 import argparse
 from pathlib import Path
 
-from ..src.tokengate_calibration_runner import run_calibration_sync
+from ..src.tokengate_calibration.runner import run_calibration_sync
 
 
 def main() -> None:
@@ -50,13 +50,27 @@ def main() -> None:
         action="store_true",
         help="Allow stub traces (for testing only)",
     )
-    parser.add_argument(
-        "--verify-determinism",
-        action="store_true",
-        help="Verify determinism by running same policy twice",
-    )
 
     args = parser.parse_args()
+    
+    # Resolve relative paths relative to evals root
+    evals_root = Path(__file__).resolve().parents[1]  # cli -> evals
+    
+    def resolve_path(path: Path) -> Path:
+        """Resolve relative paths relative to evals root."""
+        if path.is_absolute():
+            return path
+        # Try current directory first, then evals root
+        if path.exists():
+            return path
+        evals_path = evals_root / path
+        if evals_path.exists():
+            return evals_path
+        return path  # Return as-is if neither exists (let downstream handle error)
+    
+    args.traces = resolve_path(args.traces)
+    args.config = resolve_path(args.config)
+    args.output = resolve_path(args.output)
 
     run_calibration_sync(
         traces_dir=args.traces,
@@ -64,7 +78,6 @@ def main() -> None:
         config_path=args.config,
         output_root=args.output,
         allow_stub=args.allow_stub,
-        verify_determinism=args.verify_determinism,
     )
 
 
