@@ -10,6 +10,7 @@ from .trace_replay_engine import (
     classify_turn,
     derive_agent_labels,
     is_suspicious_label_like,
+    replay_trace,
 )
 from .trace_text import (
     TraceParsingError,
@@ -40,4 +41,5 @@ __all__ = [
     "iter_trace_chunks",
     "iter_trace_records",
     "load_trace_chunks_for_case",
+    "replay_trace",
 ]

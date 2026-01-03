@@ -10,7 +10,7 @@ It MUST be used by:
     - cli/generate_stoplists.py
     - metrics/computations.py for trace concept sets (M4/M5)
     - metrics/computations.py for window reconstruction (M6a/M6b)
-    - cli/run_variants.py for buffer hash computation
+    - src/variants/runner.py for buffer hash computation
     - cli/validate_traces.py for canonical text validation
     
 INVARIANT: No other module may implement trace/window text logic.
@@ -331,5 +331,4 @@ if __name__ == "__main__":
     except TraceParsingError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
-
 
