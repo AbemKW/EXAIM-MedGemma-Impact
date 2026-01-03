@@ -3,8 +3,6 @@ from typing import AsyncIterator
 from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from infra import get_llm, LLMRole
-from exaid_core.exaid import EXAID
-from demos.cdss_example.callbacks.agent_streaming_callback import AgentStreamingCallback
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +20,8 @@ class OrchestratorAgent(DemoBaseAgent):
     in nodes.py orchestrator_node, which uses this agent's stream() method for LLM interaction.
     """
     
-    def __init__(self, agent_id: str = "Orchestrator Agent", exaid: EXAID = None):
-        super().__init__(agent_id, exaid)
+    def __init__(self, agent_id: str = "Orchestrator Agent"):
+        super().__init__(agent_id, exaid=None)
         self.llm = get_llm(LLMRole.MAS)
         
         # System prompt for orchestrator (used in all tasks)
@@ -57,7 +55,7 @@ class OrchestratorAgent(DemoBaseAgent):
         )
     
     async def stream(self, input: str) -> AsyncIterator[str]:
-        """Stream LLM output while sending tokens live to EXAID and UI."""
+        """Stream LLM output to MAS graph."""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.system_prompt),
@@ -65,20 +63,15 @@ class OrchestratorAgent(DemoBaseAgent):
         ])
 
         chain = prompt | self.llm
-        callback = AgentStreamingCallback(agent_id=self.agent_id)
 
         try:
             # LIVE token streaming loop
-            async for chunk in chain.astream({}, callbacks=[callback]):
+            async for chunk in chain.astream({}):
                 token = self._extract_token(chunk)
                 if not token:
                     continue
 
-                # 1. Send to EXAID in real-time
-                if self.exaid:
-                    await self.exaid.on_new_token(self.agent_id, token)
-
-                # 2. Yield token to MAS graph
+                # Yield token to MAS graph
                 yield token
 
         except ValueError as e:
@@ -86,14 +79,7 @@ class OrchestratorAgent(DemoBaseAgent):
             if "No generation chunks were returned" in str(e):
                 response = await chain.ainvoke({})
                 for char in response.content:
-                    if self.exaid:
-                        await self.exaid.on_new_token(self.agent_id, char)
                     yield char
             else:
                 raise
-
-        # 3. After stream ends: flush final chunk from TokenGate
-        if self.exaid:
-            await self.exaid.flush_agent(self.agent_id)
-
 

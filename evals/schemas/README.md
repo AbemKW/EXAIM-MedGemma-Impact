@@ -6,16 +6,16 @@ JSON Schema definitions for EXAID evaluation data artifacts.
 
 | Schema | Version | Purpose |
 |--------|---------|---------|
-| `exaid.manifest.schema.json` | 1.0.0 | Dataset manifest with case selection |
-| `exaid.trace.schema.json` | 1.0.0 | Frozen MAS traces |
-| `exaid.run.schema.json` | 1.3.0 | Multi-record run logs |
-| `exaid.metrics.schema.json` | 1.0.0 | Computed evaluation metrics |
+| `exaid.manifest.schema.json` | 2.0.0 | Dataset manifest with case selection |
+| `exaid.trace.schema.json` | 2.0.0 | Frozen MAS traces |
+| `exaid.run.schema.json` | 1.5.0 | Multi-record run logs |
+| `exaid.metrics.schema.json` | 2.2.0 | Computed evaluation metrics |
 
 All schemas use JSON Schema Draft 2020-12.
 
 ---
 
-## Run Log Schema v1.3.0
+## Run Log Schema v1.5.0
 
 **Paper hook: Section 3.2**
 
@@ -48,12 +48,12 @@ First record in every run log file.
 {
   "record_type": "run_meta",
   "schema_name": "exaid.run",
-  "schema_version": "1.3.0",
+  "schema_version": "1.5.0",
   "created_at": "2025-12-21T10:30:00.000Z",
   "case_id": "case-33651373",
   "variant_id": "V0",
-  "mas_run_id": "mas-a409b17b8df09635",
-  "eval_run_id": "eval-20251221-103000",
+  "mas_run_id": "mas_1d5b227a_gpt4omini_0ad5f2b4_d22060bf",
+  "eval_run_id": "eval-b2c3d4e5-8d45cbb1",
   "history_k": 3,
   "trigger_policy": "full_exaid",
   
@@ -162,6 +162,8 @@ One record per generated summary.
 }
 ```
 
+`summary_semantics_text` concatenates clinician-facing fields for concept extraction and **excludes** `agent_contributions` to avoid inflating semantic metrics.
+
 ### M6b Reconstruction
 
 **Paper hook: Section 5.1**
@@ -259,7 +261,7 @@ One record per TokenGate flush event. Note: TokenGate accumulates text and flush
   "start_seq": 0,
   "end_seq": 10,
   "accumulated_ctu": 45,
-  "trigger_reason": "threshold",
+  "trigger_reason": "max_words",
   "text_hash": "sha256:..."
 }
 ```
@@ -268,9 +270,11 @@ One record per TokenGate flush event. Note: TokenGate accumulates text and flush
 
 | Reason | Description |
 |--------|-------------|
-| `threshold` | Accumulated word count exceeded threshold |
-| `boundary_cue` | Sentence boundary detected |
-| `timeout` | Time limit reached |
+| `max_words` | Accumulated word count exceeded max_words threshold |
+| `boundary_cue` | Sentence boundary detected (after min_words reached) |
+| `silence_timer` | Inactivity timeout (no tokens received for silence_timer seconds) |
+| `max_wait_timeout` | Maximum wait timeout exceeded (buffer existed for max_wait_timeout seconds) |
+| `end_of_trace` | Trace ended, flush remaining buffer |
 | `turn_end` | Turn boundary (V1 only) |
 
 ---
@@ -324,7 +328,7 @@ jsonschema --instance data/runs/V0/case-33651373.jsonl.gz \
            schemas/exaid.run.schema.json
 
 # Or using the validation script
-python src/validate_logs.py data/runs/V0/*.jsonl.gz --schema schemas/exaid.run.schema.json
+python -m evals.cli.validate_logs data/runs/V0/*.jsonl.gz --schema schemas/exaid.run.schema.json
 ```
 
 ---
@@ -348,9 +352,88 @@ python src/validate_logs.py data/runs/V0/*.jsonl.gz --schema schemas/exaid.run.s
 - Added `linker_kb_version` to concept_extractor
 - Changed from single-record to multi-record JSONL
 
+### v1.3.0 → v1.5.0
+
+- Added `trace_file_hash`, `trace_dataset_hash`, `tokengate_config_hash` to run_meta
+- Added `trigger_type`, `summary_history_event_ids`, `summarizer_input_hash`, `limits_ok`, `failure_mode` to summary_event
+- Enhanced provenance tracking
+
 ### Backward Compatibility
 
 Readers should check `schema_version` and handle:
 - Single-record format (v1.2.x and earlier)
 - Multi-record JSONL format (v1.3.0+)
 
+---
+
+## Manifest Schema v2.0.0
+
+**Paper hook: Section 3.1**
+
+The manifest schema defines a multi-record JSONL format for dataset manifests with full provenance tracking.
+
+### Record Types
+
+| Type | Purpose | Key Fields |
+|------|---------|------------|
+| `manifest_meta` | Dataset metadata | First record in file |
+| `provenance` | Full provenance information | MAC commit, EXAID commit, model, config |
+| `trace_entry` | Per-trace metadata | Case ID, file path, SHA256 hash |
+| `summary` | Dataset statistics | Total cases, deltas, turns |
+
+### Provenance Record
+
+The `provenance` record captures all information needed for trace reproducibility:
+
+```json
+{
+  "record_type": "provenance",
+  "mac_fork_url": "https://github.com/AbemKW/mac-streaming-traces",
+  "mac_commit": "1d5b227afa64fe3dd5eb7b7c0ef778a09501b220",
+  "exaid_commit": "8d45cbb1234567890abcdef1234567890abcdef12",
+  "model": "gpt-4o-mini",
+  "decoding": {
+    "temperature": 1.0,
+    "top_p": null,
+    "max_tokens": 4096,
+    "seed": null
+  },
+  "case_list_hash": "sha256:d22060bfce58b04cf0b3a24d09166a9bdeb5bb4be168022e15e87fba346ee087",
+  "config_hash": "sha256:c0835d0b63db015be789810e84962e2456d703c95874c3caccf848ec74cb2bc4",
+  "trace_dataset_hash": "sha256:c173b1f838a346f2aab8c44e10e3807140c4f28cf105f315ba55fbbf681b12b8"
+}
+```
+
+### Provenance Field Importance
+
+| Field | Critical for Trace Reproducibility? | Notes |
+|-------|-----------------------------------|-------|
+| `mac_commit` | ✅ **Yes** | Required to reproduce trace content |
+| `mac_fork_url` | ✅ **Yes** | Identifies source repository |
+| `model` | ✅ **Yes** | Required for trace generation |
+| `decoding` | ✅ **Yes** | Affects trace content |
+| `case_list_hash` | ✅ **Yes** | Identifies input cases |
+| `config_hash` | ✅ **Yes** | Captures generation config |
+| `exaid_commit` | ⚠️ **Partial** | Tracks trace generation code version |
+
+### exaid_commit Field
+
+**Purpose:** Records the Git commit hash of the EXAID repository used during trace generation.
+
+**Why it might be "unknown":**
+- Trace generation script was run from a non-git directory
+- Git was not available in PATH during generation
+- Git command failed (permissions, corrupted repo, etc.)
+
+**Impact:**
+- **Trace reproducibility:** ✅ Not affected - Trace content depends on MAC commit, model, decoding params, and case list (all present)
+- **Evaluation reproducibility:** ✅ Not affected - Evaluation runs capture EXAID commit in `eval_run_id` format
+- **Documentation:** ⚠️ Minor gap - Missing documentation of which EXAID code version ran trace generation
+
+**Schema Behavior:**
+- Field is **required** by schema (cannot be omitted)
+- Accepts any string value, including `"unknown"`
+- Allows existing traces to remain valid while documenting provenance gap transparently
+
+**For Research Papers:**
+Traces with `exaid_commit: "unknown"` are valid and reproducible. The missing field is a documentation gap, not a data integrity issue. Trace reproducibility is ensured via MAC commit and other provenance fields.

@@ -1,0 +1,133 @@
+# EXAID Evaluation - TokenGate Calibration Smoke Test (Quick - Absolute Minimum)
+# 
+# Purpose: Absolute minimum smoke test (2×2×1×1 = 4 policies) for fastest validation
+# Use this to verify the pipeline works with minimal time investment
+#
+# Usage (run from evals/ directory):
+#   # Bash/Linux/Mac:
+#   cd evals
+#   python -m evals.cli.calibrate_tokengate \
+#       --traces data/traces/ \
+#       --manifest data/manifests/exaid_traces_*.manifest.jsonl \
+#       --config configs/smoke_tests/smoke_test_quick.yaml \
+#       --output data/calibration_smoke/
+#   
+#   # PowerShell (Windows):
+#   cd evals
+#   python -m evals.cli.calibrate_tokengate `
+#       --traces data/traces/ `
+#       --manifest data/manifests/exaid_traces_*.manifest.jsonl `
+#       --config configs/smoke_tests/smoke_test_quick.yaml `
+#       --output data/calibration_smoke/
+#   
+#   # From repo root (Windows PowerShell):
+#   python -m evals.cli.calibrate_tokengate --traces evals/data/traces/ --manifest evals/data/manifests/exaid_traces_*.manifest.jsonl --config evals/configs/smoke_tests/smoke_test_quick.yaml --output evals/data/calibration_smoke/
+#   
+#   # Docker:
+#   docker compose -f docker-compose.evals.yml run --rm evals python -m evals.cli.calibrate_tokengate --traces data/traces/ --manifest data/manifests/exaid_traces_*.manifest.jsonl --config configs/smoke_tests/smoke_test_quick.yaml --output data/calibration_smoke/
+
+parameter_grid:
+  min_words: [40, 60]  # Minimal: 2 values
+  max_words: [100, 140]  # Minimal: 2 values
+  silence_timer_ms: [2000]  # Single value: 1
+  max_wait_timeout_ms: [6000]  # Single value: 1
+  
+  # Total combinations: 2×2×1×1 = 4 policies (absolute minimum)
+  
+  # Note: Boundary cues are hardcoded to .?!\n and cannot be calibrated
+
+# Policy Validity Constraints
+validity_constraints:
+  min_words_lt_max_words: true
+  max_wait_gte_silence: true
+  min_gap_between_min_max: 10
+
+# Constraint Thresholds (Very relaxed for quick smoke test)
+constraints:
+  ttff_content_p95_ms: 120000  # Very relaxed
+  spam_pct_mean: 30.0  # Very relaxed
+  timer_under_min_pct_mean: 50.0  # Very relaxed
+  chunk_size_p50_min_ratio: 0.4  # Very relaxed
+  chunk_size_p95_max: 250  # Very relaxed
+  worst_wait_p95_ms: 180000  # Very relaxed
+  
+  # Cost constraints (very relaxed)
+  flush_count_mean: 200  # Very relaxed
+  chunk_size_p50_min: 20  # Very relaxed
+
+# Selection Rule Configuration
+selection:
+  pareto:
+    x_metric: "ttff_content_p50_ms"
+    y_metric: "chunk_size_p50"
+    knee_detection_method: "curvature"
+  
+  weighted_score:
+    enabled: true
+    weights:
+      ttff_content_p50_ms: 0.25
+      flush_count_mean: 0.15
+      chunk_size_p50: 0.30
+      spam_pct_mean: 0.15
+      worst_wait_p95_ms: 0.15
+    
+    # Fallback normalization bounds
+    normalization_bounds:
+      chunk_size_p50:
+        lower: 20
+        upper: 200
+      flush_count_mean:
+        lower: 30
+        upper: 200
+      ttff_content_p50_ms:
+        lower: 500
+        upper: 10000
+      spam_pct_mean:
+        lower: 0
+        upper: 30
+      worst_wait_p95_ms:
+        lower: 2000
+        upper: 180000
+
+# Spam Definition
+spam:
+  alpha_default: 0.7
+  alpha_sensitivity: [0.5, 0.6, 0.7, 0.8]
+  exclude_end_of_trace: true
+
+# Reproducibility Configuration
+reproducibility:
+  run_id_format: "calib_{trace_dataset_hash8}_{config_hash8}_{exaid_commit8}"
+  hash_truncate: 8
+
+# Safety and Guardrails (Very relaxed for quick smoke test)
+safety:
+  strict_stub_guard: true
+  verify_trace_hashes: false  # Disabled for faster smoke tests
+  strict_validation: true
+  max_replay_failure_rate: 0.20  # Very relaxed
+
+# Output Configuration
+output:
+  base_dir: "data/calibration_smoke"
+  
+  artifacts:
+    - calibration_results.csv
+    - calibration_per_case.jsonl
+    - calibration_summary.json
+    - chosen_tokengate_params.yaml
+    - calibration_report.md
+    - calibration_config.yaml
+    - spam_sensitivity.json
+
+# Documentation
+literature_sources:
+  min_words_range:
+    note: "Quick smoke test: minimal range (40-60 words)"
+  max_words_range:
+    note: "Quick smoke test: minimal range (100-140 words)"
+  silence_timer_range:
+    note: "Quick smoke test: single value (2.0s)"
+  max_wait_timeout_range:
+    note: "Quick smoke test: single value (6.0s)"
+

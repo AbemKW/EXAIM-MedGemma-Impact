@@ -7,7 +7,8 @@ Reproducible evaluation framework for the EXAID conference paper. This module pr
 **Performance-only evaluation of EXAID summarization middleware.**
 
 This evaluation measures:
-- Compression efficiency (CTU saved)
+- Update counts
+- Output volume (CTU)
 - Concept coverage (trace CUIs recalled in summaries)
 - Faithfulness (unsupported content rates)
 - Latency and resource usage
@@ -86,13 +87,13 @@ Traces store raw streaming data only:
 
 ```bash
 # Dry-run (validate config without running MAC)
-python src/make_traces.py --config configs/mas_generation.yaml --dry-run
+python -m evals.cli.make_traces --config configs/mas_generation.yaml --dry-run
 
 # Generate one trace (for testing)
-python src/make_traces.py --config configs/mas_generation.yaml --limit 1
+python -m evals.cli.make_traces --config configs/mas_generation.yaml --limit 1
 
 # Generate all traces
-python src/make_traces.py --config configs/mas_generation.yaml
+python -m evals.cli.make_traces --config configs/mas_generation.yaml
 ```
 
 ### Validate Traces
@@ -100,7 +101,7 @@ python src/make_traces.py --config configs/mas_generation.yaml
 **Standalone validation tool** (pre-evaluation check):
 
 ```bash
-python src/validate_traces.py --traces data/traces/ --verbose
+python -m evals.cli.validate_traces --traces data/traces/ --verbose
 ```
 
 **Note:** The Trace Replay Engine also validates traces during replay (see "Replay Validation Guarantees" section below). Both tools share similar validation rules but serve different purposes:
@@ -119,6 +120,7 @@ python src/validate_traces.py --traces data/traces/ --verbose
    - `turn_end.t_ms >= last_delta.t_emitted_ms` for that turn
    - **Tolerance:** ±2ms allowed due to millisecond resolution; violations within tolerance are warnings (cosmetic), not errors
 6. `content_hash` matches recomputed hash
+7. Canonical trace text is non-empty for real traces (not stubs)
 
 **Stub Mode Warning:** Traces with `stub_mode: true` are flagged during validation and must NOT be used for evaluation.
 
@@ -131,16 +133,26 @@ python src/validate_traces.py --traces data/traces/ --verbose
 The Trace Replay Engine provides deterministic replay of v2.0.0 traces with virtual time and turn classification. It enables downstream evaluation components (TokenGate, metrics) to consume traces in a consistent, reproducible manner.
 
 **File Organization:**
-- `src/trace_replay_engine.py` - Core library module (importable)
+- `src/traces/trace_replay_engine.py` - Backward-compatible replay API (importable)
+- `src/traces/models.py` - Replay dataclasses and exceptions
+- `src/traces/parser.py` - Trace record parsing + agent label derivation
+- `src/traces/classifier.py` - Conservative turn classification rules
+- `src/traces/replay.py` - Replay engine implementation
 - `cli/replay_trace.py` - CLI tool for inspection/debugging (runnable)
 - `tests/test_trace_replay_engine.py` - Unit and integration tests
 - `cli/calibrate_tokengate.py` - TokenGate calibration CLI wrapper (argument parsing + orchestration)
-- `src/tokengate_calibration_runner.py` - Calibration orchestrator (sequencing + trace replay)
-- `src/tokengate_calibration_models.py` - Calibration dataclasses (Policy, CaseMetrics, etc.)
-- `src/tokengate_calibration_grid.py` - Policy grid generation + validation
-- `src/tokengate_calibration_metrics.py` - Per-case + aggregate metrics, constraints, percentiles
-- `src/tokengate_calibration_selection.py` - Pareto/utopia selection + weighted fallback logic
-- `src/tokengate_calibration_io.py` - Hashing, manifest/config loading, artifact I/O
+- `src/tokengate_calibration/` - TokenGate calibration subpackage
+  - `runner.py` - Calibration orchestrator (sequencing + trace replay)
+  - `models.py` - Calibration dataclasses (Policy, CaseMetrics, etc.)
+  - `grid.py` - Policy grid generation + validation
+  - `metrics.py` - Per-case + aggregate metrics, constraints, percentiles
+  - `selection.py` - Pareto/utopia selection + weighted fallback logic
+  - `io.py` - Hashing, manifest/config loading, artifact I/O
+
+**CLI Core Modules:**
+- `src/traces/generation.py` - Trace generation workflow (`cli/make_traces.py`)
+- `src/variants/runner.py` - Variant replay runner (`cli/run_variants.py`)
+- `src/metrics/runner.py` - Metrics computation runner (`cli/compute_metrics.py`)
 
 **Note:** `cli/` contains runnable inspection/debug tools; `src/` contains importable library code.
 
@@ -208,12 +220,12 @@ Use `--audit` flag in CLI to view flagged turns.
 from pathlib import Path
 
 # Import from evals package (if running from repo root)
-from evals.src.trace_replay_engine import TraceReplayEngine
+from evals.src.traces.trace_replay_engine import TraceReplayEngine
 
-# Alternative: If running from evals/ directory, add src to path first:
+# Alternative: If running from evals/ directory, add repo root to path first:
 # import sys
-# sys.path.insert(0, "src")
-# from trace_replay_engine import TraceReplayEngine
+# sys.path.insert(0, "..")
+# from evals.src.traces.trace_replay_engine import TraceReplayEngine
 
 # Initialize engine
 engine = TraceReplayEngine(Path("data/traces/case-33651373.trace.jsonl.gz"))
@@ -245,19 +257,19 @@ for flag in flags:
 
 ```bash
 # Show metadata and timeline
-python cli/replay_trace.py data/traces/case-33651373.trace.jsonl.gz
+python -m evals.cli.replay_trace data/traces/case-33651373.trace.jsonl.gz
 
 # Show content_plane stream only
-python cli/replay_trace.py --stream content_plane data/traces/case-33651373.trace.jsonl.gz
+python -m evals.cli.replay_trace --stream content_plane data/traces/case-33651373.trace.jsonl.gz
 
 # Show turn classifications
-python cli/replay_trace.py --classifications data/traces/case-33651373.trace.jsonl.gz
+python -m evals.cli.replay_trace --classifications data/traces/case-33651373.trace.jsonl.gz
 
 # Show audit flags
-python cli/replay_trace.py --audit data/traces/case-33651373.trace.jsonl.gz
+python -m evals.cli.replay_trace --audit data/traces/case-33651373.trace.jsonl.gz
 
 # Shift timeline to start at t=0
-python cli/replay_trace.py --shift-to-zero data/traces/case-33651373.trace.jsonl.gz
+python -m evals.cli.replay_trace --shift-to-zero data/traces/case-33651373.trace.jsonl.gz
 ```
 
 ### Timing Semantics
@@ -341,13 +353,42 @@ Turns with empty or whitespace-only text (`turn_text.strip() == ""`) are classif
 **TokenGate Calibration:**
 
 ```python
-# TokenGate consumes content_plane stream but gets FULL timing
+from exaid_core.token_gate.token_gate import TokenGate, ManualClock
+from datetime import datetime, timezone
+
+# Initialize TokenGate with ManualClock for deterministic timing
+t0_datetime = datetime.fromtimestamp(trace_meta.t0_emitted_ms / 1000.0, tz=timezone.utc)
+clock = ManualClock(t0_datetime)
+token_gate = TokenGate(
+    min_words=60,  # Core default
+    max_words=100,  # Core default
+    silence_timer=1.0,  # Core default
+    max_wait_timeout=4.0,  # Core default
+    clock=clock
+)
+
+# TokenGate consumes content_plane stream with timing preserved via clock
 for event in engine.replay_content_plane():
-    if event.event_type == "delta":
-        tokengate.accumulate(
-            text=event.delta_text,
-            virtual_time_ms=event.virtual_time_ms  # Gaps preserved
-        )
+    # Advance clock to match event timing (preserves gaps)
+    event_datetime = datetime.fromtimestamp(
+        (trace_meta.t0_emitted_ms + event.virtual_time_ms) / 1000.0,
+        tz=timezone.utc
+    )
+    clock.set_time(event_datetime)
+    
+    if event.event_type == "delta" and event.delta_text:
+        # Add token (returns flushed chunk if flush triggered, None otherwise)
+        flushed_text = await token_gate.add_token(event.agent_id, event.delta_text)
+        if flushed_text:
+            # Handle flush event
+            flush_reason = token_gate.get_last_flush_reason(event.agent_id)
+            process_flush(flushed_text, flush_reason)
+        
+        # Check timers after add_token (may trigger additional flushes)
+        timer_flush = await token_gate.check_timers(event.agent_id)
+        if timer_flush:
+            flush_reason = token_gate.get_last_flush_reason(event.agent_id)
+            process_flush(timer_flush, flush_reason)
 ```
 
 **Metrics Scripts:**
@@ -390,15 +431,14 @@ for turn_id, cls in engine.get_turn_classifications().items():
 
 ### eval_run_id (Evaluation)
 
-**Format:** `eval_<variant>_<trace_dataset_hash_8>_<exaid_commit_8>`
+**Format:** `eval-<trace_dataset_hash_8>-<exaid_commit_8>`
 
-- `variant`: V0, V1, V2, V3, V4
-- `trace_dataset_hash_8`: First 8 chars of trace_dataset_hash
-- `exaid_commit_8`: First 8 chars of EXAID commit
+- `trace_dataset_hash_8`: First 8 chars of trace_dataset_hash (from manifest)
+- `exaid_commit_8`: First 8 chars of EXAID commit hash
 
-**Example:** `eval_V0_b2c3d4e5_8d45cbb1`
+**Example:** `eval-b2c3d4e5-8d45cbb1`
 
-**Note:** Used during evaluation; not used in trace generation.
+**Note:** Batch-level identifier shared across all variants in an evaluation run. Deterministic: same trace dataset and code version produce the same ID. Format enforced by schema pattern `^eval-[a-f0-9]{8}-[a-f0-9]{8}$`.
 
 ### trace_dataset_hash
 
@@ -411,6 +451,84 @@ canonical = {
     "traces": sorted([(case_id, trace_sha256), ...])
 }
 ```
+
+---
+
+## Reproducibility Guarantees and Limitations
+
+### Deterministic Evaluation Results
+
+**Evaluation results are fully reproducible** when run with:
+- Same trace files (verified via SHA256 hashes)
+- Same configuration files
+- Same code version (EXAID commit hash)
+- Same MAC submodule commit
+
+All evaluation logic uses deterministic algorithms:
+- Trace replay uses virtual time from trace data (not system time)
+- TokenGate uses ManualClock synchronized to trace timestamps
+- All random operations use fixed seeds
+- JSON serialization uses deterministic formatting (`sort_keys=True`, compact separators)
+- gzip compression uses `mtime=0` for deterministic archives
+
+### Metadata Timestamps and Byte-Level Reproducibility
+
+**Important Limitation:** Some output files include metadata timestamps (`created_at`, `generated_at`) that use `datetime.now(timezone.utc)`. These timestamps will differ on each run, preventing **byte-identical file verification**.
+
+**Affected Files:**
+- `trace_meta` records in trace files (`created_at`)
+- `manifest_meta` records in manifest files (`created_at`)
+- `run_meta` records in run logs (`created_at`)
+- Run summary JSON files (`generated_at`)
+
+**Impact:**
+- ✅ **Evaluation results are reproducible** - timestamps don't affect computation
+- ✅ **Hash-based verification works** - content hashes exclude timestamp fields
+- ❌ **Byte-level file comparison fails** - files differ due to timestamps
+
+**Workaround:** For byte-level verification, compare files excluding timestamp fields, or use hash-based verification (recommended).
+
+**Future Improvement:** Consider using deterministic timestamps derived from trace data or config for full byte-level reproducibility.
+
+---
+
+## Trace Provenance Fields
+
+### Provenance in Manifest
+
+The manifest `provenance` record includes the following fields for reproducibility:
+
+| Field | Purpose | Critical for Trace Reproducibility? |
+|-------|---------|-----------------------------------|
+| `mac_commit` | MAC submodule commit hash | ✅ **Yes** - Required to reproduce trace content |
+| `mac_fork_url` | MAC repository URL | ✅ **Yes** - Identifies source repository |
+| `model` | LLM model name | ✅ **Yes** - Required for trace generation |
+| `decoding` | Decoding parameters | ✅ **Yes** - Affects trace content |
+| `case_list_hash` | Case list file hash | ✅ **Yes** - Identifies input cases |
+| `config_hash` | Configuration hash | ✅ **Yes** - Captures generation config |
+| `exaid_commit` | EXAID repository commit | ⚠️ **Partial** - Tracks trace generation code version |
+
+### exaid_commit Field
+
+**Purpose:** Records the Git commit hash of the EXAID repository used during trace generation.
+
+**Why it might be "unknown":**
+- The trace generation script was run from a directory that wasn't a git repository
+- Git was not available in the PATH during trace generation
+- The git command failed for other reasons (permissions, corrupted repo, etc.)
+
+**Impact on Reproducibility:**
+- **Trace reproducibility:** ✅ **Not affected** - Trace content depends on MAC commit, model, decoding params, and case list (all present)
+- **Evaluation reproducibility:** ✅ **Not affected** - Evaluation runs capture EXAID commit in `eval_run_id` format
+- **Documentation:** ⚠️ **Minor gap** - Missing documentation of which EXAID code version ran trace generation
+
+**For Research Papers:**
+- Traces with `exaid_commit: "unknown"` are valid and reproducible
+- The missing field is a documentation gap, not a data integrity issue
+- Trace reproducibility is ensured via MAC commit and other provenance fields
+- Future traces will have full provenance after the fix is deployed
+
+**Note:** The `exaid_commit` field is required by the schema but accepts any string value, including `"unknown"`. This allows existing traces to remain valid while documenting the provenance gap transparently.
 
 ---
 
@@ -471,7 +589,7 @@ To **regenerate traces** (optional, requires OpenAI API key):
 ```bash
 docker compose -f docker-compose.evals.yml run --rm \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  evals python src/make_traces.py --config configs/mas_generation.yaml
+  evals python -m evals.cli.make_traces --config configs/mas_generation.yaml
 ```
 
 ### .gitignore Policy
@@ -501,7 +619,7 @@ docker compose -f docker-compose.evals.yml build
 docker compose -f docker-compose.evals.yml run --rm evals -c "python --version && spacy validate"
 
 # Run validation (passes with empty directories in scaffold mode)
-docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
+docker compose -f docker-compose.evals.yml run --rm evals scripts/validate.sh
 ```
 
 ---
@@ -515,11 +633,11 @@ Execute the following commands in order:
 ```bash
 # 0a. Validate frozen traces
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/validate_traces.py --traces data/traces/ --verbose
+  python -m evals.cli.validate_traces --traces data/traces/ --verbose
 
 # 0b. Generate stoplists (drift-proof, non-circular)
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/generate_stoplists.py --traces data/traces/ \
+  python -m evals.cli.generate_stoplists --traces data/traces/ \
     --output configs/ --config configs/extractor.yaml --verbose
 ```
 
@@ -533,43 +651,62 @@ docker compose -f docker-compose.evals.yml run --rm evals \
 ```bash
 docker compose -f docker-compose.evals.yml run --rm \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  evals python src/make_traces.py --config configs/mas_generation.yaml
+  evals python -m evals.cli.make_traces --config configs/mas_generation.yaml
 ```
 
 ### Step 3: Validate Schemas
 
 ```bash
-docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
+docker compose -f docker-compose.evals.yml run --rm evals scripts/validate.sh
 ```
 
 ### Step 4: Run Summarizer Variants
 
+> **Note:** `run_variants.py` now invokes the real EXAID `BufferAgent` and
+> `SummarizerAgent`, so you must provide LLM credentials/configuration for the
+> `buffer_agent` and `summarizer` roles (e.g., `OPENAI_API_KEY` plus optional
+> `SUMMARIZER_LLM_PROVIDER` / `BUFFER_AGENT_LLM_PROVIDER` overrides).
+
 ```bash
 # Run all variants (V0-V4)
-docker compose -f docker-compose.evals.yml run --rm evals scripts/02_run_variants.sh
+docker compose -f docker-compose.evals.yml run --rm evals scripts/run_variants.sh
 
 # Run specific variant
-docker compose -f docker-compose.evals.yml run --rm evals scripts/02_run_variants.sh V3
+docker compose -f docker-compose.evals.yml run --rm evals scripts/run_variants.sh V3
 
 # Or use Python directly with more options
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/run_variants.py --traces data/traces/ --output data/runs/ --verbose
+  python -m evals.cli.run_variants --traces data/traces/ --output data/runs/ --verbose
 ```
 
 ### Step 5: Compute Metrics
 
 ```bash
-docker compose -f docker-compose.evals.yml run --rm evals scripts/03_compute_metrics.sh
+docker compose -f docker-compose.evals.yml run --rm evals scripts/compute_metrics.sh
 
 # Or use Python directly
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/compute_metrics.py --runs data/runs/ --traces data/traces/ \
+  python -m evals.cli.compute_metrics --runs data/runs/ --traces data/traces/ \
     --output data/metrics/ --bootstrap-samples 10000 --verbose
 ```
 
 **Output:**
 - `data/metrics/per_case.metrics.jsonl` - Per-case metric records
 - `data/metrics/aggregate.metrics.json` - Aggregate statistics with CIs
+
+### Step 5b: Error Analysis for Outliers
+
+Generate trace excerpts, gate decisions, and summary outputs for cases flagged
+as latency spikes, excessive flushes, or low coverage.
+
+```bash
+docker compose -f docker-compose.evals.yml run --rm evals \
+  python -m evals.cli.error_analysis --metrics data/metrics/per_case.metrics.jsonl \
+    --runs data/runs/ --traces data/traces/ --output data/metrics/error_analysis
+```
+
+**Output:**
+- `data/metrics/error_analysis/error_analysis.jsonl` - Per-case error analysis extracts
 
 ### Step 6: TokenGate Calibration (Phase 5)
 
@@ -579,7 +716,7 @@ Calibrates TokenGate trigger parameters (`min_words`, `max_words`, `silence_time
 
 ```bash
 # Run calibration sweep
-docker compose -f docker-compose.evals.yml run --rm evals scripts/05_calibrate_tokengate.sh
+docker compose -f docker-compose.evals.yml run --rm evals scripts/calibrate_tokengate.sh
 
 # Or use Python directly
 docker compose -f docker-compose.evals.yml run --rm evals \
@@ -618,7 +755,8 @@ evals/data/calibration/calib_<hash8>_<hash8>_<hash8>/
 3. **Production-Faithful Replay**: Deterministic replay matching production behavior exactly
    - Uses `TokenGate` with `ManualClock` for virtual time
    - Timers checked synchronously: inside `add_token()` (silence check) and after `add_token()` via `check_timers()`
-   - Explicit flush at `turn_end` events (matching production `flush_agent()` behavior)
+   - Explicit TokenGate flush at `turn_end` events (for calibration metrics only; does not trigger summarization)
+   - End-of-trace flush parks segments without summarizing (matching production `flush_agent()` behavior)
    - **No gap-based timer processing** (production has no background/tick loop)
    - Multi-agent support (per-agent buffers)
 
@@ -629,13 +767,13 @@ evals/data/calibration/calib_<hash8>_<hash8>_<hash8>/
    - Timer flush percentage, timer under-minimum percentage
 
 5. **Constraint Filters**: Hard requirements (reject violating policies)
-   - `ttff_content_p95_ms ≤ 30000 ms`
+   - `ttff_content_p95_ms ≤ derived` (3× global p95 time-to-reach-min_words)
    - `spam_pct_mean ≤ 10%`
    - `timer_under_min_pct_mean ≤ 20%`
    - `chunk_size_p50 ≥ 0.6 * min_words` (policy-relative)
    - `chunk_size_p50 ≥ 50 words` (absolute minimum, cost constraint)
-   - `chunk_size_p95 ≤ 150 words`
-   - `worst_wait_p95_ms ≤ 60000 ms`
+   - `chunk_size_p95 ≤ 180 words`
+   - `worst_wait_p95_ms ≤ derived` (1.5× max_wait_timeout_ms upper bound)
    - `flush_count_mean ≤ 100` (cost constraint: limits BufferAgent calls per case)
 
 6. **Selection Rule**: 3-objective Pareto frontier + utopia-distance selection
@@ -669,14 +807,17 @@ The chosen parameters are written to `chosen_tokengate_params.yaml` and become t
 
 **Paper hook: Section 3.1**
 
-Canonical trace text is defined in `src/trace_text.py:build_canonical_trace_text()`:
+Canonical trace text is defined in `src/traces/trace_text.py:build_canonical_trace_text()`:
 
 | Rule | Description |
 |------|-------------|
+| **Chunk Type** | `record_type == "stream_delta"` (chunk records identified by stream_delta type) |
+| **Text Extraction** | Uses `delta_text` field from stream_delta records |
 | **Include** | Chunks where `event_subtype == "message"` |
 | **Exclude** | `orchestrator_summary`, `system_note`, other subtypes |
 | **Fallback** | If `event_subtype` missing, include unless `agent_id` in `{orchestrator, _system, system, meta}` |
 | **FAIL-FAST** | Raises `TraceParsingError` if 0 message chunks found |
+| **Validation** | Real traces (non-stub) must have non-empty canonical text |
 
 **Statistics tracked:**
 - `included_message_chunks` - Count of message chunks included
@@ -685,7 +826,7 @@ Canonical trace text is defined in `src/trace_text.py:build_canonical_trace_text
 - `excluded_other_subtype` - Other excluded subtypes
 - `missing_event_subtype` - Chunks included via fallback (missing subtype)
 
-**Single source of truth:** All modules MUST import from `trace_text.py`:
+**Single source of truth:** All modules MUST import from `traces/trace_text.py`:
 - `build_canonical_trace_text()` - Full trace text
 - `build_window_text()` - Window text for M6a/M6b
 
@@ -800,7 +941,7 @@ Schema failures must be handled correctly for M6a/M6b faithfulness metrics:
 **Reporting:**
 - `faithfulness_valid_event_count` - Events included in M6a/M6b means
 - `excluded_from_faithfulness_count` - Events excluded (schema failures)
-- `schema_failures` - Total schema failure count (for M10)
+- `schema_failures` - Total schema failure count (used for M10 compliance)
 
 **Coverage penalty:** Schema-failed events contribute empty concept sets, penalizing recall.
 
@@ -815,10 +956,16 @@ Note: TokenGate uses whitespace-delimited word counts (not model tokenizer token
 | Variant | Trigger Policy | Components |
 |---------|----------------|------------|
 | **V0** | `full_exaid` | TokenGate (word thresholds) + BufferAgent (completeness/value/novelty) + Summarizer |
-| **V1** | `turn_end` | Trigger at `is_turn_end=True` + Summarizer only |
+| **V1** | `turn_end` | Trigger at `turn_end` events (from `turn_boundary` records) + Summarizer only |
 | **V2** | `no_buffer` | TokenGate flush → Summarizer (skip BufferAgent) |
 | **V3** | `no_tokengate` | Fixed chunk/time + BufferAgent + Summarizer |
 | **V4** | `no_novelty` | TokenGate (word thresholds) + BufferAgent (completeness + value only) + Summarizer |
+
+**Note on turn_end behavior:**
+- **V1 variant**: Summarizes on `turn_end` events (ablation variant to measure TokenGate/BufferAgent contribution)
+- **Production `flush_agent()`**: Called at end-of-trace only, parks segments without summarizing
+- **TokenGate calibration**: Flushes at `turn_end` for metrics only (no summarization)
+- **Evaluation end-of-trace**: Parks segments without summarizing (matches production `flush_agent()` behavior)
 
 ### V3 Calibration
 
@@ -833,18 +980,17 @@ V3 uses fixed CTU intervals calibrated from V0:
 
 | Metric | Description | Computation |
 |--------|-------------|-------------|
-| **M1** | Compression ratio | `1 - (summary_ctu / trace_ctu)` |
-| **M2** | Summary count | Number of summary events |
-| **M3** | Redundancy | Jaccard similarity on CUI sets between consecutive summaries |
+| **M1** | Update counts | Number of summary events |
+| **M2** | Output volume | Total summary CTU |
+| **M3** | Redundancy | Jaccard similarity thresholds between consecutive summaries |
 | **M4** | Trace coverage | `|summary_cuis ∩ trace_cuis| / |trace_cuis|` |
-| **M5a** | Unsupported global | `|summary_cuis - trace_cuis| / |summary_cuis|` |
-| **M5b** | Unsupported per-summary | Mean per-summary unsupported rate |
+| **M5** | Unsupported content | Global and per-summary unsupported rates |
 | **M6a** | Window-groundedness | Unsupported fraction vs window |
 | **M6b** | Contract-groundedness | Unsupported fraction vs window+latest_summary |
-| **M7** | Mean latency | Mean summary generation latency (ms) |
-| **M8** | LLM usage | Total prompt + completion CTU |
-| **M9** | BufferAgent overhead | Decision count and CTU |
-| **M10** | Schema failure rate | `schema_failures / summary_count` |
+| **M7b** | Coverage vs budget | Coverage at CTU budgets (250/500/1000/2000) |
+| **M8** | Latency | Mean summary and BufferAgent latency (ms) |
+| **M9** | LLM usage | Total prompt + completion CTU (summaries + BufferAgent) |
+| **M10** | Compliance | `1 - (schema_failures / summary_count)` |
 
 ### M6b Reconstruction
 
@@ -852,9 +998,11 @@ M6b support set = window_text + latest_summary_semantics_text
 
 `latest_summary_semantics_text` is reconstructed by looking up `latest_summary_event_id` within the run log.
 
+For semantic metrics, `summary_semantics_text` is built from clinician-facing fields and **excludes** `agent_contributions` to prevent inflated concept overlap.
+
 ---
 
-## Run Log Schema (v1.3.0)
+## Run Log Schema (v1.5.0)
 
 Multi-record JSONL format per `schemas/exaid.run.schema.json`:
 
@@ -889,13 +1037,12 @@ evals/
 ├── schemas/                       # JSON Schema definitions
 │   ├── exaid.manifest.schema.json
 │   ├── exaid.trace.schema.json
-│   ├── exaid.run.schema.json      # Multi-record JSONL v1.3.0
+│   ├── exaid.run.schema.json      # Multi-record JSONL v1.5.0
 │   └── exaid.metrics.schema.json
 ├── configs/                       # Configuration files
 │   ├── extractor.yaml             # Concept extractor config
 │   ├── dataset.yaml               # Dataset selection + MAC case policy
 │   ├── mas_generation.yaml        # MAS trace generation (MAC config)
-│   ├── summarizer.yaml            # Summarizer params (history_k=3)
 │   ├── metrics.yaml               # Metric computation params
 │   ├── stop_entities.txt          # Surface-form stoplist
 │   ├── stop_cuis.txt              # CUI stoplist
@@ -920,25 +1067,27 @@ evals/
 │       ├── aggregate.metrics.json
 │       └── figures/               # Generated figures
 ├── src/                           # Python library modules (importable)
-│   ├── trace_replay_engine.py     # Trace replay engine (core library)
-│   ├── trace_text.py              # Canonical trace text (single source)
-│   ├── validate_traces.py         # Trace validation
-│   ├── generate_stoplists.py      # Stoplist generation
-│   ├── deterministic_utils.py     # Timestamps, IDs, CTU
-│   ├── deterministic_io.py        # gzip/JSON writing
-│   ├── concept_extractor.py       # CUI extraction
-│   ├── validate_logs.py           # Schema validation
+│   ├── config/                    # Config loading + provenance helpers
+│   ├── deterministic/             # Deterministic timestamps + I/O helpers
+│   ├── extraction/                # Concept extraction
+│   ├── traces/                    # Trace parsing + replay engine
+│   ├── metrics/                   # Metric helpers (types, computations, aggregation)
+│   └── tokengate_calibration/     # TokenGate calibration pipeline
+├── cli/                           # CLI tools (runnable inspection/debug tools)
+│   ├── replay_trace.py            # Trace replay CLI tool
 │   ├── make_traces.py             # Trace generation (MAC integration)
 │   ├── run_variants.py            # Variant replay engine
-│   ├── compute_metrics.py         # M1-M10 metrics
-│   └── test_concept_extractor.py  # Unit tests
-├── cli/                           # CLI tools (runnable inspection/debug tools)
-│   └── replay_trace.py            # Trace replay CLI tool
+│   ├── compute_metrics.py         # M1-M10 metrics orchestration
+│   ├── validate_traces.py         # Trace validation
+│   ├── validate_logs.py           # Schema validation
+│   └── generate_stoplists.py      # Stoplist generation
 └── scripts/                       # Orchestration scripts (shell scripts)
-    ├── 00_validate.sh
-    ├── 01_make_traces.sh
-    ├── 02_run_variants.sh
-    └── 03_compute_metrics.sh
+    ├── validate.sh
+    ├── make_traces.sh
+    ├── run_variants.sh
+    ├── compute_metrics.sh
+    ├── calibrate_tokengate.sh
+    └── calibrate_tokengate_smoke.sh
 ```
 
 ---
@@ -1010,7 +1159,7 @@ docker compose -f docker-compose.evals.yml run --rm evals \
 ### Validation fails
 ```bash
 docker compose -f docker-compose.evals.yml run --rm evals \
-  python src/validate_traces.py --traces data/traces/ --verbose
+  python -m evals.cli.validate_traces --traces data/traces/ --verbose
 ```
 
 ### Trace parsing errors

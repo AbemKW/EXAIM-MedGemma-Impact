@@ -37,7 +37,7 @@
         },
         "case_id": {
           "type": "string",
-          "pattern": "^case-[a-z0-9-]+$",
+          "pattern": "^case-[a-zA-Z0-9-]+$",
           "description": "Reference to the clinical case being processed"
         },
         "mas_run_id": {
@@ -47,8 +47,9 @@
         },
         "mac_commit": {
           "type": "string",
-          "minLength": 7,
-          "description": "Full git commit hash of MAC submodule used for generation"
+          "minLength": 40,
+          "maxLength": 40,
+          "description": "Full 40-character git commit hash of MAC submodule used for generation"
         },
         "exaid_commit": {
           "type": "string",
@@ -122,7 +123,7 @@
         },
         "case_id": {
           "type": "string",
-          "pattern": "^case-[a-z0-9-]+$",
+          "pattern": "^case-[a-zA-Z0-9-]+$",
           "description": "Reference to the clinical case"
         },
         "seq": {
@@ -178,7 +179,7 @@
         },
         "case_id": {
           "type": "string",
-          "pattern": "^case-[a-z0-9-]+$",
+          "pattern": "^case-[a-zA-Z0-9-]+$",
           "description": "Reference to the clinical case"
         },
         "turn_id": {

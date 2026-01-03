@@ -17,11 +17,9 @@ components:
   token_gate:
     enabled: false
   
-  # BufferAgent: all checks enabled
+  # BufferAgent: novelty check enabled (completeness and relevance always evaluated)
   buffer_agent:
     enabled: true
-    completeness_check: true
-    value_check: true
     novelty_check: true
   
   # Summarizer: generates summaries

@@ -1,100 +1,207 @@
 from langchain_core.prompts import ChatPromptTemplate
 from infra import get_llm, LLMRole
-from pydantic import BaseModel, Field
-from typing import Literal
-from exaid_core.utils.prompts import get_buffer_agent_system_prompt, get_buffer_agent_user_prompt
+from pydantic import BaseModel
+from typing import Union
+from exaid_core.schema.agent_segment import AgentSegment
+from exaid_core.schema.buffer_analysis import BufferAnalysis, BufferAnalysisNoNovelty
+from exaid_core.utils.prompts import (
+    get_buffer_agent_system_prompt,
+    get_buffer_agent_system_prompt_no_novelty,
+    get_buffer_agent_user_prompt
+)
 
-class BufferAnalysis(BaseModel):
-    """Structured analysis of stream state for buffer agent decision-making.
-    
-    Uses a three-state machine to classify stream completeness based on topic continuity,
-    then independently evaluates clinical relevance and novelty to determine if summarization
-    should be triggered.
-    """
-    reasoning: str = Field(
-        description="Chain-of-thought analysis of the stream structure. Analyze whether the agent "
-        "is still refining the same topic, has shifted to a new topic, or has issued a critical alert. "
-        "Consider list markers, transition words, rationale gaps, and topic boundaries."
-    )
-    stream_state: Literal["SAME_TOPIC_CONTINUING", "TOPIC_SHIFT", "CRITICAL_ALERT"] = Field(
-        description="State machine for stream completeness based on topic continuity. "
-        "SAME_TOPIC_CONTINUING: Agent is still refining, listing, or explaining the same specific clinical issue "
-        "(e.g., mid-list with markers like '1.', 'First,', reasoning loops, adding detail). WAIT - do not trigger. "
-        "TOPIC_SHIFT: Agent explicitly moves to a distinctly different organ system, problem, or section "
-        "(explicit transitions, implicit shifts, conclusions). PROCEED to relevance/novelty checks. "
-        "CRITICAL_ALERT: Immediate life-safety notification (e.g., 'V-Fib detected', 'Code Blue'). PROCEED immediately."
-    )
-    is_relevant: bool = Field(
-        description="Is this clinically important? Does it add medical reasoning or context that would help "
-        "the clinician understand the case? Relevant: new diagnosis, refined differential, specific treatment "
-        "dose/plan, condition changes. Not Relevant: 'thinking out loud', obvious facts without interpretation, "
-        "formatting tokens."
-    )
-    is_novel: bool = Field(
-        description="Is this new vs previous summaries? Does it introduce something not already covered in "
-        "prior summaries? Novel: new values (e.g., 'Creatinine rose to 2.2'), new actions (e.g., 'Start Amiodarone'), "
-        "new insights (e.g., 'Diagnosis upgraded from possible to likely'). Not Novel: continuing statements, "
-        "reiteration of already-summarized findings, status quo confirmations."
-    )
-    final_trigger: bool = Field(
-        description="True ONLY if (stream_state is TOPIC_SHIFT OR CRITICAL_ALERT) AND is_relevant is True "
-        "AND is_novel is True. This is the final gate for triggering summarization."
-    )
 
 class TraceData(BaseModel):
     count: int
 
+
+def compute_trigger(a) -> tuple[bool, str]:
+    """Compute trigger deterministically from BufferAnalysis-like object.
+    
+    Args:
+        a: BufferAnalysis or BufferAnalysisNoNovelty object
+        
+    Returns:
+        Tuple of (trigger: bool, path: str) where path is one of:
+        - "C" for CRITICAL_ALERT
+        - "A" for completed value path
+        - "B" for topic shift path
+        - "-" for no trigger
+    """
+    # Path C: Critical alert
+    if a.stream_state == "CRITICAL_ALERT":
+        return True, "C"
+    
+    structural_closed = getattr(a, "structural_closed", a.is_complete)
+    semantic_complete = getattr(a, "semantic_complete", a.is_complete)
+    
+    # Path A: Completed value
+    if structural_closed and semantic_complete:
+        if hasattr(a, "is_novel"):
+            if a.is_relevant and a.is_novel:
+                return True, "A"
+        else:
+            # BufferAnalysisNoNovelty: no novelty check
+            if a.is_relevant:
+                return True, "A"
+    
+    # Path B: Topic shift
+    if a.stream_state == "TOPIC_SHIFT":
+        if hasattr(a, "is_novel"):
+            if a.is_relevant and a.is_novel:
+                return True, "B"
+        else:
+            # BufferAnalysisNoNovelty: no novelty check
+            if a.is_relevant:
+                return True, "B"
+    
+    return False, "-"
+
+
 class BufferAgent:
-    def __init__(self):
-        self.buffer: list[str] = []
+    def __init__(self, disable_novelty: bool = False):
+        self.buffer: list[AgentSegment] = []
+        self.tail_segments: list[AgentSegment] = []  # Deferred segments from non-trigger flushes
         # Use a smarter model if available, or the same base model
         self.base_llm = get_llm(LLMRole.BUFFER_AGENT)
-        # We bind the structured output to force the reasoning step
-        self.llm = self.base_llm.with_structured_output(BufferAnalysis)
-        self.flag_prompt = ChatPromptTemplate.from_messages([
-            ("system", get_buffer_agent_system_prompt()),
-            ("user", get_buffer_agent_user_prompt())
-        ])
+        # Conditionally initialize LLM and prompt based on novelty check
+        if disable_novelty:
+            self.llm = self.base_llm.with_structured_output(BufferAnalysisNoNovelty)
+            self.flag_prompt = ChatPromptTemplate.from_messages([
+                ("system", get_buffer_agent_system_prompt_no_novelty()),
+                ("user", get_buffer_agent_user_prompt())
+            ])
+        else:
+            self.llm = self.base_llm.with_structured_output(BufferAnalysis)
+            self.flag_prompt = ChatPromptTemplate.from_messages([
+                ("system", get_buffer_agent_system_prompt()),
+                ("user", get_buffer_agent_user_prompt())
+            ])
         self.traces: dict[str, TraceData] = {}
+        self.last_analysis: dict[str, Union[BufferAnalysis, BufferAnalysisNoNovelty, None]] = {}
 
-    async def addsegment(self, agent_id: str, segment: str, previous_summaries: list[str]) -> bool:
-        tagged_segment = f"| {agent_id} | {segment}"
+    @staticmethod
+    def format_segments_for_prompt(segments: list[AgentSegment]) -> str:
+        if not segments:
+            return "(Buffer empty)"
+
+        lines = []
+        last_agent = None
+        acc = []
+
+        def flush():
+            nonlocal acc, last_agent
+            if acc and last_agent is not None:
+                # Simple newline-separated format: agent_id on its own line, then content
+                lines.append(f"{last_agent}:")
+                lines.append(" ".join(acc))
+            acc = []
+
+        for s in segments:
+            if s.agent_id != last_agent:
+                flush()
+                last_agent = s.agent_id
+            acc.append(s.segment)
+
+        flush()
+        return "\n".join(lines)
+
+    async def addsegment(
+        self,
+        agent_id: str,
+        segment: str,
+        previous_summaries: list[str],
+        flush_reason: str | None = None,
+        history_k: int = 3
+    ) -> bool:
+        new_text = segment
         if agent_id not in self.traces:
             self.traces[agent_id] = TraceData(count=0)
         self.traces[agent_id].count += 1
         
-        # Add to buffer first
-        self.buffer.append(tagged_segment)
+        # Add to buffer and track agent_id
+        self.buffer.append(AgentSegment(agent_id=agent_id, segment=new_text))
         
         # Prepare context
-        # We pass the *rest* of the buffer separate from the *new* segment so the LLM sees the flow
-        buffer_context = "\n".join(self.buffer[:-1]) if len(self.buffer) > 1 else "(Buffer empty)"
+        # We pass the *rest* of the buffer separate from the *new* segment so the LLM sees the flow.
+        # Include deferred tail content so trigger decisions account for previously parked segments.
+        # Group by agent to keep the prompt compact.
+        prior_segments = self.tail_segments + self.buffer[:-1]
+        buffer_context = self.format_segments_for_prompt(prior_segments)
+        new_trace_block = self.format_segments_for_prompt([self.buffer[-1]])
+        
+        # DEBUG: Print the input to the buffer agent
+        YELLOW = "\033[1;33m"  # Bright yellow
+        RESET = "\033[0m"      # Reset color
+        print(f"{YELLOW}DEBUG [{agent_id}] Buffer Agent Input:{RESET}")
+        print(f"{YELLOW}  Agent ID: {agent_id}{RESET}")
+        print(f"{YELLOW}  New Segment: {new_text}{RESET}")
+        print(f"{YELLOW}  Flush Reason: {flush_reason or 'none'}{RESET}")
+        print(f"{YELLOW}  Previous Summaries ({len(previous_summaries)}):{RESET}")
+        for i, summary in enumerate(previous_summaries):
+            print(f"{YELLOW}    [{i+1}] {summary}{RESET}")
+        print(f"{YELLOW}  Previous Trace Context:{RESET}")
+        print(f"{YELLOW}    {buffer_context}{RESET}")
+        print(f"{YELLOW}  New Trace Block:{RESET}")
+        print(f"{YELLOW}    {new_trace_block}{RESET}")
         
         chain = self.flag_prompt | self.llm
         
         try:
-            analysis: BufferAnalysis = await chain.ainvoke({
+            analysis: Union[BufferAnalysis, BufferAnalysisNoNovelty] = await chain.ainvoke({
                 "summaries": previous_summaries,
                 "previous_trace": buffer_context,
-                "new_trace": tagged_segment
+                "new_trace": new_trace_block,
+                "flush_reason": flush_reason or "none",
+                "history_k": history_k
             })
+            self.last_analysis[agent_id] = analysis
             
-            should_trigger = analysis.final_trigger
+            # Compute trigger deterministically in code (not from model)
+            trigger, trigger_path = compute_trigger(analysis)
             
             # DEBUG: Print the LLM's analysis to verify it's working
-            print(f"DEBUG [{agent_id}]: State={analysis.stream_state} | Trigger={analysis.final_trigger}")
+            novelty_str = f" | Novel={analysis.is_novel}" if hasattr(analysis, "is_novel") else ""
+            CYAN = "\033[1;36m"  # Bright cyan
+            RESET = "\033[0m"    # Reset color
+            print(f"{CYAN}DEBUG [{agent_id}]: State={analysis.stream_state} | Complete={analysis.is_complete} | Relevant={analysis.is_relevant}{novelty_str} | Trigger={trigger} (path={trigger_path}){RESET}")
+            print(f"{CYAN}DEBUG [{agent_id}] Rationale: {analysis.rationale}{RESET}")
             
-            return should_trigger
+            return trigger
 
         except Exception as e:
             # Fallback if structured output fails (fail closed/safe to avoid spam)
-            print(f"Buffer decision failed: {e}")
+            RED = "\033[1;31m"   # Bright red
+            RESET = "\033[0m"    # Reset color
+            print(f"{RED}Buffer decision failed: {e}{RESET}")
+            self.last_analysis[agent_id] = None
             return False
     
-    def flush(self) -> list[str]:
-        flushed = self.buffer.copy()
+    def flush(self) -> list[AgentSegment]:
+        """Flush tail + live buffer and return segments with their corresponding agent IDs.
+
+        Tail segments are deferred content parked by `park_tail()` when a forced
+        flush occurs without a BufferAgent trigger. They are included in the
+        `buffer_context` passed to `addsegment()` decisions so trigger logic can
+        consider them, and they are prepended here so the next summarization
+        includes them with their original agent IDs.
+        
+        Returns:
+            List of AgentSegment items, preserving original agent attribution
+        """
+        flushed_segments = self.tail_segments + self.buffer
+        self.tail_segments.clear()
         self.buffer.clear()
-        return flushed
+        return flushed_segments
+
+    def park_tail(self, segments: list[AgentSegment]) -> None:
+        """Append leftover segments to the tail buffer without summarizing."""
+        if not segments:
+            return
+        self.tail_segments.extend(segments)
         
     def get_trace_count(self, agent_id: str) -> int:
         return self.traces.get(agent_id, TraceData(count=0)).count
+
+    def get_last_analysis(self, agent_id: str) -> Union[BufferAnalysis, BufferAnalysisNoNovelty, None]:
+        return self.last_analysis.get(agent_id)

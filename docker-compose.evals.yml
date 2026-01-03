@@ -1,9 +1,9 @@
 # EXAID Evaluation Module - Docker Compose Configuration
 # Usage: docker compose -f docker-compose.evals.yml build
-#        docker compose -f docker-compose.evals.yml run --rm evals scripts/00_validate.sh
+#        docker compose -f docker-compose.evals.yml run --rm evals scripts/validate.sh
 #
 # For trace generation with MAC (requires OpenAI API key):
-#   docker compose -f docker-compose.evals.yml run --rm evals scripts/01_make_traces.sh
+#   docker compose -f docker-compose.evals.yml run --rm evals scripts/make_traces.sh
 #
 # Set OPENAI_API_KEY in your environment before running:
 #   Windows: $env:OPENAI_API_KEY = "your_key_here"
@@ -24,3 +24,4 @@ services:
     tty: true
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SCISPACY_LINKER_PATH=/app/scispacy_linkers

@@ -26,3 +26,5 @@ export default function WordCountComparison({ totalWords, summaryWords }: WordCo
   );
 }
 
+
+

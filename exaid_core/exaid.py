@@ -1,15 +1,17 @@
 from typing import Optional, Callable, List
 from exaid_core.buffer_agent.buffer_agent import BufferAgent
+from exaid_core.schema.agent_segment import AgentSegment
 from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
 from exaid_core.token_gate.token_gate import TokenGate
 from exaid_core.schema.agent_summary import AgentSummary
 
 class EXAID:
-    def __init__(self):
+    def __init__(self, history_k: int = 3):
         self.buffer_agent = BufferAgent()
         self.summarizer_agent = SummarizerAgent()
         self.token_gate = TokenGate()
         self.summaries: list[AgentSummary] = []
+        self.history_k = history_k
         self.trace_callbacks: List[Callable[[str, str], None]] = []
         self.summary_callbacks: List[Callable[[AgentSummary], None]] = []
     
@@ -76,6 +78,11 @@ class EXAID:
         """Converts a list of AgentSummary objects to string representations for prompt history."""
         return [self._format_summary_for_history(s) for s in summaries]
 
+    def _get_limited_history(self, summaries: list[AgentSummary]) -> list[str]:
+        """Get the last k summary entries."""
+        limited = summaries[-self.history_k:] if self.history_k > 0 else []
+        return self._format_summaries_history(limited)
+
     async def received_trace(self, agent_id: str, text: str) -> Optional[AgentSummary]:
         """
         Processes a trace for the given agent ID and text, triggering summarization if appropriate.
@@ -94,30 +101,36 @@ class EXAID:
         
         # Prepare previous summaries for buffer agent evaluation
         all_summaries = self.get_all_summaries()
-        previous_summaries = self._format_summaries_history(all_summaries)
+        previous_summaries = self._get_limited_history(all_summaries)
         
-        trigger = await self.buffer_agent.addsegment(agent_id, text, previous_summaries)
+        trigger = await self.buffer_agent.addsegment(
+            agent_id,
+            text,
+            previous_summaries,
+            flush_reason="full_trace",
+            history_k=self.history_k
+        )
         if trigger:
-            agent_buffer = self.buffer_agent.flush()
-            buffer_str = "\n".join(agent_buffer)
+            agent_segments = self.buffer_agent.flush()
             all_summaries = self.get_all_summaries()
-            summary_history_strs = self._format_summaries_history(all_summaries[:-1]) if len(all_summaries) > 1 else []
+            summary_history_strs = self._get_limited_history(all_summaries[:-1])
             latest_summary_str = self._format_summary_for_history(all_summaries[-1]) if all_summaries else "No summaries yet."
             summary = await self.summarizer_agent.summarize(
+                agent_segments,
                 summary_history_strs,
                 latest_summary_str,
-                buffer_str
+                self.history_k
             )
             if summary is not None:
                 self.summaries.append(summary)
                 self._print_summary(summary)
-            
-            # Emit summary event to callbacks
-            for callback in self.summary_callbacks:
-                try:
-                    callback(summary)
-                except Exception as e:
-                    print(f"Error in summary callback: {e}")
+                
+                # Emit summary event to callbacks
+                for callback in self.summary_callbacks:
+                    try:
+                        callback(summary)
+                    except Exception as e:
+                        print(f"Error in summary callback: {e}")
             
             return summary
         return None
@@ -137,34 +150,44 @@ class EXAID:
         # Process chunk if complete
         if chunk:
             summaries = self.get_all_summaries()
-            previous_summaries = self._format_summaries_history(summaries)
-            return await self._process_chunk(agent_id, chunk, previous_summaries, summaries)
+            flush_reason = self.token_gate.get_last_flush_reason(agent_id)
+            return await self._process_chunk(agent_id, chunk, summaries, flush_reason)
 
         # Check TokenGate timers
         timer_chunk = await self.token_gate.check_timers(agent_id)
         if timer_chunk:
             summaries = self.get_all_summaries()
-            previous_summaries = self._format_summaries_history(summaries)
-            return await self._process_chunk(agent_id, timer_chunk, previous_summaries, summaries)
+            flush_reason = self.token_gate.get_last_flush_reason(agent_id)
+            return await self._process_chunk(agent_id, timer_chunk, summaries, flush_reason)
 
         return None
 
-    async def _process_chunk(self, agent_id: str, chunk: str, previous_summaries: list[str], summaries: list[AgentSummary]) -> Optional[AgentSummary]:
+    async def _process_chunk(
+        self,
+        agent_id: str,
+        chunk: str,
+        summaries: list[AgentSummary],
+        flush_reason: str | None = None
+    ) -> Optional[AgentSummary]:
         """Process a chunk of text for summarization."""
+        previous_summaries = self._get_limited_history(summaries)
         trigger = await self.buffer_agent.addsegment(
             agent_id,
             chunk,
-            previous_summaries
+            previous_summaries,
+            flush_reason=flush_reason,
+            history_k=self.history_k
         )
         if trigger:
-            agent_buffer = self.buffer_agent.flush()
-            buffer_str = "\n".join(agent_buffer)
-            summary_history_strs = self._format_summaries_history(summaries[:-1]) if len(summaries) > 1 else []
+            # Flush returns deferred tail + current buffer content.
+            agent_segments = self.buffer_agent.flush()
+            summary_history_strs = self._get_limited_history(summaries[:-1])
             latest_summary_str = self._format_summary_for_history(summaries[-1]) if summaries else "No summaries yet."
             summary = await self.summarizer_agent.summarize(
+                agent_segments,
                 summary_history_strs,
                 latest_summary_str,
-                buffer_str
+                self.history_k
             )
             if summary is not None:
                 self.summaries.append(summary)
@@ -180,38 +203,17 @@ class EXAID:
             return summary
         return None
 
-    async def flush_agent(self, agent_id: str) -> Optional[AgentSummary]:
-        """Flush remaining tokens for the given agent."""
+    async def flush_agent(self, agent_id: str) -> None:
+        """Flush remaining tokens and park them without triggering summarization."""
         remaining = await self.token_gate.flush(agent_id)
-        if remaining:
-            summaries = self.get_all_summaries()
-            previous_summaries = self._format_summaries_history(summaries)
-            summary = await self._process_chunk(agent_id, remaining, previous_summaries, summaries)
-            
-            # If no summary was triggered but buffer has content, force a summary
-            if summary is None and self.buffer_agent.buffer:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"Forcing final summary for {agent_id} with remaining buffer content")
-                agent_buffer = self.buffer_agent.flush()
-                buffer_str = "\n".join(agent_buffer)
-                summary_history_strs = self._format_summaries_history(summaries[:-1]) if len(summaries) > 1 else []
-                latest_summary_str = self._format_summary_for_history(summaries[-1]) if summaries else "No summaries yet."
-                summary = await self.summarizer_agent.summarize(
-                    summary_history_strs,
-                    latest_summary_str,
-                    buffer_str
-                )
-                if summary is not None:
-                    self.summaries.append(summary)
-                    self._print_summary(summary)
-                    
-                    # Emit summary event to callbacks
-                    for callback in self.summary_callbacks:
-                        try:
-                            callback(summary)
-                        except Exception as e:
-                            print(f"Error in summary callback: {e}")
-            
-            return summary
+        if not remaining:
+            return None
+
+        import logging
+        logger = logging.getLogger(__name__)
+        self.buffer_agent.park_tail([AgentSegment(agent_id=agent_id, segment=remaining)])
+        logger.debug(
+            "Parked 1 segment for %s in tail buffer",
+            agent_id
+        )
         return None

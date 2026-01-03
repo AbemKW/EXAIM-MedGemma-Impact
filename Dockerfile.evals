@@ -21,12 +21,30 @@ RUN pip install --no-cache-dir -r /app/evals/requirements-evals.txt
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Install scispaCy WITHOUT dependency resolution
+# Install scispaCy WITHOUT dependency resolution (avoids scipy version conflict)
+# scipy 1.11+ already installed from requirements-evals.txt works fine
 RUN pip install --no-cache-dir --no-deps scispacy==0.5.4
 
 # Install ONLY the scispaCy model you actually use
 RUN pip install \
   https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz
+
+# Download UMLS linker knowledge base files
+# These are required for CUI extraction (not just surface forms)
+# Files are ~2-3GB total, so this will take a few minutes
+RUN mkdir -p /app/scispacy_linkers/umls && \
+    cd /app/scispacy_linkers/umls && \
+    curl -L -o nmslib_index.bin \
+      https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/data/linkers/2020-10-09/umls/nmslib_index.bin && \
+    curl -L -o tfidf_vectorizer.joblib \
+      https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/data/linkers/2020-10-09/umls/tfidf_vectorizer.joblib && \
+    curl -L -o tfidf_vectors_sparse.npz \
+      https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/data/linkers/2020-10-09/umls/tfidf_vectors_sparse.npz && \
+    curl -L -o concept_aliases.json \
+      https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/data/linkers/2020-10-09/umls/concept_aliases.json
+
+# Set environment variable for linker path
+ENV SCISPACY_LINKER_PATH=/app/scispacy_linkers
 
 # Copy MAC submodule (upstream trace generator)
 COPY third_party/mac/ /app/third_party/mac/
