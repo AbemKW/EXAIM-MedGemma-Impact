@@ -375,7 +375,7 @@ def run_mac_case_instrumented(
         finally:
             try:
                 os.unlink(tmp_config_path)
-            except:
+            except OSError:
                 pass
         
         # MAC's internal model config
