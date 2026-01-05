@@ -1366,7 +1366,6 @@ def run_variants(args) -> int:
                 print("  1. Provide --manifest path explicitly")
                 print("  2. Ensure manifest file exists in data/manifests/")
                 print("  3. Or provide --eval-run-id manually")
-                print("Please provide --eval-run-id manually or ensure manifest file is available.")
                 return 1
     
     # Generate deterministic eval_run_id if not provided
