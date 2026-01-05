@@ -54,7 +54,14 @@ def collect_v0_flush_ctu(
     subset_case_ids: set[str],
     excluded_flush_reasons: tuple[str, ...],
 ) -> dict[str, list[int]]:
-    """Collect V0 TokenGate flush CTU values per case."""
+    """
+    Collect deduplicated V0 TokenGate flush CTU values per case.
+
+    Scans V0 run logs for tokengate_flush records that match the requested
+    subset_case_ids and are not excluded by trigger_reason. Duplicate flushes
+    are detected and skipped using (case_id, start_seq, end_seq, accumulated_ctu,
+    trigger_reason, text_hash) as the composite key.
+    """
     per_case: dict[str, list[int]] = {case_id: [] for case_id in subset_case_ids}
     seen_flushes: set[tuple[str, int, int, int, str, str]] = set()
     for run_log in v0_run_logs:
@@ -76,12 +83,24 @@ def collect_v0_flush_ctu(
                     continue
                 accumulated_ctu = record.get("accumulated_ctu")
                 if accumulated_ctu is None:
-                    raise ValueError(f"Missing accumulated_ctu in {run_log}: {record}")
+                    raise ValueError(
+                        "Missing accumulated_ctu in V0 tokengate_flush record: "
+                        f"case_id={record.get('case_id')} start_seq={record.get('start_seq')} "
+                        f"end_seq={record.get('end_seq')}"
+                    )
+                if accumulated_ctu <= 0:
+                    raise ValueError(
+                        "Non-positive accumulated_ctu in V0 tokengate_flush record: "
+                        f"case_id={record.get('case_id')} accumulated_ctu={accumulated_ctu}"
+                    )
                 start_seq = record.get("start_seq")
                 end_seq = record.get("end_seq")
                 text_hash = record.get("text_hash") or ""
                 if start_seq is None or end_seq is None:
-                    raise ValueError(f"Missing seq bounds in {run_log}: {record}")
+                    raise ValueError(
+                        "Missing seq bounds in V0 tokengate_flush record: "
+                        f"case_id={record.get('case_id')} accumulated_ctu={accumulated_ctu}"
+                    )
                 dedupe_key = (
                     case_id,
                     int(start_seq),
@@ -97,8 +116,34 @@ def collect_v0_flush_ctu(
     return per_case
 
 
+def _extract_v0_run_meta(run_log: Path) -> dict[str, str] | None:
+    """Return the first V0 run_meta record from a run log, if present."""
+    with run_log.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            if record.get("record_type") != "run_meta":
+                continue
+            if record.get("variant_id") != "V0":
+                continue
+            return {
+                "trace_dataset_hash": record.get("trace_dataset_hash", ""),
+                "tokengate_config_hash": record.get("tokengate_config_hash", ""),
+            }
+    return None
+
+
 def compute_v3_chunk_size(inputs: V3CalibrationInputs) -> dict:
-    """Compute deterministic V3 chunk size and return report payload."""
+    """
+    Compute deterministic V3 chunk size and return a calibration report payload.
+
+    The report includes chunk_size_ctu, per-case medians, overall median,
+    and provenance fields (trace_dataset_hash, tokengate_config_hash,
+    exaid_commit, run log hashes). V0 run_meta consistency is validated
+    across all provided run logs.
+    """
     case_ids = read_case_list(inputs.case_list_path)
     subset_count = min(inputs.subset_count, len(case_ids))
     subset_case_ids = case_ids[:subset_count]
@@ -109,21 +154,10 @@ def compute_v3_chunk_size(inputs: V3CalibrationInputs) -> dict:
     run_log_hashes: dict[str, str] = {}
     for run_log in inputs.v0_run_logs:
         run_log_hashes[str(run_log)] = compute_file_hash(run_log)
-        with run_log.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                record = json.loads(line)
-                if record.get("record_type") != "run_meta":
-                    continue
-                if record.get("variant_id") != "V0":
-                    continue
-                run_meta = {
-                    "trace_dataset_hash": record.get("trace_dataset_hash", ""),
-                    "tokengate_config_hash": record.get("tokengate_config_hash", ""),
-                }
-                break
+        meta = _extract_v0_run_meta(run_log)
+        if meta:
+            run_meta = meta
+            break
         if run_meta:
             break
 
@@ -131,31 +165,19 @@ def compute_v3_chunk_size(inputs: V3CalibrationInputs) -> dict:
         raise ValueError("Unable to locate V0 run_meta in provided run logs.")
 
     for run_log in inputs.v0_run_logs:
-        run_meta_found = False
-        with run_log.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                record = json.loads(line)
-                if record.get("record_type") != "run_meta":
-                    continue
-                if record.get("variant_id") != "V0":
-                    continue
-                run_meta_found = True
-                if record.get("trace_dataset_hash") != run_meta["trace_dataset_hash"]:
-                    raise ValueError(
-                        "trace_dataset_hash mismatch across V0 run logs: "
-                        f"{record.get('trace_dataset_hash')} != {run_meta['trace_dataset_hash']}"
-                    )
-                if record.get("tokengate_config_hash") != run_meta["tokengate_config_hash"]:
-                    raise ValueError(
-                        "tokengate_config_hash mismatch across V0 run logs: "
-                        f"{record.get('tokengate_config_hash')} != {run_meta['tokengate_config_hash']}"
-                    )
-                break
-        if not run_meta_found:
+        meta = _extract_v0_run_meta(run_log)
+        if not meta:
             raise ValueError(f"Missing V0 run_meta record in {run_log}")
+        if meta.get("trace_dataset_hash") != run_meta["trace_dataset_hash"]:
+            raise ValueError(
+                "trace_dataset_hash mismatch across V0 run logs: "
+                f"{meta.get('trace_dataset_hash')} != {run_meta['trace_dataset_hash']}"
+            )
+        if meta.get("tokengate_config_hash") != run_meta["tokengate_config_hash"]:
+            raise ValueError(
+                "tokengate_config_hash mismatch across V0 run logs: "
+                f"{meta.get('tokengate_config_hash')} != {run_meta['tokengate_config_hash']}"
+            )
 
     per_case_ctu = collect_v0_flush_ctu(
         inputs.v0_run_logs,
@@ -215,7 +237,16 @@ def resolve_v3_chunk_size(
     trace_dataset_hash: str | None = None,
     configs_dir: Path | None = None,
 ) -> int:
-    """Resolve V3 chunk size from config or calibration report."""
+    """
+    Resolve the V3 chunk size from configuration or a calibration report.
+
+    Resolution order:
+    1) If fixed_trigger.chunk_size_ctu is set, return it (int) and skip report.
+    2) Otherwise, load v3_calibration.calibration_report and validate:
+       - trace_dataset_hash matches (if provided and not "unknown")
+       - tokengate_config_hash matches the active configs dir
+       - exaid_commit matches (unless EXAID_ALLOW_COMMIT_MISMATCH=1)
+    """
     fixed_trigger = config.get("fixed_trigger", {})
     chunk_size_ctu = fixed_trigger.get("chunk_size_ctu")
     if chunk_size_ctu is not None:
@@ -239,6 +270,10 @@ def resolve_v3_chunk_size(
     report_value = report.get("chunk_size_ctu")
     if report_value is None:
         raise ValueError(f"Missing chunk_size_ctu in V3 calibration report: {resolved_path}")
+    if int(report_value) <= 0:
+        raise ValueError(
+            f"Invalid chunk_size_ctu in V3 calibration report: {report_value}"
+        )
     report_trace_hash = report.get("trace_dataset_hash")
     if (
         trace_dataset_hash

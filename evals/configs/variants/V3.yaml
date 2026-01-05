@@ -49,6 +49,8 @@ v3_calibration:
   calibration_subset_strategy: "first_n_cases"
   calibration_subset_count: 40
   calibration_subset_source: "frozen_ordered_case_list"
+  # NOTE: Documentation-only. Calibration code selects the first N cases
+  # from the ordered case list file and does not read this field.
   calibration_subset_ids: []
   # Per-case metric
   per_case_metric: "median_v0_regular_flush_ctu"
@@ -56,7 +58,8 @@ v3_calibration:
     - "end_of_trace"
     - "turn_end"
   # Calibrated chunk size in CTU (frozen scalar for V3).
-  # Populated in calibration_report and loaded at runtime via evals.cli.calibrate_v3.
+  # NOTE: Documentation-only. The authoritative value is in the
+  # calibration_report and loaded via evals.cli.calibrate_v3 / resolve_v3_chunk_size.
   chunk_size_ctu: null
   # Calibration date
   calibration_date: "2025-12-21"
