@@ -71,6 +71,7 @@ from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
 from exaid_core.schema.agent_segment import AgentSegment
 from exaid_core.schema.agent_summary import AgentSummary
 from exaid_core.token_gate.token_gate import ManualClock, TokenGate
+from pydantic import ValidationError
 
 
 # ============================================================================
@@ -318,6 +319,72 @@ class VariantPipeline(ABC):
         """
         pass
     
+    def _check_length_limit_violations(self, summary: AgentSummary) -> tuple[bool, Optional[str]]:
+        """
+        Check if summary fields are at or near max_length, indicating truncation occurred.
+        
+        Args:
+            summary: The AgentSummary to check
+            
+        Returns:
+            Tuple of (truncation_detected: bool, error_message: Optional[str])
+        """
+        field_limits = {
+            'status_action': 150,
+            'key_findings': 180,
+            'differential_rationale': 210,
+            'uncertainty_confidence': 120,
+            'recommendation_next_step': 180,
+            'agent_contributions': 150
+        }
+        
+        violations = []
+        for field_name, max_length in field_limits.items():
+            field_value = getattr(summary, field_name, '')
+            field_len = len(field_value)
+            
+            # If field is exactly at max_length or max_length-1, it likely was truncated
+            # Truncation typically happens at word boundaries, so max_length-1 accounts for that
+            # Also check if it's > 0 to avoid false positives on empty fields
+            if field_len >= max_length - 1 and field_len > 0:
+                violations.append(f"{field_name} (length: {field_len}, limit: {max_length})")
+        
+        if violations:
+            return True, f"Length limit violations detected (truncation likely applied): {', '.join(violations)}"
+        
+        return False, None
+    
+    def _extract_validation_error_info(self, validation_error: ValidationError) -> tuple[bool, str]:
+        """
+        Extract information from ValidationError to determine if it's a length limit issue.
+        
+        Args:
+            validation_error: The ValidationError to parse
+            
+        Returns:
+            Tuple of (is_length_limit: bool, error_message: str)
+        """
+        errors = validation_error.errors()
+        is_length_limit = False
+        error_details = []
+        
+        for error in errors:
+            error_type = error.get('type', '')
+            field_path = error.get('loc', ())
+            field_name = field_path[-1] if field_path else 'unknown'
+            
+            if error_type == 'string_too_long':
+                is_length_limit = True
+                ctx = error.get('ctx', {})
+                max_length = ctx.get('max_length', 'unknown')
+                error_details.append(f"{field_name} exceeded max_length ({max_length})")
+            else:
+                error_details.append(f"{field_name}: {error_type}")
+        
+        error_msg = '; '.join(error_details) if error_details else str(validation_error)
+        
+        return is_length_limit, error_msg
+    
     def generate_summary(
         self,
         ctx: RunContext,
@@ -378,16 +445,73 @@ class VariantPipeline(ABC):
         summary_history_formatted = ",\n".join(summary_history_strs) if summary_history_strs else ""
         prompt_text = f"Summary history (last {ctx.history_k}):\n[ {summary_history_formatted} ]\n\nLatest summary:\n{latest_summary_str}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
 
+        # Initialize schema failure tracking
+        schema_ok = True
+        schema_error = None
+        limits_ok = True
+        failure_mode = None
+        
         start_time = time.perf_counter()
-        summary = run_async(
-            ctx,
-            self.summarizer_agent.summarize(
-                segments,
-                summary_history_strs,
-                latest_summary_str,
-                ctx.history_k
+        
+        try:
+            summary = run_async(
+                ctx,
+                self.summarizer_agent.summarize(
+                    segments,
+                    summary_history_strs,
+                    latest_summary_str,
+                    ctx.history_k
+                )
             )
-        )
+            
+            # Check for truncation (length limit violations that were handled)
+            truncation_detected, truncation_error = self._check_length_limit_violations(summary)
+            if truncation_detected:
+                schema_ok = False
+                limits_ok = False
+                schema_error = truncation_error
+                failure_mode = "length_limit_violation"
+                
+        except ValidationError as e:
+            # Schema validation failed
+            schema_ok = False
+            is_length_limit, error_msg = self._extract_validation_error_info(e)
+            
+            if is_length_limit:
+                limits_ok = False
+                failure_mode = "length_limit_violation"
+            else:
+                limits_ok = True  # Limits were respected, but other validation failed
+                failure_mode = "schema_validation_error"
+            
+            schema_error = error_msg
+            
+            # Create empty summary for failed case
+            summary = AgentSummary(
+                status_action="",
+                key_findings="",
+                differential_rationale="",
+                uncertainty_confidence="",
+                recommendation_next_step="",
+                agent_contributions=""
+            )
+            
+        except Exception as e:
+            # Other unexpected errors (LLM errors, network issues, etc.)
+            schema_ok = False
+            limits_ok = True
+            schema_error = f"Unexpected error: {str(e)}"
+            failure_mode = "unexpected_error"
+            
+            summary = AgentSummary(
+                status_action="",
+                key_findings="",
+                differential_rationale="",
+                uncertainty_confidence="",
+                recommendation_next_step="",
+                agent_contributions=""
+            )
+        
         latency_ms = int((time.perf_counter() - start_time) * 1000)
 
         if summary is None:
@@ -417,10 +541,10 @@ class VariantPipeline(ABC):
             summary_history_event_ids=history_event_ids,
             summarizer_input_hash=compute_text_hash(prompt_text),
             summarizer_input_text=prompt_text,
-            limits_ok=True,
-            failure_mode=None,
-            schema_ok=True,
-            schema_error=None,
+            limits_ok=limits_ok,
+            failure_mode=failure_mode,
+            schema_ok=schema_ok,
+            schema_error=schema_error,
             summary_semantics_text=summary_semantics_text,
             summary_ctu=compute_ctu(summary_semantics_text),
             summary_content=summary_content,
