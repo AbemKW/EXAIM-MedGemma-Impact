@@ -34,6 +34,7 @@ import yaml
 from ..src.traces.trace_text import build_canonical_trace_text, TraceParsingError
 from .validate_traces import validate_all_traces
 from ..src.config.config_loader import load_extractor_config_for_stoplist_generation
+from ..src.tokengate_calibration.io import get_exaid_commit
 
 
 def load_phase4_extractor_config(config_path: Path) -> dict:
@@ -119,6 +120,28 @@ def _write_df_report(
         f.write(f"# stoplisted_surfaces,{n_stoplisted_surfaces}\n")
         f.write(f"# total_unique_cuis,{sum(1 for r in rows if r['type']=='CUI')}\n")
         f.write(f"# total_unique_surfaces,{sum(1 for r in rows if r['type']=='SURFACE')}\n")
+
+
+def _write_stoplist_metadata(
+    output_dir: Path,
+    generated_at: str,
+    generated_by_commit: str
+):
+    """
+    Write stoplist metadata JSON file for provenance tracking.
+    
+    Args:
+        output_dir: Directory where stoplists are written
+        generated_at: ISO timestamp when stoplists were generated
+        generated_by_commit: Git commit hash when stoplists were generated
+    """
+    metadata = {
+        "stoplists_generated_at": generated_at,
+        "stoplists_generated_by_commit": generated_by_commit,
+    }
+    metadata_path = output_dir / "stoplists_metadata.json"
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2, sort_keys=True)
 
 
 def generate_stoplists_simple(
@@ -235,7 +258,13 @@ def generate_stoplists_simple(
         print(f"Output: {stop_entities_path}")
         print(f"Report: {report_path}")
     
-    # Step 6: Return report with hashes
+    # Step 6: Write metadata for provenance tracking
+    generated_at = datetime.now(timezone.utc).isoformat()
+    repo_root = Path(__file__).resolve().parents[2]  # cli -> evals -> repo root
+    generated_by_commit = get_exaid_commit(repo_root)
+    _write_stoplist_metadata(output_dir, generated_at, generated_by_commit)
+    
+    # Step 7: Return report with hashes
     return {
         "n_cases": n_cases,
         "threshold": threshold,
@@ -245,7 +274,8 @@ def generate_stoplists_simple(
         "stop_cuis_hash": _file_hash(stop_cuis_path),
         "stop_entities_hash": _file_hash(stop_entities_path),
         "stoplist_df_report_hash": _file_hash(report_path),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": generated_at,
+        "generated_by_commit": generated_by_commit,
         "extraction_mode": "surface_only",
         "validation_report": validation_report
     }
@@ -430,7 +460,13 @@ def generate_stoplists_with_linking(
         print(f"Output surfaces: {stop_entities_path}")
         print(f"Report: {report_path}")
     
-    # Step 8: Return report with hashes
+    # Step 8: Write metadata for provenance tracking
+    generated_at = datetime.now(timezone.utc).isoformat()
+    repo_root = Path(__file__).resolve().parents[2]  # cli -> evals -> repo root
+    generated_by_commit = get_exaid_commit(repo_root)
+    _write_stoplist_metadata(output_dir, generated_at, generated_by_commit)
+    
+    # Step 9: Return report with hashes
     return {
         "n_cases": n_cases,
         "threshold": threshold,
@@ -440,7 +476,8 @@ def generate_stoplists_with_linking(
         "stop_cuis_hash": _file_hash(stop_cuis_path),
         "stop_entities_hash": _file_hash(stop_entities_path),
         "stoplist_df_report_hash": _file_hash(report_path),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": generated_at,
+        "generated_by_commit": generated_by_commit,
         "phase4_config_used": str(phase4_config_path),
         "extraction_mode": "cui_linking",
         "linker_config": extractor.linker_config,

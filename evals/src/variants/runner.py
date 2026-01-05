@@ -1339,21 +1339,9 @@ def run_variants(args) -> int:
     # Load extractor config
     extractor_config = load_extractor_config(args.configs)
     
-    # Stub stoplists provenance (will be populated from actual stoplists)
-    stoplists_provenance = {
-        "stop_entities_hash": "sha256:" + "0" * 64,
-        "stop_cuis_hash": "sha256:" + "0" * 64,
-        "stoplists_generated_at": datetime.now(timezone.utc).isoformat(),
-        "stoplists_generated_by_commit": None
-    }
-    
-    # Load actual hashes if files exist
-    stop_entities_path = args.configs / "stop_entities.txt"
-    stop_cuis_path = args.configs / "stop_cuis.txt"
-    if stop_entities_path.exists():
-        stoplists_provenance["stop_entities_hash"] = compute_file_hash(stop_entities_path)
-    if stop_cuis_path.exists():
-        stoplists_provenance["stop_cuis_hash"] = compute_file_hash(stop_cuis_path)
+    # Load actual hashes and metadata if files exist
+    from ..config.config_loader import get_stoplists_provenance
+    stoplists_provenance = get_stoplists_provenance(args.configs)
     
     # Determine variants to run
     variants = [args.variant] if args.variant else ["V0", "V1", "V2", "V3", "V4"]
@@ -1374,6 +1362,10 @@ def run_variants(args) -> int:
                 trace_dataset_hash = "unknown"
             else:
                 print(f"ERROR: Cannot compute trace_dataset_hash: {e}")
+                print("Solutions:")
+                print("  1. Provide --manifest path explicitly")
+                print("  2. Ensure manifest file exists in data/manifests/")
+                print("  3. Or provide --eval-run-id manually")
                 print("Please provide --eval-run-id manually or ensure manifest file is available.")
                 return 1
     
