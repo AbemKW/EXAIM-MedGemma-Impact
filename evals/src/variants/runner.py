@@ -9,7 +9,7 @@ Replays frozen traces through V0-V4 variant pipelines:
     V0: full_exaid - TokenGate + BufferAgent (all filters) + Summarizer
     V1: turn_end - Trigger at turn_end events (from turn_boundary records) + Summarizer only
     V2: no_buffer - TokenGate → Summarizer (skip BufferAgent)
-    V3: no_tokengate - Fixed intervals + BufferAgent + Summarizer
+    V3: no_tokengate - Fixed-size chunking (TokenGate removed) + BufferAgent + Summarizer
     V4: no_novelty - TokenGate + BufferAgent (no novelty check) + Summarizer
 
 Turn Boundary Derivation:
@@ -56,6 +56,7 @@ from ..deterministic.io import (
     compute_file_hash,
     write_json_deterministic,
 )
+from ..v3_calibration import resolve_v3_chunk_size
 from ..config.config_loader import (
     load_extractor_config as _load_extractor_config_central,
     load_variant_config as _load_variant_config_central,
@@ -260,6 +261,7 @@ class RunContext:
     case_id: str
     variant_id: str
     trace_file: Path
+    trace_dataset_hash: str
     trace_chunks: list[dict]  # stream_delta records (for timestamp derivation)
     replay_events: list[ReplayEvent]
     turn_bounds: dict[int, tuple[Optional[int], Optional[int]]]
@@ -953,10 +955,12 @@ class V2_NoBuffer(VariantPipeline):
 
 class V3_NoTokenGate(VariantPipeline):
     """
-    V3: No TokenGate (fixed intervals).
+    V3: Fixed-Size Chunking (TokenGate removed).
     
     Paper hook: "V3 uses fixed CTU intervals calibrated from V0 median,
-    measuring TokenGate's adaptive contribution (Section 4.2)"
+    measuring TokenGate's adaptive contribution (Section 4.2)."
+    Calibration is computed via evals.cli.calibrate_v3 and loaded from
+    data/calibration/v3_calibration_report.json at runtime.
     """
     
     def run(self, ctx: RunContext) -> tuple[list, list, list]:
@@ -964,8 +968,11 @@ class V3_NoTokenGate(VariantPipeline):
         decisions = []
         flushes = []
         
-        # Fixed chunk size from calibration
-        chunk_size_ctu = self.config.get("fixed_trigger", {}).get("chunk_size_ctu", 125)
+        # Fixed chunk size from deterministic V0-derived calibration
+        chunk_size_ctu = resolve_v3_chunk_size(
+            self.config,
+            trace_dataset_hash=ctx.trace_dataset_hash,
+        )
         
         # Track segments with agent_id attribution (instead of merging text)
         accumulated_segments: list[AgentSegment] = []
@@ -1186,6 +1193,7 @@ def execute_run(
         case_id=case_id,
         variant_id=variant_id,
         trace_file=trace_file,
+        trace_dataset_hash=trace_dataset_hash,
         trace_chunks=delta_records,
         replay_events=replay_events,
         turn_bounds=turn_bounds,
