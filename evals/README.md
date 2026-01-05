@@ -970,7 +970,7 @@ Note: TokenGate uses whitespace-delimited word counts (not model tokenizer token
 ### V3 Calibration
 
 V3 uses fixed CTU intervals calibrated from V0:
-- **Method:** Median (not mean) of V0 TokenGate *regular flush* sizes, computed per case and then medianed across cases.
+- **Method:** Median (not mean) of V0 TokenGate *regular flush* sizes, computed per case and then the median taken across cases.
 - **Calibration subset (deterministic):** First 40 cases in the frozen, ordered case list (full case set).
 - **Exclusions:** End-of-trace cleanup and calibration-only `turn_end` instrumentation.
 - **Rounding:** Final chunk size is `ceil(median(per_case_median_ctu))` to keep an integer CTU threshold.
@@ -1126,7 +1126,7 @@ The following parameters are frozen for the conference paper evaluation:
 #### V3 Calibration Provenance Guarantees
 The V3 calibration report is required to be reproducible and verifiable:
 - **Trace dataset hash** and **TokenGate config hash** are recorded and validated at runtime.
-- **EXAID commit hash** is recorded to pin code provenance.
+- **EXAID commit hash** is recorded to pin code provenance (runtime validation can be overridden with `EXAID_ALLOW_COMMIT_MISMATCH=1`).
 - **V0 run log hashes** are recorded to prevent silent log substitution.
 
 ---

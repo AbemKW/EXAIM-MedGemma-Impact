@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import math
+import os
+import warnings
 from statistics import median
 from typing import Iterable
 
@@ -189,7 +191,7 @@ def compute_v3_chunk_size(inputs: V3CalibrationInputs) -> dict:
         "v0_run_log_hashes": run_log_hashes,
         "trace_dataset_hash": run_meta["trace_dataset_hash"],
         "tokengate_config_hash": run_meta["tokengate_config_hash"],
-        "exaid_commit": get_exaid_commit(),
+        "exaid_commit": get_exaid_commit(get_evals_root().parent),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -211,6 +213,7 @@ def load_v3_calibration_report(report_path: Path) -> dict:
 def resolve_v3_chunk_size(
     config: dict,
     trace_dataset_hash: str | None = None,
+    configs_dir: Path | None = None,
 ) -> int:
     """Resolve V3 chunk size from config or calibration report."""
     fixed_trigger = config.get("fixed_trigger", {})
@@ -249,7 +252,7 @@ def resolve_v3_chunk_size(
     tokengate_hash = report.get("tokengate_config_hash")
     if tokengate_hash:
         expected_tokengate_hash = compute_tokengate_config_hash(
-            load_variant_config("V0", get_configs_dir())
+            load_variant_config("V0", configs_dir or get_configs_dir())
         )
         if tokengate_hash != expected_tokengate_hash:
             raise ValueError(
@@ -257,8 +260,20 @@ def resolve_v3_chunk_size(
                 f"{tokengate_hash} != {expected_tokengate_hash}"
             )
     report_commit = report.get("exaid_commit")
-    if report_commit and report_commit != get_exaid_commit():
-        raise ValueError(
-            f"EXAID commit mismatch for V3 calibration: {report_commit} != {get_exaid_commit()}"
-        )
+    if report_commit:
+        current_commit = get_exaid_commit(get_evals_root().parent)
+        if report_commit != current_commit:
+            if os.getenv("EXAID_ALLOW_COMMIT_MISMATCH", "").lower() in {"1", "true", "yes"}:
+                warnings.warn(
+                    "EXAID commit mismatch for V3 calibration: "
+                    f"{report_commit} != {current_commit}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            else:
+                raise ValueError(
+                    "EXAID commit mismatch for V3 calibration: "
+                    f"{report_commit} != {current_commit}. "
+                    "Set EXAID_ALLOW_COMMIT_MISMATCH=1 to override."
+                )
     return int(report_value)
