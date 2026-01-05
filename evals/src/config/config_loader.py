@@ -17,6 +17,8 @@ Dependencies:
     - hashlib
 """
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -155,7 +157,8 @@ def get_stoplists_provenance(configs_dir: Optional[Path] = None) -> dict:
     Get stoplist provenance info for run_meta logging.
     
     Returns:
-        Dict with stop_entities_hash, stop_cuis_hash, stoplist_df_report_hash
+        Dict with stop_entities_hash, stop_cuis_hash, stoplist_df_report_hash,
+        stoplists_generated_at, stoplists_generated_by_commit
     """
     if configs_dir is None:
         configs_dir = get_configs_dir()
@@ -170,6 +173,39 @@ def get_stoplists_provenance(configs_dir: Optional[Path] = None) -> dict:
     df_report_path = configs_dir / "stoplist_df_report.csv"
     if df_report_path.exists():
         provenance["stoplist_df_report_hash"] = compute_file_hash(df_report_path)
+    
+    # Try to load metadata JSON if it exists
+    metadata_path = configs_dir / "stoplists_metadata.json"
+    if metadata_path.exists():
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+                provenance["stoplists_generated_at"] = metadata.get("stoplists_generated_at")
+                provenance["stoplists_generated_by_commit"] = metadata.get("stoplists_generated_by_commit")
+        except (json.JSONDecodeError, IOError):
+            pass  # Fall back to file mtime or current time if metadata file is invalid
+    
+    # Fallback: use file mtime if metadata is missing/invalid
+    if provenance["stoplists_generated_at"] is None:
+        # Try to get mtime from stoplist files (most recent)
+        stop_entities_path = configs_dir / "stop_entities.txt"
+        stop_cuis_path = configs_dir / "stop_cuis.txt"
+        
+        mtimes = []
+        if stop_entities_path.exists():
+            mtimes.append(stop_entities_path.stat().st_mtime)
+        if stop_cuis_path.exists():
+            mtimes.append(stop_cuis_path.stat().st_mtime)
+        
+        if mtimes:
+            # Use most recent file mtime
+            latest_mtime = max(mtimes)
+            provenance["stoplists_generated_at"] = datetime.fromtimestamp(
+                latest_mtime, tz=timezone.utc
+            ).isoformat()
+        else:
+            # Last resort: use current time
+            provenance["stoplists_generated_at"] = datetime.now(timezone.utc).isoformat()
     
     return provenance
 
