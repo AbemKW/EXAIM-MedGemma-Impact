@@ -958,7 +958,7 @@ Note: TokenGate uses whitespace-delimited word counts (not model tokenizer token
 | **V0** | `full_exaid` | TokenGate (word thresholds) + BufferAgent (completeness/value/novelty) + Summarizer |
 | **V1** | `turn_end` | Trigger at `turn_end` events (from `turn_boundary` records) + Summarizer only |
 | **V2** | `no_buffer` | TokenGate flush → Summarizer (skip BufferAgent) |
-| **V3** | `no_tokengate` | Fixed chunk/time + BufferAgent + Summarizer |
+| **V3** | `no_tokengate` | Fixed-size chunking (TokenGate removed) + BufferAgent + Summarizer |
 | **V4** | `no_novelty` | TokenGate (word thresholds) + BufferAgent (completeness + value only) + Summarizer |
 
 **Note on turn_end behavior:**
@@ -970,9 +970,14 @@ Note: TokenGate uses whitespace-delimited word counts (not model tokenizer token
 ### V3 Calibration
 
 V3 uses fixed CTU intervals calibrated from V0:
-- **Method:** Median (not mean) of V0 flush sizes
-- **Chunk size:** 125 CTU (calibrated)
-- **Documented in:** `configs/variants/V3.yaml`
+- **Method:** Median (not mean) of V0 TokenGate *regular flush* sizes, computed per case and then medianed across cases.
+- **Calibration subset (deterministic):** First 40 cases in the frozen, ordered case list (full case set).
+- **Exclusions:** End-of-trace cleanup and calibration-only `turn_end` instrumentation.
+- **Rounding:** Final chunk size is `ceil(median(per_case_median_ctu))` to keep an integer CTU threshold.
+- **Chunk size:** Stored in `data/calibration/v3_calibration_report.json` and loaded at runtime for V3.
+- **Provenance checks:** Report includes trace dataset hash, V0 TokenGate config hash, V0 run log hashes, and EXAID commit hash; V3 validates these at runtime.
+- **CLI:** `python -m evals.cli.calibrate_v3 --case-list <case_list.jsonl> --v0-run-log <run.jsonl> --output data/calibration/v3_calibration_report.json`
+- **Documented in:** `configs/variants/V3.yaml` and `cli/calibrate_v3.py`.
 
 ---
 
@@ -1051,7 +1056,7 @@ evals/
 │       ├── V0.yaml                # Full EXAID
 │       ├── V1.yaml                # Turn-end only
 │       ├── V2.yaml                # No BufferAgent
-│       ├── V3.yaml                # No TokenGate (calibrated)
+│       ├── V3.yaml                # Fixed-size chunking (calibrated)
 │       └── V4.yaml                # No novelty check
 ├── data/                          # Data artifacts
 │   ├── manifests/                 # Experiment manifests
@@ -1114,7 +1119,15 @@ The following parameters are frozen for the conference paper evaluation:
 
 ### V3 Calibration
 - Method: Median of V0 flush sizes
-- Chunk size: 125 CTU
+- Chunk size: Stored in `data/calibration/v3_calibration_report.json` (generated via `evals.cli.calibrate_v3`)
+- Case set: Full 40-case list (deterministic ordering)
+- Rounding: `ceil` applied to the overall median to keep integer CTU
+
+#### V3 Calibration Provenance Guarantees
+The V3 calibration report is required to be reproducible and verifiable:
+- **Trace dataset hash** and **TokenGate config hash** are recorded and validated at runtime.
+- **EXAID commit hash** is recorded to pin code provenance.
+- **V0 run log hashes** are recorded to prevent silent log substitution.
 
 ---
 
