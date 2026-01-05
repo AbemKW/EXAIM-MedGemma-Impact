@@ -17,6 +17,7 @@ Dependencies:
     - hashlib
 """
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -155,7 +156,8 @@ def get_stoplists_provenance(configs_dir: Optional[Path] = None) -> dict:
     Get stoplist provenance info for run_meta logging.
     
     Returns:
-        Dict with stop_entities_hash, stop_cuis_hash, stoplist_df_report_hash
+        Dict with stop_entities_hash, stop_cuis_hash, stoplist_df_report_hash,
+        stoplists_generated_at, stoplists_generated_by_commit
     """
     if configs_dir is None:
         configs_dir = get_configs_dir()
@@ -170,6 +172,17 @@ def get_stoplists_provenance(configs_dir: Optional[Path] = None) -> dict:
     df_report_path = configs_dir / "stoplist_df_report.csv"
     if df_report_path.exists():
         provenance["stoplist_df_report_hash"] = compute_file_hash(df_report_path)
+    
+    # Try to load metadata JSON if it exists
+    metadata_path = configs_dir / "stoplists_metadata.json"
+    if metadata_path.exists():
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+                provenance["stoplists_generated_at"] = metadata.get("stoplists_generated_at")
+                provenance["stoplists_generated_by_commit"] = metadata.get("stoplists_generated_by_commit")
+        except (json.JSONDecodeError, IOError):
+            pass  # Fall back to None values if metadata file is invalid
     
     return provenance
 
