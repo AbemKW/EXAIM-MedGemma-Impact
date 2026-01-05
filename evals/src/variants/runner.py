@@ -262,6 +262,7 @@ class RunContext:
     variant_id: str
     trace_file: Path
     trace_dataset_hash: str
+    configs_dir: Path
     trace_chunks: list[dict]  # stream_delta records (for timestamp derivation)
     replay_events: list[ReplayEvent]
     turn_bounds: dict[int, tuple[Optional[int], Optional[int]]]
@@ -972,6 +973,7 @@ class V3_NoTokenGate(VariantPipeline):
         chunk_size_ctu = resolve_v3_chunk_size(
             self.config,
             trace_dataset_hash=ctx.trace_dataset_hash,
+            configs_dir=ctx.configs_dir,
         )
         
         # Track segments with agent_id attribution (instead of merging text)
@@ -1102,6 +1104,7 @@ def execute_run(
     stoplists_provenance: dict,
     eval_run_id: str,
     trace_dataset_hash: str,
+    configs_dir: Path,
     output_dir: Path
 ) -> tuple[Path, dict]:
     """
@@ -1194,6 +1197,7 @@ def execute_run(
         variant_id=variant_id,
         trace_file=trace_file,
         trace_dataset_hash=trace_dataset_hash,
+        configs_dir=configs_dir,
         trace_chunks=delta_records,
         replay_events=replay_events,
         turn_bounds=turn_bounds,
@@ -1475,6 +1479,7 @@ def run_variants(args) -> int:
                     stoplists_provenance=stoplists_provenance,
                     eval_run_id=eval_run_id,
                     trace_dataset_hash=trace_dataset_hash,
+                    configs_dir=args.configs,
                     output_dir=args.output
                 )
                 duration_ms = int((time.perf_counter() - start_time) * 1000)

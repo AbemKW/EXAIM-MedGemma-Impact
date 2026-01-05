@@ -23,6 +23,8 @@ Command-line entry points for trace generation, replay, validation, and metrics.
 
 V3 runtime loading validates these fields to ensure the calibrated
 `chunk_size_ctu` matches the intended dataset and TokenGate policy.
+Set `EXAID_ALLOW_COMMIT_MISMATCH=1` to allow commit mismatches while
+preserving provenance in the report.
 
 Each CLI is a thin argparse wrapper over a core module in `evals/src/`.
 
