@@ -18,6 +18,7 @@ Dependencies:
 """
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -182,7 +183,29 @@ def get_stoplists_provenance(configs_dir: Optional[Path] = None) -> dict:
                 provenance["stoplists_generated_at"] = metadata.get("stoplists_generated_at")
                 provenance["stoplists_generated_by_commit"] = metadata.get("stoplists_generated_by_commit")
         except (json.JSONDecodeError, IOError):
-            pass  # Fall back to None values if metadata file is invalid
+            pass  # Fall back to file mtime or current time if metadata file is invalid
+    
+    # Fallback: use file mtime if metadata is missing/invalid
+    if provenance["stoplists_generated_at"] is None:
+        # Try to get mtime from stoplist files (most recent)
+        stop_entities_path = configs_dir / "stop_entities.txt"
+        stop_cuis_path = configs_dir / "stop_cuis.txt"
+        
+        mtimes = []
+        if stop_entities_path.exists():
+            mtimes.append(stop_entities_path.stat().st_mtime)
+        if stop_cuis_path.exists():
+            mtimes.append(stop_cuis_path.stat().st_mtime)
+        
+        if mtimes:
+            # Use most recent file mtime
+            latest_mtime = max(mtimes)
+            provenance["stoplists_generated_at"] = datetime.fromtimestamp(
+                latest_mtime, tz=timezone.utc
+            ).isoformat()
+        else:
+            # Last resort: use current time
+            provenance["stoplists_generated_at"] = datetime.now(timezone.utc).isoformat()
     
     return provenance
 
