@@ -155,11 +155,9 @@ def compute_v3_chunk_size(inputs: V3CalibrationInputs) -> dict:
     for run_log in inputs.v0_run_logs:
         run_log_hashes[str(run_log)] = compute_file_hash(run_log)
         meta = _extract_v0_run_meta(run_log)
-        if meta:
+        # Capture the first available run_meta, but continue hashing all run logs.
+        if meta and not run_meta:
             run_meta = meta
-            break
-        if run_meta:
-            break
 
     if not run_meta:
         raise ValueError("Unable to locate V0 run_meta in provided run logs.")
