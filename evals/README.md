@@ -976,7 +976,21 @@ V3 uses fixed CTU intervals calibrated from V0:
 - **Rounding:** Final chunk size is `ceil(median(per_case_median_ctu))` to keep an integer CTU threshold.
 - **Chunk size:** Stored in `data/calibration/v3_calibration_report.json` and loaded at runtime for V3.
 - **Provenance checks:** Report includes trace dataset hash, V0 TokenGate config hash, V0 run log hashes, and EXAID commit hash; V3 validates these at runtime.
-- **CLI:** `python -m evals.cli.calibrate_v3 --case-list <case_list.jsonl> --v0-run-log <run.jsonl> --output data/calibration/v3_calibration_report.json`
+- **CLI:** 
+  ```bash
+  # Using a directory (recommended - automatically finds all .jsonl.gz files):
+  python -m evals.cli.calibrate_v3 \
+      --case-list data/manifests/<case_list.jsonl> \
+      --v0-run-log data/runs/V0 \
+      --output data/calibration/v3_calibration_report.json
+  
+  # Or specify individual files:
+  python -m evals.cli.calibrate_v3 \
+      --case-list data/manifests/<case_list.jsonl> \
+      --v0-run-log data/runs/V0/case-1.trace.jsonl.gz \
+      --v0-run-log data/runs/V0/case-2.trace.jsonl.gz \
+      --output data/calibration/v3_calibration_report.json
+  ```
 - **Documented in:** `configs/variants/V3.yaml` and `cli/calibrate_v3.py`.
 
 ---

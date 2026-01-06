@@ -9,6 +9,7 @@ End-of-trace and calibration-only turn_end flushes are excluded.
 
 from __future__ import annotations
 
+import gzip
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -65,7 +66,9 @@ def collect_v0_flush_ctu(
     per_case: dict[str, list[int]] = {case_id: [] for case_id in subset_case_ids}
     seen_flushes: set[tuple[str, int, int, int, str, str]] = set()
     for run_log in v0_run_logs:
-        with run_log.open("r", encoding="utf-8") as handle:
+        # Handle both gzip and plain JSONL files
+        open_fn = gzip.open if str(run_log).endswith(".gz") else open
+        with open_fn(run_log, "rt", encoding="utf-8") as handle:
             for line in handle:
                 line = line.strip()
                 if not line:
@@ -76,6 +79,9 @@ def collect_v0_flush_ctu(
                 if record.get("variant_id") != "V0":
                     continue
                 case_id = record.get("case_id")
+                # Normalize case_id: strip .trace suffix if present (handles misnamed files)
+                if case_id and case_id.endswith(".trace"):
+                    case_id = case_id[:-6]  # Remove ".trace"
                 if case_id not in subset_case_ids:
                     continue
                 trigger_reason = record.get("trigger_reason")
@@ -118,7 +124,9 @@ def collect_v0_flush_ctu(
 
 def _extract_v0_run_meta(run_log: Path) -> dict[str, str] | None:
     """Return the first V0 run_meta record from a run log, if present."""
-    with run_log.open("r", encoding="utf-8") as handle:
+    # Handle both gzip and plain JSONL files
+    open_fn = gzip.open if str(run_log).endswith(".gz") else open
+    with open_fn(run_log, "rt", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
             if not line:
@@ -128,6 +136,7 @@ def _extract_v0_run_meta(run_log: Path) -> dict[str, str] | None:
                 continue
             if record.get("variant_id") != "V0":
                 continue
+            # Note: case_id normalization not needed here as we only extract metadata
             return {
                 "trace_dataset_hash": record.get("trace_dataset_hash", ""),
                 "tokengate_config_hash": record.get("tokengate_config_hash", ""),
