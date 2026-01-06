@@ -1,7 +1,7 @@
 {
-  "eval_run_id": "eval-c173b1f8-1d4d7022",
+  "eval_run_id": "eval-c173b1f8-fb6ce6dd",
   "failed": [],
-  "generated_at": "2026-01-04T03:13:31.563589+00:00",
+  "generated_at": "2026-01-05T14:58:04.315728+00:00",
   "per_case_summary_counts": {
     "case-33651373.trace": 8,
     "case-34895021.trace": 8,
@@ -47,9 +47,9 @@
   "succeeded": 40,
   "timing_ms": {
     "count": 40,
-    "max": 287081,
-    "mean": 91940.725,
-    "min": 77484
+    "max": 234973,
+    "mean": 94406.9,
+    "min": 78751
   },
   "total_cases": 40,
   "variant_id": "V1"

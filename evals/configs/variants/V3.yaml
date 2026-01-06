@@ -1,12 +1,12 @@
 # EXAID Evaluation - Variant V3 Configuration
-# No TokenGate (Ablation: removes TokenGate, uses fixed chunk intervals)
+# Fixed-Size Chunking (Ablation: removes TokenGate, uses fixed chunk intervals)
 #
 # Paper hook: "V3 triggers BufferAgent at fixed CTU intervals calibrated
 # from V0's median flush size, removing adaptive accumulation (Section 4.2)"
 
 variant_id: V3
-name: "No TokenGate"
-description: "Fixed chunk/time trigger, BufferAgent + Summarizer"
+name: "Fixed-Size Chunking (TokenGate removed)"
+description: "Fixed-size chunking trigger, BufferAgent + Summarizer"
 
 # Trigger policy enum (for ablation suite)
 trigger_policy: "no_tokengate"
@@ -30,19 +30,37 @@ components:
 fixed_trigger:
   enabled: true
   # Chunk size in CTU (Character-normalized Token Units)
-  # ceil(len(text) / 4)
-  chunk_size_ctu: 125
+  # ceil(len(text) / 4). Populated from v3_calibration calibration_report.
+  chunk_size_ctu: null
 
 # V3 Calibration Settings
 # Paper hook: "V3 chunk size calibrated using median V0 flush size
-# from calibration subset (Section 4.2)"
+# from calibration subset (Section 4.2)."
+# Deterministic rule:
+#   1) Choose calibration subset deterministically (first 40 cases
+#      in the frozen, ordered case list).
+#   2) Per case, compute the median CTU of V0 TokenGate *regular flushes*
+#      (exclude end-of-trace cleanup and calibration-only turn_end instrumentation).
+#   3) Take the median across cases and apply ceil() to get the integer scalar.
 v3_calibration:
   # Method: median (NOT mean) of V0 flush sizes
   calibration_method: "median"
-  # Calibrated chunk size in CTU
-  chunk_size_ctu: 125
-  # Calibration subset case IDs (placeholder for actual IDs)
+  # Deterministic subset selection
+  calibration_subset_strategy: "first_n_cases"
+  calibration_subset_count: 40
+  calibration_subset_source: "frozen_ordered_case_list"
+  # NOTE: Documentation-only. Calibration code selects the first N cases
+  # from the ordered case list file and does not read this field.
   calibration_subset_ids: []
+  # Per-case metric
+  per_case_metric: "median_v0_regular_flush_ctu"
+  excluded_flush_reasons:
+    - "end_of_trace"
+    - "turn_end"
+  # Calibrated chunk size in CTU (frozen scalar for V3).
+  # NOTE: Documentation-only. The authoritative value is in the
+  # calibration_report and loaded via evals.cli.calibrate_v3 / resolve_v3_chunk_size.
+  chunk_size_ctu: null
   # Calibration date
   calibration_date: "2025-12-21"
   # Reference: documented in calibration_report.json
