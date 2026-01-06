@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Centralized configuration loader for EXAID evaluation.
+Centralized configuration loader for EXAIM evaluation.
 
 Paper hook: "Configuration loading is centralized to ensure drift-proof
 evaluation across all phases (Section 3.1)"

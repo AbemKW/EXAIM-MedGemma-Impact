@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# EXAID Evaluation - TokenGate Calibration Script
+# EXAIM Evaluation - TokenGate Calibration Script
 # Phase 5: TokenGate Trigger Calibration
 # =============================================================================
 # Calibrates TokenGate trigger parameters (min_words, max_words, silence_timer,
@@ -21,7 +21,7 @@
 set -e
 
 echo "========================================"
-echo "EXAID Evaluation - TokenGate Calibration"
+echo "EXAIM Evaluation - TokenGate Calibration"
 echo "========================================"
 echo ""
 
