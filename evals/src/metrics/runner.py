@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EXAID Evaluation - Metrics Computation
+EXAIM Evaluation - Metrics Computation
 
 Paper hook: "All metrics computed from run logs and frozen traces
 with schema failure handling per Section 5.1"
@@ -391,7 +391,7 @@ def run_metrics(args) -> int:
     if args.manifest:
         args.manifest = resolve_path(args.manifest)
     print("=" * 60)
-    print("EXAID Metrics Computation")
+    print("EXAIM Metrics Computation")
     print("=" * 60)
     print()
     

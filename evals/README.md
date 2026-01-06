@@ -666,7 +666,7 @@ docker compose -f docker-compose.evals.yml run --rm evals scripts/validate.sh
 
 ### Step 4: Run Summarizer Variants
 
-> **Note:** `run_variants.py` now invokes the real EXAID `BufferAgent` and
+> **Note:** `run_variants.py` now invokes the real EXAIM `BufferAgent` and
 > `SummarizerAgent`, so you must provide LLM credentials/configuration for the
 > `buffer_agent` and `summarizer` roles (e.g., `OPENAI_API_KEY` plus optional
 > `SUMMARIZER_LLM_PROVIDER` / `BUFFER_AGENT_LLM_PROVIDER` overrides).
@@ -979,7 +979,7 @@ V3 uses fixed CTU intervals calibrated from V0:
 - **Exclusions:** End-of-trace cleanup and calibration-only `turn_end` instrumentation.
 - **Rounding:** Final chunk size is `ceil(median(per_case_median_ctu))` to keep an integer CTU threshold.
 - **Chunk size:** Stored in `data/calibration/v3_calibration_report.json` and loaded at runtime for V3.
-- **Provenance checks:** Report includes trace dataset hash, V0 TokenGate config hash, V0 run log hashes, and EXAID commit hash; V3 validates these at runtime.
+- **Provenance checks:** Report includes trace dataset hash, V0 TokenGate config hash, V0 run log hashes, and EXAIM commit hash (legacy field name: exaid_commit); V3 validates these at runtime.
 - **CLI:** 
   ```bash
   # Using a directory (recommended - automatically finds all .jsonl.gz files):
@@ -1071,7 +1071,7 @@ evals/
 │   ├── stop_cuis.txt              # CUI stoplist
 │   ├── stoplist_df_report.csv     # Audit artifact
 │   └── variants/                  # Variant-specific configs
-│       ├── V0.yaml                # Full EXAID
+│       ├── V0.yaml                # Full EXAIM (legacy enum: full_exaid)
 │       ├── V1.yaml                # Turn-end only
 │       ├── V2.yaml                # No BufferAgent
 │       ├── V3.yaml                # Fixed-size chunking (calibrated)
