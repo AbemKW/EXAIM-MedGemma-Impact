@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EXAID Evaluation - TokenGate Calibration Visualization CLI
+EXAIM Evaluation - TokenGate Calibration Visualization CLI
 
 Generate professional 3D Pareto frontier plot or heatmaps from calibration results.
 

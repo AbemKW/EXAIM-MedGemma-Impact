@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EXAID Trace Replay Engine - Deterministic replay with conservative classification.
+EXAIM Trace Replay Engine - Deterministic replay with conservative classification.
 
 This module preserves the original import surface while delegating
 implementation to the split replay modules:

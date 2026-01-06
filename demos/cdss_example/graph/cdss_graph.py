@@ -2,7 +2,7 @@
 
 from functools import partial
 from langgraph.graph import StateGraph, END
-from exaid_core.exaid import EXAID
+from exaim_core.exaim import EXAIM
 from demos.cdss_example.schema.graph_state import CDSSGraphState
 from demos.cdss_example.agents.orchestrator_agent import OrchestratorAgent
 from demos.cdss_example.agents.laboratory_agent import LaboratoryAgent
@@ -23,13 +23,13 @@ from .edges import (
 )
 
 
-def build_cdss_graph(exaid: EXAID):
+def build_cdss_graph(exaim: EXAIM):
     """Build and compile the simplified CDSS LangGraph workflow
     
-    Instantiates all agents once with EXAID reference and passes them to node functions.
+    Instantiates all agents once with EXAIM reference and passes them to node functions.
     
     Args:
-        exaid: EXAID instance for token streaming and summarization
+        exaim: EXAIM instance for token streaming and summarization
     
     Workflow:
     - Orchestrator compresses context and decides next specialist
@@ -39,12 +39,12 @@ def build_cdss_graph(exaid: EXAID):
     - Synthesis ends the workflow
     """
     
-    # Instantiate all agents once with EXAID reference
+    # Instantiate all agents once with EXAIM reference
     orchestrator = OrchestratorAgent()
-    laboratory = LaboratoryAgent(exaid=exaid)
-    cardiology = CardiologyAgent(exaid=exaid)
-    internal_medicine = InternalMedicineAgent(exaid=exaid)
-    radiology = RadiologyAgent(exaid=exaid)
+    laboratory = LaboratoryAgent(exaim=exaim)
+    cardiology = CardiologyAgent(exaim=exaim)
+    internal_medicine = InternalMedicineAgent(exaim=exaim)
+    radiology = RadiologyAgent(exaim=exaim)
     
     # Create the graph
     workflow = StateGraph(CDSSGraphState)

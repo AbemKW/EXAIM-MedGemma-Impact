@@ -1,4 +1,4 @@
-"""LLM Registry for EXAID Infrastructure
+"""LLM Registry for EXAIM Infrastructure
 
 Centralized LLM management with role-based configuration.
 Supports YAML configuration with environment variable overrides.

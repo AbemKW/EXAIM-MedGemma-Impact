@@ -1,4 +1,4 @@
-# EXAID - Comprehensive Documentation
+# EXAIM - Comprehensive Documentation
 
 ## Table of Contents
 
@@ -16,7 +16,7 @@
 
 ## Overview
 
-**EXAID** (Explainable AI for Diagnoses) is a Python framework designed for capturing, buffering, and summarizing reasoning traces from multiple AI agents in real-time. Originally designed for medical multi-agent reasoning workflows, EXAID enables specialized agents (e.g., `InfectiousDiseaseAgent`, `HematologyAgent`, `OncologyAgent`) to collaborate on complex cases while their reasoning traces are intelligently captured and condensed into structured summaries optimized for physician understanding.
+**EXAIM** (Explainable AI Middleware) is a Python framework designed for capturing, buffering, and summarizing reasoning traces from multiple AI agents in real-time. Originally designed for medical multi-agent reasoning workflows, EXAIM enables specialized agents (e.g., `InfectiousDiseaseAgent`, `HematologyAgent`, `OncologyAgent`) to collaborate on complex cases while their reasoning traces are intelligently captured and condensed into structured summaries optimized for physician understanding.
 
 ### Key Features
 
@@ -30,11 +30,11 @@
 
 ## Architecture
 
-EXAID follows a modular architecture with clear separation of concerns:
+EXAIM follows a modular architecture with clear separation of concerns:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        EXAID (Orchestrator)                  │
+│                        EXAIM (Orchestrator)                  │
 │  - Manages agent lifecycle                                  │
 │  - Coordinates summarization workflow                       │
 │  - Maintains summary history                                │
@@ -55,16 +55,16 @@ EXAID follows a modular architecture with clear separation of concerns:
 
 ### Data Flow
 
-1. **Trace Reception**: Agents send traces to `EXAID.received_trace()`
+1. **Trace Reception**: Agents send traces to `EXAIM.received_trace()`
 2. **Buffering**: `BufferAgent` accumulates traces and uses LLM to determine when to trigger summarization
 3. **Summarization**: `SummarizerAgent` generates structured summaries from buffered traces
-4. **Storage**: Summaries are stored in EXAID instance
+4. **Storage**: Summaries are stored in EXAIM instance
 
 ---
 
 ## Core Components
 
-### 1. EXAID (Main Orchestrator)
+### 1. EXAIM (Main Orchestrator)
 
 The central class that coordinates all operations. It manages:
 - Trace buffering and summarization triggers
@@ -90,14 +90,14 @@ Generates structured summaries from buffered traces. Features:
 
 ## File-by-File Documentation
 
-### `exaid_core/exaid.py` - Main Orchestrator
+### `exaim_core/exaim.py` - Main Orchestrator
 
 **Purpose**: The central orchestrator class that coordinates trace collection, buffering, and summarization.
 
 **Key Components**:
 
 ```python
-class EXAID:
+class EXAIM:
     def __init__(self, history_k: int = 3):
         self.buffer_agent = BufferAgent()
         self.summarizer_agent = SummarizerAgent()
@@ -190,7 +190,7 @@ Processes a single streaming token from an agent using TokenGate for intelligent
 
 ---
 
-### `exaid_core/buffer_agent/buffer_agent.py` - Intelligent Trace Buffer
+### `exaim_core/buffer_agent/buffer_agent.py` - Intelligent Trace Buffer
 
 **Purpose**: Buffers traces per agent and uses an LLM to intelligently decide when summarization should be triggered based on trace content rather than simple thresholds.
 
@@ -332,7 +332,7 @@ Returns the total number of traces received from a specific agent.
 Returns the last analysis result for the given agent, or `None` if no analysis has been performed yet.
 
 **Prompt Template**:
-The buffer agent uses a structured prompt that instructs the LLM to analyze stream state, completeness, relevance, and novelty independently. The prompt template is defined in `exaid_core/utils/prompts.py` and includes:
+The buffer agent uses a structured prompt that instructs the LLM to analyze stream state, completeness, relevance, and novelty independently. The prompt template is defined in `exaim_core/utils/prompts.py` and includes:
 
 - **Stream State Detection**: Classifies the stream into one of three states based on topic continuity:
   - `SAME_TOPIC_CONTINUING`: Agent is still refining the same clinical issue (wait)
@@ -378,7 +378,7 @@ self.llm = self.base_llm.with_structured_output(BufferAnalysis)
 
 ---
 
-### `exaid_core/summarizer_agent/summarizer_agent.py` - Summary Generator
+### `exaim_core/summarizer_agent/summarizer_agent.py` - Summary Generator
 
 **Purpose**: Generates structured summaries from buffered traces using an LLM with structured output.
 
@@ -432,7 +432,7 @@ async def summarize(
 ```
 
 **Prompt Template**:
-The summarizer uses prompts from `exaid_core/utils/prompts.py` that align with SBAR/SOAP documentation standards. The system prompt includes:
+The summarizer uses prompts from `exaim_core/utils/prompts.py` that align with SBAR/SOAP documentation standards. The system prompt includes:
 
 - **Delta-first summarization**: Prioritizes new, changed, or newly concluded information
 - **Controlled continuity**: Allows restating prior information only for sticky context (active interventions, current leading assessment, unresolved critical abnormalities, safety constraints, decision blockers)
@@ -463,7 +463,7 @@ self.summarize_prompt = ChatPromptTemplate.from_messages([
 
 ---
 
-### `exaid_core/schema/agent_summary.py` - Summary Data Model
+### `exaim_core/schema/agent_summary.py` - Summary Data Model
 
 **Purpose**: Defines the structured data model for agent summaries using Pydantic.
 
@@ -510,7 +510,7 @@ class AgentSummary(BaseModel):
 
 ---
 
-### `exaid_core/token_gate/token_gate.py` - Token Streaming Pre-Buffer
+### `exaim_core/token_gate/token_gate.py` - Token Streaming Pre-Buffer
 
 **Purpose**: A lightweight, syntax-aware pre-buffer that regulates token flow into BufferAgent for streaming scenarios. It does not interpret meaning - it only decides when enough structure has accumulated to pass tokens upstream for semantic evaluation.
 
@@ -627,7 +627,7 @@ The module provides role-based LLM configuration using `LLMRole` enum (MAS, SUMM
 
 ### `demos/cdss_example/` - Clinical Decision Support System Demo
 
-**Purpose**: Complete demonstration of EXAID integrated with a multi-agent clinical decision support system using LangGraph for workflow orchestration.
+**Purpose**: Complete demonstration of EXAIM integrated with a multi-agent clinical decision support system using LangGraph for workflow orchestration.
 
 #### `demos/cdss_example/cdss.py` - CDSS Orchestrator
 
@@ -638,8 +638,8 @@ The module provides role-based LLM configuration using `LLMRole` enum (MAS, SUMM
 ```python
 class CDSS:
     def __init__(self):
-        self.exaid = EXAID()
-        self.graph = build_cdss_graph(self.exaid)
+        self.exaim = EXAIM()
+        self.graph = build_cdss_graph(self.exaim)
 ```
 
 **Core Methods**:
@@ -658,11 +658,11 @@ Processes a clinical case through the multi-agent system using LangGraph.
 - `running_summary`: Running summary maintained by orchestrator
 - `specialists_called`: List of specialist agents that were invoked
 - `iteration_count`: Number of workflow iterations
-- `agent_summaries`: List of AgentSummary objects from EXAID (for UI display only; workflow does not depend on these)
+- `agent_summaries`: List of AgentSummary objects from EXAIM (for UI display only; workflow does not depend on these)
 
 #### `get_all_summaries() -> list[AgentSummary]`
 
-Get all summaries from EXAID.
+Get all summaries from EXAIM.
 
 #### `get_summaries_by_agent(agent_id: str) -> list[AgentSummary]`
 
@@ -670,7 +670,7 @@ Get summaries for a specific agent.
 
 #### `reset()`
 
-Reset the CDSS system (creates new EXAID instance).
+Reset the CDSS system (creates new EXAIM instance).
 
 #### `demos/cdss_example/demo_cdss.py` - Example Clinical Cases
 
@@ -711,7 +711,7 @@ Reset the CDSS system (creates new EXAID instance).
 
 ### `requirements.txt` - Dependencies
 
-**Purpose**: Lists all Python package dependencies required for EXAID.
+**Purpose**: Lists all Python package dependencies required for EXAIM.
 
 **Contents**:
 ```
@@ -784,14 +784,14 @@ Trace metadata stored by BufferAgent:
 
 ```python
 import asyncio
-from exaid_core import EXAID
+from exaim_core import EXAIM
 
 async def main():
-    # Initialize EXAID
-    exaid = EXAID()
+    # Initialize EXAIM
+    exaim = EXAIM()
     
     # Send traces from agents
-    summary = await exaid.received_trace("agent_1", "Some reasoning trace")
+    summary = await exaim.received_trace("agent_1", "Some reasoning trace")
     
     # Check if summary was generated
     if summary:
@@ -803,11 +803,11 @@ async def main():
         print(json_summary)
     
     # Retrieve all summaries
-    all_summaries = exaid.get_all_summaries()
+    all_summaries = exaim.get_all_summaries()
     print(f"Total summaries: {len(all_summaries)}")
     
     # Get summaries for specific agent
-    agent_summaries = exaid.get_summaries_by_agent("agent_1")
+    agent_summaries = exaim.get_summaries_by_agent("agent_1")
     print(f"Agent 1 summaries: {len(agent_summaries)}")
 
 asyncio.run(main())
@@ -815,14 +815,14 @@ asyncio.run(main())
 
 ### Complete Workflow
 
-1. **Initialize EXAID**:
+1. **Initialize EXAIM**:
    ```python
-   exaid = EXAID()
+   exaim = EXAIM()
    ```
 
 2. **Send Traces**:
    ```python
-   summary = await exaid.received_trace(agent_id, trace_text)
+   summary = await exaim.received_trace(agent_id, trace_text)
    ```
 
 3. **Process Summary** (if generated):
@@ -849,27 +849,26 @@ asyncio.run(main())
 
 ## API Reference
 
-### EXAID Class
+### EXAIM Class
 
-#### `__init__()`
+#### `__init__(history_k: int = 3)`
 
-Initialize EXAID instance.
+Initialize EXAIM instance.
+
+**Parameters**:
+- `history_k` (int): Number of previous summaries to include in history context (default: 3)
 
 #### `async received_trace(agent_id: str, text: str) -> Optional[AgentSummary]`
 
 Process a trace from an agent.
 
 **Parameters**:
-- `id` (str): Agent identifier
+- `agent_id` (str): Agent identifier
 - `text` (str): Trace text content
 
 **Returns**: `AgentSummary` if summarization was triggered, `None` otherwise
 
-#### `latest_summary() -> Union[AgentSummary, str]`
-
-Get the most recent summary.
-
-**Returns**: `AgentSummary` object or `"No summaries yet."` string
+**Note**: This method also emits trace events to registered callbacks via `register_trace_callback()`.
 
 #### `get_all_summaries() -> list[AgentSummary]`
 
@@ -895,6 +894,24 @@ Get the total number of traces received from an agent.
 
 **Returns**: Trace count (int)
 
+#### `register_trace_callback(callback: Callable[[str, str], None])`
+
+Register a callback function to be called when trace tokens are received.
+
+**Parameters**:
+- `callback` (Callable[[str, str], None]): Function that takes `(agent_id: str, token: str)` as arguments
+
+**Note**: Callbacks are invoked for both `received_trace()` and `on_new_token()` calls.
+
+#### `register_summary_callback(callback: Callable[[AgentSummary], None])`
+
+Register a callback function to be called when summaries are created.
+
+**Parameters**:
+- `callback` (Callable[[AgentSummary], None]): Function that takes `(summary: AgentSummary)` as argument
+
+**Note**: Callbacks are invoked whenever a new summary is generated and added to the summaries list.
+
 #### `async on_new_token(agent_id: str, token: str) -> Optional[AgentSummary]`
 
 Processes a single streaming token from an agent using TokenGate for intelligent chunking. This method:
@@ -913,7 +930,7 @@ Processes a single streaming token from an agent using TokenGate for intelligent
 
 ### BufferAgent Class
 
-#### `async addsegment(agent_id: str, segment: str, previous_summaries: list[str]) -> bool`
+#### `async addsegment(agent_id: str, segment: str, previous_summaries: list[str], flush_reason: str | None = None, history_k: int = 3) -> bool`
 
 Add a trace segment and determine if summarization should trigger using structured state machine analysis.
 
@@ -921,6 +938,8 @@ Add a trace segment and determine if summarization should trigger using structur
 - `agent_id` (str): Agent identifier
 - `segment` (str): Trace text segment from token gate
 - `previous_summaries` (list[str]): List of string-formatted previous summaries for novelty comparison
+- `flush_reason` (str | None): Reason for the flush that produced this segment (e.g., "full_trace", "end_of_trace", "turn_end", or None)
+- `history_k` (int): Number of previous summaries to include in history context (default: 3)
 
 **Returns**:
 - `bool`: `True` if summarization should be triggered, `False` otherwise
@@ -935,17 +954,31 @@ Only triggers when `(TOPIC_SHIFT OR CRITICAL_ALERT) AND is_relevant AND is_novel
 
 **Returns**: `True` if summarization should trigger, `False` otherwise
 
-#### `peek() -> list[str]`
+#### `flush() -> list[AgentSegment]`
 
-Get a copy of the current buffer without flushing.
+Get a copy of the buffer (including tail segments) and clear it.
 
-**Returns**: List of buffered trace strings
+**Returns**: List of `AgentSegment` objects with agent attribution preserved
 
-#### `flush() -> list[str]`
+**Note**: Tail segments are deferred content parked by `park_tail()` when a forced flush occurs without a BufferAgent trigger. They are prepended to the flushed segments so the next summarization includes them with their original agent IDs.
 
-Get a copy of the buffer and clear it.
+#### `park_tail(segments: list[AgentSegment]) -> None`
 
-**Returns**: List of buffered trace strings
+Append leftover segments to the tail buffer without summarizing.
+
+**Parameters**:
+- `segments` (list[AgentSegment]): Segments to park in the tail buffer
+
+**Note**: Parked segments are included in future `addsegment()` buffer context and prepended to the next `flush()` output.
+
+#### `get_last_analysis(agent_id: str) -> Union[BufferAnalysis, BufferAnalysisNoNovelty, None]`
+
+Get the last BufferAgent analysis result for an agent.
+
+**Parameters**:
+- `agent_id` (str): Agent identifier
+
+**Returns**: The last `BufferAnalysis` or `BufferAnalysisNoNovelty` object, or `None` if no analysis has been performed
 
 #### `get_trace_count(agent_id: str) -> int`
 
@@ -1008,7 +1041,7 @@ Generate a structured summary from buffered traces.
 
 ### LLM Configuration
 
-EXAID supports multiple LLM providers (Google Gemini, Groq, OpenAI, and OpenAI-compatible endpoints) through environment variable-based configuration. This allows switching between providers without code changes.
+EXAIM supports multiple LLM providers (Google Gemini, Groq, OpenAI, and OpenAI-compatible endpoints) through environment variable-based configuration. This allows switching between providers without code changes.
 
 **Provider Selection**:
 
@@ -1086,16 +1119,16 @@ OPENAI_API_KEY=your-api-key
 
 ```python
 import asyncio
-from exaid_core import EXAID
+from exaim_core import EXAIM
 
 async def main():
-    exaid = EXAID()
+    exaim = EXAIM()
     
     # Send multiple traces from one agent
-    await exaid.received_trace("DoctorAgent", "Reviewing patient symptoms")
-    await exaid.received_trace("DoctorAgent", "Ordering lab tests")
+    await exaim.received_trace("DoctorAgent", "Reviewing patient symptoms")
+    await exaim.received_trace("DoctorAgent", "Ordering lab tests")
     
-    summary = await exaid.received_trace("DoctorAgent", "Lab results received")
+    summary = await exaim.received_trace("DoctorAgent", "Lab results received")
     
     if summary:
         print(f"Status/Action: {summary.status_action}")
@@ -1109,17 +1142,17 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from exaid_core import EXAID
+from exaim_core import EXAIM
 
 async def main():
-    exaid = EXAID()
+    exaim = EXAIM()
     
     # Multiple agents collaborating
-    await exaid.received_trace("Orchestrator", "Starting case analysis")
-    await exaid.received_trace("DiagnosticAgent", "Analyzing symptoms")
-    await exaid.received_trace("TreatmentAgent", "Recommending treatment")
+    await exaim.received_trace("Orchestrator", "Starting case analysis")
+    await exaim.received_trace("DiagnosticAgent", "Analyzing symptoms")
+    await exaim.received_trace("TreatmentAgent", "Recommending treatment")
     
-    summary = await exaid.received_trace("Orchestrator", "Case analysis complete")
+    summary = await exaim.received_trace("Orchestrator", "Case analysis complete")
     
     if summary:
         print(f"Agent Contributions: {summary.agent_contributions}")
@@ -1133,17 +1166,17 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from exaid_core import EXAID
+from exaim_core import EXAIM
 
 async def main():
-    exaid = EXAID()
+    exaim = EXAIM()
     
     # Simulate streaming tokens
     tokens = ["Patient", " presents", " with", " chest", " pain", ".", " ", "History", " of", " hypertension", "."]
     
     # Process each token individually
     for token in tokens:
-        summary = await exaid.on_new_token("DoctorAgent", token)
+        summary = await exaim.on_new_token("DoctorAgent", token)
         if summary:
             print(f"Status/Action: {summary.status_action}")
             print(f"Key Findings: {summary.key_findings}")
@@ -1151,7 +1184,7 @@ async def main():
         await asyncio.sleep(0.1)  # Simulate streaming delay
     
     # Flush any remaining tokens (parks tail content; no summary is produced here)
-    await exaid.flush_agent("DoctorAgent")
+    await exaim.flush_agent("DoctorAgent")
 
 asyncio.run(main())
 ```
@@ -1190,26 +1223,26 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from exaid_core import EXAID
+from exaim_core import EXAIM
 
 async def main():
-    exaid = EXAID()
+    exaim = EXAIM()
     
     # Process multiple traces
-    await exaid.received_trace("Agent1", "Trace 1")
-    await exaid.received_trace("Agent2", "Trace 2")
-    await exaid.received_trace("Agent1", "Trace 3")
+    await exaim.received_trace("Agent1", "Trace 1")
+    await exaim.received_trace("Agent2", "Trace 2")
+    await exaim.received_trace("Agent1", "Trace 3")
     
     # Get all summaries
-    all_summaries = exaid.get_all_summaries()
+    all_summaries = exaim.get_all_summaries()
     print(f"Total summaries: {len(all_summaries)}")
     
     # Get summaries for specific agent
-    agent1_summaries = exaid.get_summaries_by_agent("Agent1")
+    agent1_summaries = exaim.get_summaries_by_agent("Agent1")
     print(f"Agent1 summaries: {len(agent1_summaries)}")
     
     # Get trace count
-    trace_count = exaid.get_agent_trace_count("Agent1")
+    trace_count = exaim.get_agent_trace_count("Agent1")
     print(f"Agent1 trace count: {trace_count}")
 
 asyncio.run(main())

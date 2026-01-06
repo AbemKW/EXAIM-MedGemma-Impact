@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# EXAID Evaluation - TokenGate Calibration Script
+# EXAIM Evaluation - TokenGate Calibration Script
 # Phase 5: TokenGate Trigger Calibration
 # =============================================================================
 # Calibrates TokenGate trigger parameters (min_words, max_words, silence_timer,
@@ -21,7 +21,7 @@
 set -e
 
 echo "========================================"
-echo "EXAID Evaluation - TokenGate Calibration"
+echo "EXAIM Evaluation - TokenGate Calibration"
 echo "========================================"
 echo ""
 
@@ -83,7 +83,7 @@ echo ""
 ALLOW_STUB_FLAG=""
 if [ "${EXAID_ALLOW_STUB:-}" = "1" ] || [ "${EXAID_ALLOW_STUB:-}" = "true" ]; then
     ALLOW_STUB_FLAG="--allow-stub"
-    echo "NOTE: Allowing stub traces (EXAID_ALLOW_STUB=1)"
+    echo "NOTE: Allowing stub traces (EXAID_ALLOW_STUB=1, legacy env var name)"
     echo ""
 fi
 

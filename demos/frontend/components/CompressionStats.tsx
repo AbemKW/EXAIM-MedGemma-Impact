@@ -32,7 +32,7 @@ export default function CompressionStats({ totalWords, summaryWords }: Compressi
       <div className="compression-stats-content">
         {isCompression ? (
           <>
-            <span className="compression-label">EXAID reduced</span>
+            <span className="compression-label">EXAIM reduced</span>
             <span className="compression-number">{totalWords.toLocaleString()}</span>
             <span className="compression-arrow">→</span>
             <span className="compression-number">{summaryWords.toLocaleString()}</span>
@@ -43,7 +43,7 @@ export default function CompressionStats({ totalWords, summaryWords }: Compressi
           </>
         ) : (
           <>
-            <span className="compression-label">EXAID expanded</span>
+            <span className="compression-label">EXAIM expanded</span>
             <span className="compression-number">{totalWords.toLocaleString()}</span>
             <span className="compression-arrow">→</span>
             <span className="compression-number">{summaryWords.toLocaleString()}</span>

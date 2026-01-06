@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EXAID Evaluation - Error Analysis Extracts
+EXAIM Evaluation - Error Analysis Extracts
 
 Extracts trace excerpts, gate decisions, and summary outputs for outlier cases.
 """

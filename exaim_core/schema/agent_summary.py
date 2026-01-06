@@ -45,7 +45,7 @@ class AgentSummary(BaseModel):
     )
     recommendation_next_step: str = Field(
         max_length=180,
-        description="The specific diagnostic, therapeutic, or follow-up step that EXAID suggests at this point, usually a short phrase or sentence. "
+        description="The specific diagnostic, therapeutic, or follow-up step that EXAIM suggests at this point, usually a short phrase or sentence. "
         "Corresponds to SBAR 'Recommendation' and SOAP 'Plan'. Provides clinicians with immediately actionable information in their workflow. "
         "Limit: ~15-30 words (~90-180 chars). Evidence: Alert-fatigue literature (Marcilly et al.) emphasizes concise, actionable alerts "
         "with clear response options; XAI evaluations show simpler, action-linked explanations are preferred."

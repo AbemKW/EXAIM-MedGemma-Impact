@@ -1,12 +1,12 @@
 from langchain_core.prompts import ChatPromptTemplate
-from exaid_core.schema.agent_summary import AgentSummary
+from exaim_core.schema.agent_summary import AgentSummary
 from typing import List, Dict, Any
 from pydantic import ValidationError
 import json
 import logging
 from infra import get_llm, LLMRole
-from exaid_core.utils.prompts import get_summarizer_system_prompt, get_summarizer_user_prompt
-from exaid_core.schema.agent_segment import AgentSegment
+from exaim_core.utils.prompts import get_summarizer_system_prompt, get_summarizer_user_prompt
+from exaim_core.schema.agent_segment import AgentSegment
 
 class SummarizerAgent:
     def __init__(self):

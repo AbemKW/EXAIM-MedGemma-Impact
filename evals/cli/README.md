@@ -42,7 +42,7 @@ python -m evals.cli.calibrate_v3 \
 
 V3 runtime loading validates these fields to ensure the calibrated
 `chunk_size_ctu` matches the intended dataset and TokenGate policy.
-Set `EXAID_ALLOW_COMMIT_MISMATCH=1` to allow commit mismatches while
+Set `EXAID_ALLOW_COMMIT_MISMATCH=1` (legacy env var name) to allow commit mismatches while
 preserving provenance in the report.
 
 Each CLI is a thin argparse wrapper over a core module in `evals/src/`.

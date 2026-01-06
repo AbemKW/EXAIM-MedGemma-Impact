@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-EXAID Evaluation - Deterministic Variant Replay Engine
+EXAIM Evaluation - Deterministic Variant Replay Engine
 
 Paper hook: "Frozen traces replayed through variant pipelines with
 deterministic timestamp derivation and byte-stable output (Section 3.1)"
 
 Replays frozen traces through V0-V4 variant pipelines:
-    V0: full_exaid - TokenGate + BufferAgent (all filters) + Summarizer
+    V0: full_exaim (legacy enum: full_exaid) - TokenGate + BufferAgent (all filters) + Summarizer
     V1: turn_end - Trigger at turn_end events (from turn_boundary records) + Summarizer only
     V2: no_buffer - TokenGate → Summarizer (skip BufferAgent)
     V3: no_tokengate - Fixed-size chunking (TokenGate removed) + BufferAgent + Summarizer
@@ -62,16 +62,16 @@ from ..config.config_loader import (
     load_variant_config as _load_variant_config_central,
 )
 from ..extraction.provenance import get_extractor_version_info
-from ..tokengate_calibration.io import get_exaid_commit
+from ..tokengate_calibration.io import get_exaim_commit
 from ..utils.hashing import (
     compute_tokengate_config_hash,
     compute_trace_dataset_hash_from_manifest,
 )
-from exaid_core.buffer_agent.buffer_agent import BufferAgent, BufferAnalysis, BufferAnalysisNoNovelty
-from exaid_core.summarizer_agent.summarizer_agent import SummarizerAgent
-from exaid_core.schema.agent_segment import AgentSegment
-from exaid_core.schema.agent_summary import AgentSummary
-from exaid_core.token_gate.token_gate import ManualClock, TokenGate
+from exaim_core.buffer_agent.buffer_agent import BufferAgent, BufferAnalysis, BufferAnalysisNoNovelty
+from exaim_core.summarizer_agent.summarizer_agent import SummarizerAgent
+from exaim_core.schema.agent_segment import AgentSegment
+from exaim_core.schema.agent_summary import AgentSummary
+from exaim_core.token_gate.token_gate import ManualClock, TokenGate
 from pydantic import ValidationError
 
 
@@ -446,7 +446,7 @@ class VariantPipeline(ABC):
         # "Summary history (last {history_k}):\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary..."
         # where summary_history is joined with ",\n" (comma + newline) as in summarizer_agent.py lines 215 and 320
         summary_history_formatted = ",\n".join(summary_history_strs) if summary_history_strs else ""
-        prompt_text = f"Summary history (last {ctx.history_k}):\n[ {summary_history_formatted} ]\n\nLatest summary:\n{latest_summary_str}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
+        prompt_text = f"Summary history (last {ctx.history_k}):\n[ {summary_history_formatted} ]\n\nLatest summary:\n{latest_summary_str}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAIM 6-field schema."
 
         # Initialize schema failure tracking
         schema_ok = True
@@ -840,11 +840,11 @@ Analyze completeness, stream state, relevance, and novelty. Provide structured a
 # Variant Implementations
 # ============================================================================
 
-class V0_FullEXAID(VariantPipeline):
+class V0_FullEXAIM(VariantPipeline):
     """
-    V0: Full EXAID pipeline.
+    V0: Full EXAIM pipeline.
     
-    Paper hook: "V0 implements complete EXAID with TokenGate accumulation,
+    Paper hook: "V0 implements complete EXAIM with TokenGate accumulation,
     BufferAgent 3-layer filtering, and Summarizer (Section 4.1)"
     """
     
@@ -1082,7 +1082,7 @@ class V4_NoNovelty(VariantPipeline):
 def create_pipeline(variant_id: str, config: dict) -> VariantPipeline:
     """Create variant pipeline instance."""
     pipeline_classes = {
-        "V0": V0_FullEXAID,
+        "V0": V0_FullEXAIM,
         "V1": V1_TurnEnd,
         "V2": V2_NoBuffer,
         "V3": V3_NoTokenGate,
@@ -1349,7 +1349,7 @@ def run_variants(args) -> int:
     if args.manifest:
         args.manifest = resolve_path(args.manifest)
     print("=" * 60)
-    print("EXAID Deterministic Variant Replay Engine")
+    print("EXAIM Deterministic Variant Replay Engine")
     print("=" * 60)
     print()
     
@@ -1389,10 +1389,11 @@ def run_variants(args) -> int:
     eval_run_id = args.eval_run_id
     if not eval_run_id:
         if trace_dataset_hash and trace_dataset_hash != "unknown":
-            # Get EXAID commit hash
+            # Get EXAIM commit hash
             evals_root = Path(__file__).resolve().parents[1]  # cli -> evals
             repo_root = evals_root.parent  # evals -> repo root
-            exaid_commit = get_exaid_commit(repo_root)
+            exaim_commit = get_exaim_commit(repo_root)
+            exaid_commit = exaim_commit  # Legacy name for artifact compatibility
             
             # Extract hash portions (remove "sha256:" prefix if present)
             trace_hash_clean = trace_dataset_hash.replace("sha256:", "")[:8]
@@ -1403,14 +1404,14 @@ def run_variants(args) -> int:
                 exaid_commit_clean = exaid_commit[:8]
             else:
                 exaid_commit_clean = "00000000"  # Deterministic placeholder for unknown commits
-                print("WARNING: EXAID commit hash is 'unknown'. Using placeholder '00000000' in eval_run_id.")
+                print("WARNING: EXAIM commit hash is 'unknown'. Using placeholder '00000000' in eval_run_id.")
                 print("  This allows evaluation to proceed, but full reproducibility requires a valid commit hash.")
             
             eval_run_id = f"eval-{trace_hash_clean}-{exaid_commit_clean}"
         else:
             print("ERROR: Cannot compute deterministic eval_run_id.")
             print("For reproducibility, provide --eval-run-id manually or ensure manifest is available.")
-            print("Schema requires deterministic format: eval-<trace_hash_8>-<exaid_commit_8>")
+            print("Schema requires deterministic format: eval-<trace_hash_8>-<exaid_commit_8> (legacy field name)")
             return 1
     
     print(f"Traces: {args.traces}")

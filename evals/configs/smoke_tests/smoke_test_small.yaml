@@ -1,4 +1,4 @@
-# EXAID Evaluation - TokenGate Calibration Smoke Test (Small)
+# EXAIM Evaluation - TokenGate Calibration Smoke Test (Small)
 # 
 # Purpose: Small smoke test with slightly more coverage (3×3×2×2 = 36 policies)
 # This provides better validation while still running quickly

@@ -9,8 +9,9 @@ from ..src.metrics.runner import run_metrics
 
 
 def main() -> int:
+    print("EXAIM evaluation pipeline (legacy artifact namespace: exaid.*)")
     parser = argparse.ArgumentParser(
-        description="EXAID Metrics Computation",
+        description="EXAIM Metrics Computation",
     )
     parser.add_argument(
         "--runs",

@@ -20,7 +20,7 @@ from demos.cdss_example.message_bus import message_queue
 # Add evals/src to path for trace replay engine
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "evals" / "src"))
 from traces.trace_replay_engine import TraceReplayEngine, ReplayEvent
-from exaid_core.exaid import EXAID
+from exaim_core.exaim import EXAIM
 
 
 @asynccontextmanager
@@ -329,7 +329,7 @@ def _summary_to_dict(summary) -> dict:
 def summary_callback(summary):
     """Callback function to send summaries directly to WebSocket clients.
     
-    This is called when EXAID generates a new summary from buffered traces.
+    This is called when EXAIM generates a new summary from buffered traces.
     
     Args:
         summary: AgentSummary Pydantic object
@@ -450,10 +450,10 @@ async def replay_trace_file(trace_file_path: str):
     if not full_trace_path.exists():
         raise HTTPException(status_code=404, detail=f"Trace file not found: {trace_file_path}")
     
-    # Initialize EXAID for summary generation
-    exaid = EXAID()
-    exaid.register_trace_callback(trace_callback)
-    exaid.register_summary_callback(summary_callback)
+    # Initialize EXAIM for summary generation
+    exaim = EXAIM()
+    exaim.register_trace_callback(trace_callback)
+    exaim.register_summary_callback(summary_callback)
     
     # Clear active run IDs when starting a new trace replay
     async with run_ids_lock:
@@ -475,7 +475,7 @@ async def replay_trace_file(trace_file_path: str):
     
     try:
         # Replay content_plane stream only (excludes control_plane turns like orchestrator summaries)
-        # This ensures EXAID only processes actual agent reasoning traces, not internal MAS coordination
+        # This ensures EXAIM only processes actual agent reasoning traces, not internal MAS coordination
         for event in engine.replay_content_plane():
             # Handle timing preservation
             if last_time_ms is not None:
@@ -492,49 +492,49 @@ async def replay_trace_file(trace_file_path: str):
                 # Send token directly to WebSocket
                 await send_token_direct(event.agent_id, event.delta_text)
                 
-                # Process token through EXAID immediately to match live streaming behavior
+                # Process token through EXAIM immediately to match live streaming behavior
                 # This allows TokenGate to accumulate and flush chunks naturally during the stream
                 # Summaries will be generated at the same points as in live mode
                 try:
                     # Temporarily remove trace_callback to avoid duplicate token sending
                     # (we've already sent tokens via send_token_direct above)
-                    had_callback = trace_callback in exaid.trace_callbacks
+                    had_callback = trace_callback in exaim.trace_callbacks
                     if had_callback:
-                        exaid.trace_callbacks.remove(trace_callback)
+                        exaim.trace_callbacks.remove(trace_callback)
                     
                     # Process each character through TokenGate
                     for char in event.delta_text:
-                        await exaid.on_new_token(event.agent_id, char)
+                        await exaim.on_new_token(event.agent_id, char)
                     
                     # Re-register trace_callback for future deltas
-                    if had_callback and trace_callback not in exaid.trace_callbacks:
-                        exaid.register_trace_callback(trace_callback)
+                    if had_callback and trace_callback not in exaim.trace_callbacks:
+                        exaim.register_trace_callback(trace_callback)
                 except Exception as e:
                     logger.warning(f"Error processing delta token for agent {event.agent_id}: {e}")
                     # Re-register callback even on error
-                    if trace_callback not in exaid.trace_callbacks:
-                        exaid.register_trace_callback(trace_callback)
+                    if trace_callback not in exaim.trace_callbacks:
+                        exaim.register_trace_callback(trace_callback)
                 
             elif event.event_type == "turn_end":
                 # Flush any remaining TokenGate content for this agent
                 # Tail content is parked for later summarization
                 try:
                     # Temporarily remove trace_callback to avoid duplicate token sending
-                    had_callback = trace_callback in exaid.trace_callbacks
+                    had_callback = trace_callback in exaim.trace_callbacks
                     if had_callback:
-                        exaid.trace_callbacks.remove(trace_callback)
+                        exaim.trace_callbacks.remove(trace_callback)
                     
                     # Flush any remaining buffer
-                    await exaid.flush_agent(event.agent_id)
+                    await exaim.flush_agent(event.agent_id)
                     
                     # Re-register trace_callback for future turns
-                    if had_callback and trace_callback not in exaid.trace_callbacks:
-                        exaid.register_trace_callback(trace_callback)
+                    if had_callback and trace_callback not in exaim.trace_callbacks:
+                        exaim.register_trace_callback(trace_callback)
                 except Exception as e:
                     logger.warning(f"Error flushing agent {event.agent_id} at turn_end: {e}")
                     # Re-register callback even on error
-                    if trace_callback not in exaid.trace_callbacks:
-                        exaid.register_trace_callback(trace_callback)
+                    if trace_callback not in exaim.trace_callbacks:
+                        exaim.register_trace_callback(trace_callback)
     
     except Exception as e:
         logger.error(f"Error during trace replay: {e}")
@@ -611,13 +611,13 @@ async def process_case(request: CaseRequest):
                 # Create a new CDSS instance for this request
                 cdss_instance = CDSS()
                 
-                # Register trace callback with EXAID
-                cdss_instance.exaid.register_trace_callback(trace_callback)
-                logger.debug(f"Trace callback registered. Callbacks: {len(cdss_instance.exaid.trace_callbacks)}")
+                # Register trace callback with EXAIM
+                cdss_instance.exaim.register_trace_callback(trace_callback)
+                logger.debug(f"Trace callback registered. Callbacks: {len(cdss_instance.exaim.trace_callbacks)}")
                 
-                # Register summary callback with EXAID
-                cdss_instance.exaid.register_summary_callback(summary_callback)
-                logger.debug(f"Summary callback registered. Callbacks: {len(cdss_instance.exaid.summary_callbacks)}")
+                # Register summary callback with EXAIM
+                cdss_instance.exaim.register_summary_callback(summary_callback)
+                logger.debug(f"Summary callback registered. Callbacks: {len(cdss_instance.exaim.summary_callbacks)}")
                 
                 # Process the case (this will stream traces via callbacks)
                 # request.case is already validated and trimmed by Pydantic validator
@@ -800,7 +800,7 @@ async def stop_case():
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting EXAID API server...")
+    print("Starting EXAIM API server...")
     print("WebSocket endpoint: ws://localhost:8000/ws")
     print("API endpoint: http://localhost:8000/api/process-case")
     uvicorn.run(app, host="0.0.0.0", port=8000)

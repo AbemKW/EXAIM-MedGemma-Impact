@@ -335,7 +335,7 @@ async def main():
     print("  - OrchestratorAgent: Coordinates workflow and synthesizes findings")
     print("  - CardiologyAgent: Cardiac assessment and recommendations")
     print("  - LaboratoryAgent: Lab result interpretation")
-    print("\nAll agents use EXAID for trace capture and summarization.")
+    print("\nAll agents use EXAIM for trace capture and summarization.")
     print("\n[STREAMING ENABLED] Agents stream tokens in real-time as they reason.")
     print("="*80)
     

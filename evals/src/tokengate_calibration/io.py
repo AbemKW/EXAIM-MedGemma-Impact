@@ -172,8 +172,8 @@ def compute_config_hash(config: dict) -> str:
     return f"sha256:{hashlib.sha256(canonical_json.encode('utf-8')).hexdigest()}"
 
 
-def get_exaid_commit(repo_root: Path) -> str:
-    """Get current EXAID git commit hash."""
+def get_exaim_commit(repo_root: Path) -> str:
+    """Get current EXAIM git commit hash (canonical name)."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -185,6 +185,11 @@ def get_exaid_commit(repo_root: Path) -> str:
         return result.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unknown"
+
+# Backward compatibility alias
+def get_exaid_commit(repo_root: Path) -> str:
+    """Legacy alias for get_exaim_commit()."""
+    return get_exaim_commit(repo_root)
 
 
 def generate_calibration_run_id(
@@ -591,7 +596,7 @@ def write_calibration_report_md(
         repro = summary.get("reproducibility", {})
         f.write(f"- **Trace Dataset Hash:** `{repro.get('trace_dataset_hash', 'N/A')}`\n")
         f.write(f"- **MAS Run ID:** `{repro.get('mas_run_id', 'N/A')}`\n")
-        f.write(f"- **EXAID Commit:** `{repro.get('exaid_commit', 'N/A')}`\n")
+        f.write(f"- **EXAIM Commit (legacy field: exaid_commit):** `{repro.get('exaid_commit', 'N/A')}`\n")
         f.write(f"- **Config Hash:** `{repro.get('calibration_config_hash', 'N/A')}`\n\n")
 
 
