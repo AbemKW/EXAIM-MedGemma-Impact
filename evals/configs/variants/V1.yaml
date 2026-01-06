@@ -1,4 +1,4 @@
-# EXAID Evaluation - Variant V1 Configuration
+# EXAIM Evaluation - Variant V1 Configuration
 # Turn-End Only (Ablation: removes TokenGate and BufferAgent)
 #
 # Paper hook: "V1 triggers summarization only at turn boundaries,

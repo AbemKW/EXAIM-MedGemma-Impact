@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EXAID Evaluation - V3 Chunk Size Calibration CLI
+EXAIM Evaluation - V3 Chunk Size Calibration CLI
 
 Compute the deterministic V3 chunk_size_ctu from V0 TokenGate regular flushes.
 Excludes end-of-trace and calibration-only turn_end flushes.

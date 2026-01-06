@@ -17,7 +17,7 @@ export default function WordCountComparison({ totalWords, summaryWords }: WordCo
             <span className="text-lg font-bold text-foreground">{totalWords.toLocaleString()} words</span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-muted-foreground">EXAID Summaries</span>
+            <span className="text-sm font-medium text-muted-foreground">EXAIM Summaries</span>
             <span className="text-lg font-bold text-teal-400">{summaryWords.toLocaleString()} words</span>
           </div>
         </div>

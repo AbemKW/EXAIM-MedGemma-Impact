@@ -1,4 +1,4 @@
-# EXAID Evaluation - TokenGate Calibration Sweep Configuration
+# EXAIM Evaluation - TokenGate Calibration Sweep Configuration
 # Phase 5: TokenGate Trigger Calibration
 #
 # This configuration defines the parameter sweep for calibrating TokenGate
@@ -162,7 +162,7 @@ spam:
 # All calibration runs must log:
 # - trace_dataset_hash: SHA256 of canonical manifest fields
 # - mas_run_id: Trace generation campaign ID
-# - exaid_commit: Full git commit hash of EXAID repo
+# - exaid_commit: Full git commit hash of EXAIM repo (legacy field name for artifact compatibility)
 # - calibration_config_hash: SHA256 of canonicalized sweep configuration
 # - calibration_run_id: Deterministic ID format
 

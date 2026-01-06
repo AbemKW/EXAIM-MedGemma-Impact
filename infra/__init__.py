@@ -1,4 +1,4 @@
-"""Infrastructure module for EXAID
+"""Infrastructure module for EXAIM
 
 Provides LLM registry and configuration management.
 """

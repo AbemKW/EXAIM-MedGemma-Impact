@@ -60,7 +60,7 @@ export default function SummariesPanel() {
       {/* Panel Header */}
       <CardHeader className="bg-gradient-to-r from-zinc-950/40 to-zinc-900/30 backdrop-blur-md border-b border-white/10 py-3 px-5 glass-header">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-xl font-bold">EXAID Summaries</CardTitle>
+          <CardTitle className="text-xl font-bold">EXAIM Summaries</CardTitle>
           <div className="flex items-center gap-2">
             <Button
               variant={comparisonMode ? 'default' : 'outline'}
@@ -86,7 +86,7 @@ export default function SummariesPanel() {
         {!spotlightSummary ? (
           <CardContent className="flex-1 flex items-center justify-center px-4 py-8">
             <p className="text-muted-foreground text-center text-base">
-              No summaries yet. Summaries will appear here as EXAID processes agent traces.
+              No summaries yet. Summaries will appear here as EXAIM processes agent traces.
             </p>
           </CardContent>
         ) : (

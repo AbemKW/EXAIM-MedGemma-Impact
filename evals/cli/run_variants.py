@@ -9,8 +9,9 @@ from ..src.variants.runner import run_variants
 
 
 def main() -> int:
+    print("EXAIM evaluation pipeline (legacy artifact namespace: exaid.*)")
     parser = argparse.ArgumentParser(
-        description="EXAID Deterministic Variant Replay Engine",
+        description="EXAIM Deterministic Variant Replay Engine",
     )
     parser.add_argument(
         "--traces",

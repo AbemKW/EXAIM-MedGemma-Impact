@@ -18,14 +18,14 @@ from ..traces.trace_replay_engine import (
     StubTraceError,
     TraceValidationError,
 )
-from exaid_core.token_gate.token_gate import TokenGate, ManualClock
+from exaim_core.token_gate.token_gate import TokenGate, ManualClock
 
 from .grid import filter_valid_policies, generate_policy_grid
 from .io import (
     compute_config_hash,
     compute_trace_dataset_hash,
     generate_calibration_run_id,
-    get_exaid_commit,
+    get_exaim_commit,
     load_config,
     load_manifest_entries,
     resolve_manifest_path,
@@ -379,7 +379,8 @@ async def run_calibration(
     # Compute reproducibility hashes
     trace_dataset_hash = compute_trace_dataset_hash(manifest_path)
     config_hash = compute_config_hash(config)
-    exaid_commit = get_exaid_commit(repo_root)
+    exaim_commit = get_exaim_commit(repo_root)
+    exaid_commit = exaim_commit  # Legacy name for artifact compatibility
     calibration_run_id = generate_calibration_run_id(
         trace_dataset_hash,
         config_hash,
@@ -389,7 +390,7 @@ async def run_calibration(
     log(f"Calibration Run ID: {calibration_run_id}")
     log(f"Trace Dataset Hash: {trace_dataset_hash[:8]}")
     log(f"Config Hash: {config_hash[:8]}")
-    log(f"EXAID Commit: {exaid_commit[:8]}")
+    log(f"EXAIM Commit: {exaid_commit[:8]}")
     log("")
 
     # Generate policy grid

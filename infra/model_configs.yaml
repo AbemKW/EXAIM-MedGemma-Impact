@@ -1,4 +1,4 @@
-# LLM Model Configuration for EXAID
+# LLM Model Configuration for EXAIM
 # This file documents which models are used for each component role.
 # Environment variables can override these defaults.
 

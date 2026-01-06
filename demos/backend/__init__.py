@@ -1,3 +1,3 @@
-"""Demo Backend - FastAPI WebSocket server for EXAID demos"""
+"""Demo Backend - FastAPI WebSocket server for EXAIM demos"""
 
 __all__ = []

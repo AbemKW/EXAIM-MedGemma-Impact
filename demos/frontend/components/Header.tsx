@@ -48,8 +48,8 @@ export default function Header() {
       <div className="max-w-[1800px] w-full mx-auto flex justify-between items-center h-full">
         <div className="flex items-center gap-3">
           <img
-            src="/EXAIDLogo.png"
-            alt="EXAID Logo"
+            src="/EXAIMLogo.png"
+            alt="EXAIM Logo"
             width={200}
             height={200}
             className="object-contain"

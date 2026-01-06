@@ -1,4 +1,4 @@
-# EXAID Evaluation - TokenGate Calibration Smoke Test (Minimal)
+# EXAIM Evaluation - TokenGate Calibration Smoke Test (Minimal)
 # 
 # Purpose: Minimal smoke test to verify calibration pipeline works after reorganization
 # This config uses the smallest possible grid (2×2×2×2 = 16 policies) for quick validation

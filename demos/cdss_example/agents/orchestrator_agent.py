@@ -21,7 +21,7 @@ class OrchestratorAgent(DemoBaseAgent):
     """
     
     def __init__(self, agent_id: str = "Orchestrator Agent"):
-        super().__init__(agent_id, exaid=None)
+        super().__init__(agent_id, exaim=None)
         self.llm = get_llm(LLMRole.MAS)
         
         # System prompt for orchestrator (used in all tasks)
