@@ -3,7 +3,7 @@ from typing import AsyncIterator
 from langchain_core.prompts import ChatPromptTemplate
 from .demo_base_agent import DemoBaseAgent
 from infra import get_llm, LLMRole
-from exaid_core.exaid import EXAID
+from exaim_core.exaim import EXAIM
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class RadiologyAgent(DemoBaseAgent):
     """Radiology specialist agent for imaging interpretation and recommendations"""
     
-    def __init__(self, agent_id: str = "Radiology Agent", exaid: EXAID = None):
+    def __init__(self, agent_id: str = "Radiology Agent", exaid: EXAIM = None):
         super().__init__(agent_id, exaid)
         self.llm = get_llm(LLMRole.MAS)
         self.system_prompt = (
@@ -46,7 +46,7 @@ class RadiologyAgent(DemoBaseAgent):
         )
     
     async def stream(self, input: str) -> AsyncIterator[str]:
-        """Stream LLM output while sending tokens live to EXAID and UI."""
+        """Stream LLM output while sending tokens live to EXAIM and UI."""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.system_prompt),
@@ -62,7 +62,7 @@ class RadiologyAgent(DemoBaseAgent):
                 if not token:
                     continue
 
-                # 1. Send to EXAID in real-time
+                # 1. Send to EXAIM in real-time
                 if self.exaid:
                     await self.exaid.on_new_token(self.agent_id, token)
 

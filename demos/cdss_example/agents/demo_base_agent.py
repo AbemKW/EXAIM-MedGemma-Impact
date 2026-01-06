@@ -2,7 +2,7 @@
 
 import logging
 from typing import Optional
-from exaid_core.exaid import EXAID
+from exaim_core.exaim import EXAIM
 
 logger = logging.getLogger(__name__)
 
@@ -10,18 +10,18 @@ logger = logging.getLogger(__name__)
 class DemoBaseAgent:
     """Minimal base class for all CDSS agents
     
-    Provides agent_id and EXAID reference storage.
+    Provides agent_id and EXAIM reference storage.
     No conversation history, no abstract methods, no complexity.
     
-    Note: EXAID is required for full agent functionality (token streaming to UI).
-    If exaid is None, agent will function but EXAID integration will be disabled.
+    Note: EXAIM is required for full agent functionality (token streaming to UI).
+    If exaid is None, agent will function but EXAIM integration will be disabled.
     """
     
-    def __init__(self, agent_id: str, exaid: Optional[EXAID] = None):
+    def __init__(self, agent_id: str, exaid: Optional[EXAIM] = None):
         if exaid is None:
             logger.warning(
-                f"EXAID instance is None for agent '{agent_id}'. "
-                "Agent will function but EXAID integration (token streaming) will be disabled."
+                f"EXAIM instance is None for agent '{agent_id}'. "
+                "Agent will function but EXAIM integration (token streaming) will be disabled."
             )
         self.agent_id = agent_id
         self.exaid = exaid

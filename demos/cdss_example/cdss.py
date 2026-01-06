@@ -1,8 +1,8 @@
 """Simplified CDSS - orchestrator-driven multi-agent clinical decision support"""
 
 from typing import Union
-from exaid_core.exaid import EXAID
-from exaid_core.schema.agent_summary import AgentSummary
+from exaim_core.exaim import EXAIM
+from exaim_core.schema.agent_summary import AgentSummary
 from demos.cdss_example.schema.clinical_case import ClinicalCase
 from demos.cdss_example.graph.cdss_graph import build_cdss_graph
 from demos.cdss_example.schema.graph_state import CDSSGraphState
@@ -12,9 +12,9 @@ class CDSS:
     """Clinical Decision Support System with simplified orchestrator-driven workflow"""
     
     def __init__(self):
-        """Initialize CDSS with EXAID and simplified graph workflow"""
-        self.exaid = EXAID()
-        self.graph = build_cdss_graph(self.exaid)
+        """Initialize CDSS with EXAIM and simplified graph workflow"""
+        self.exaim = EXAIM()
+        self.graph = build_cdss_graph(self.exaim)
     
     async def process_case(
         self, 
@@ -36,7 +36,7 @@ class CDSS:
         else:
             case_text = str(case)
         
-        # Initialize simplified graph state (EXAID injected at agent level, not in state)
+        # Initialize simplified graph state (EXAIM injected at agent level, not in state)
         initial_state: CDSSGraphState = {
             "case_text": case_text,
             "running_summary": "",
@@ -63,7 +63,7 @@ class CDSS:
             "running_summary": final_state.get("running_summary", ""),
             "specialists_called": final_state.get("specialists_called", []),
             "iteration_count": final_state.get("iteration_count", 0),
-            # EXAID summaries for UI display only - MAS workflow does not depend on these
+            # EXAIM summaries for UI display only - MAS workflow does not depend on these
             "agent_summaries": [
                 {
                     "status_action": s.status_action,
@@ -80,23 +80,23 @@ class CDSS:
         return result
     
     def get_all_summaries(self) -> list[AgentSummary]:
-        """Get all summaries from EXAID
+        """Get all summaries from EXAIM
         
-        NOTE: EXAID summaries are for UI display only.
+        NOTE: EXAIM summaries are for UI display only.
         The MAS workflow does not depend on these summaries.
         Orchestrator maintains its own running_summary for workflow decisions.
         """
-        return self.exaid.get_all_summaries()
+        return self.exaim.get_all_summaries()
     
     def get_summaries_by_agent(self, agent_id: str) -> list[AgentSummary]:
         """Get summaries for a specific agent
         
-        NOTE: EXAID summaries are for UI display only.
+        NOTE: EXAIM summaries are for UI display only.
         The MAS workflow does not depend on these summaries.
         """
-        return self.exaid.get_summaries_by_agent(agent_id)
+        return self.exaim.get_summaries_by_agent(agent_id)
     
     def reset(self):
-        """Reset the CDSS system (create new EXAID instance)"""
-        self.exaid = EXAID()
+        """Reset the CDSS system (create new EXAIM instance)"""
+        self.exaim = EXAIM()
 

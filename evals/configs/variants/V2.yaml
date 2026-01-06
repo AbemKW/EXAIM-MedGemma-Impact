@@ -1,4 +1,4 @@
-# EXAID Evaluation - Variant V2 Configuration
+# EXAIM Evaluation - Variant V2 Configuration
 # No BufferAgent (Ablation: removes BufferAgent filtering)
 #
 # Paper hook: "V2 flushes TokenGate output directly to Summarizer,

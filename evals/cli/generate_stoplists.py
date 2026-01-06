@@ -34,7 +34,7 @@ import yaml
 from ..src.traces.trace_text import build_canonical_trace_text, TraceParsingError
 from .validate_traces import validate_all_traces
 from ..src.config.config_loader import load_extractor_config_for_stoplist_generation
-from ..src.tokengate_calibration.io import get_exaid_commit
+from ..src.tokengate_calibration.io import get_exaim_commit
 
 
 def load_phase4_extractor_config(config_path: Path) -> dict:
@@ -261,7 +261,8 @@ def generate_stoplists_simple(
     # Step 6: Write metadata for provenance tracking
     generated_at = datetime.now(timezone.utc).isoformat()
     repo_root = Path(__file__).resolve().parents[2]  # cli -> evals -> repo root
-    generated_by_commit = get_exaid_commit(repo_root)
+    exaim_commit = get_exaim_commit(repo_root)
+    generated_by_commit = exaim_commit  # Use for metadata
     _write_stoplist_metadata(output_dir, generated_at, generated_by_commit)
     
     # Step 7: Return report with hashes
@@ -463,7 +464,8 @@ def generate_stoplists_with_linking(
     # Step 8: Write metadata for provenance tracking
     generated_at = datetime.now(timezone.utc).isoformat()
     repo_root = Path(__file__).resolve().parents[2]  # cli -> evals -> repo root
-    generated_by_commit = get_exaid_commit(repo_root)
+    exaim_commit = get_exaim_commit(repo_root)
+    generated_by_commit = exaim_commit  # Use for metadata
     _write_stoplist_metadata(output_dir, generated_at, generated_by_commit)
     
     # Step 9: Return report with hashes
@@ -583,7 +585,7 @@ def main():
         args.report = resolve_path(args.report)
     
     print("=" * 60)
-    print("EXAID Stoplist Generation")
+    print("EXAIM Stoplist Generation")
     print("=" * 60)
     print()
     print(f"Traces directory: {args.traces}")

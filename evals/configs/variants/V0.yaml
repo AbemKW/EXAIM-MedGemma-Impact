@@ -1,12 +1,12 @@
-# EXAID Evaluation - Variant V0 Configuration
-# Full EXAID Pipeline (Reference Implementation)
+# EXAIM Evaluation - Variant V0 Configuration
+# Full EXAIM Pipeline (Reference Implementation)
 #
-# Paper hook: "V0 implements the complete EXAID pipeline with TokenGate,
+# Paper hook: "V0 implements the complete EXAIM pipeline with TokenGate,
 # BufferAgent (evaluates completeness, relevance, and novelty), and Summarizer (Section 4.1)"
 
 variant_id: V0
-name: "Full EXAID"
-description: "Complete EXAID pipeline with all components enabled"
+name: "Full EXAIM"
+description: "Complete EXAIM pipeline with all components enabled"
 
 # Trigger policy enum (for ablation suite)
 trigger_policy: "full_exaid"

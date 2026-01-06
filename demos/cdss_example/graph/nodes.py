@@ -122,7 +122,7 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
         if send_fn:
             await send_fn(agent.agent_id)
         
-        # Stream compression - agent.stream() handles EXAID internally
+        # Stream compression - agent.stream() handles EXAIM internally
         collected_tokens = []
         async for token in agent.stream(compression_input):
             collected_tokens.append(token)
@@ -157,7 +157,7 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
     if send_fn:
         await send_fn(agent.agent_id)
     
-    # Stream decision - agent.stream() handles EXAID internally
+    # Stream decision - agent.stream() handles EXAIM internally
     collected_decision = []
     async for token in agent.stream(decision_input):
         collected_decision.append(token)
@@ -198,7 +198,7 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
         if send_fn:
             await send_fn(agent.agent_id)
         
-        # Stream task generation - agent.stream() handles EXAID internally
+        # Stream task generation - agent.stream() handles EXAIM internally
         collected_task = []
         async for token in agent.stream(task_input):
             collected_task.append(token)
@@ -226,7 +226,7 @@ async def laboratory_node(state: CDSSGraphState, agent: LaboratoryAgent) -> Dict
     if send_fn:
         await send_fn(agent.agent_id)
     
-    # Stream specialist reasoning - agent.stream() handles EXAID internally
+    # Stream specialist reasoning - agent.stream() handles EXAIM internally
     collected_tokens = []
     async for token in agent.stream(context):
         collected_tokens.append(token)
@@ -259,7 +259,7 @@ async def cardiology_node(state: CDSSGraphState, agent: CardiologyAgent) -> Dict
     if send_fn:
         await send_fn(agent.agent_id)
     
-    # Stream specialist reasoning - agent.stream() handles EXAID internally
+    # Stream specialist reasoning - agent.stream() handles EXAIM internally
     collected_tokens = []
     async for token in agent.stream(context):
         collected_tokens.append(token)
@@ -292,7 +292,7 @@ async def internal_medicine_node(state: CDSSGraphState, agent: InternalMedicineA
     if send_fn:
         await send_fn(agent.agent_id)
     
-    # Stream specialist reasoning - agent.stream() handles EXAID internally
+    # Stream specialist reasoning - agent.stream() handles EXAIM internally
     collected_tokens = []
     async for token in agent.stream(context):
         collected_tokens.append(token)
@@ -325,7 +325,7 @@ async def radiology_node(state: CDSSGraphState, agent: RadiologyAgent) -> Dict[s
     if send_fn:
         await send_fn(agent.agent_id)
     
-    # Stream specialist reasoning - agent.stream() handles EXAID internally
+    # Stream specialist reasoning - agent.stream() handles EXAIM internally
     collected_tokens = []
     async for token in agent.stream(context):
         collected_tokens.append(token)
@@ -371,7 +371,7 @@ async def synthesis_node(state: CDSSGraphState, agent: OrchestratorAgent) -> Dic
     if send_fn:
         await send_fn(agent.agent_id)
     
-    # Stream synthesis - agent.stream() handles EXAID internally
+    # Stream synthesis - agent.stream() handles EXAIM internally
     collected_tokens = []
     async for token in agent.stream(synthesis_prompt):
         collected_tokens.append(token)

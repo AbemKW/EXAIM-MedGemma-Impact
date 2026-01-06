@@ -1,7 +1,7 @@
 
-# EXAID
+# EXAIM
 
-EXAID is an experimental Python project for capturing short, live traces from multiple agents, buffering those traces, and producing concise summaries using an LLM. It is designed as a minimal prototype for medical multi-agent reasoning workflows, where specialized agents (e.g., InfectiousDiseaseAgent, HematologyAgent, OncologyAgent) collaborate on clinical cases, and their reasoning traces are captured and condensed into structured summaries optimized for physician understanding.
+EXAIM (Explainable AI Middleware) is an experimental Python project for capturing short, live traces from multiple agents, buffering those traces, and producing concise summaries using an LLM. It is designed as a minimal prototype for medical multi-agent reasoning workflows, where specialized agents (e.g., InfectiousDiseaseAgent, HematologyAgent, OncologyAgent) collaborate on clinical cases, and their reasoning traces are captured and condensed into structured summaries optimized for physician understanding.
 
 ## Submodules
 
@@ -9,7 +9,7 @@ This project uses a git submodule for the MAC (Multi-Agent Conversation) trace g
 
 ```bash
 # Clone with submodules
-git clone --recurse-submodules https://github.com/AbemKW/ExAID.git
+git clone --recurse-submodules https://github.com/AbemKW/ExAIM.git
 
 # Or if already cloned
 git submodule update --init --recursive
@@ -31,6 +31,8 @@ The `evals/` directory contains pre-generated timed traces for reproducible eval
 - **Case lists**: `evals/data/manifests/*.case_list.jsonl` - Selected case IDs
 
 **Data provenance**: Traces derive from [MAC's public rare-disease dataset](https://github.com/microsoft/MAC) (CC BY 4.0). No PHI - safe to redistribute.
+
+**System name:** EXAIM (paper). Legacy evaluation artifacts retain the `exaid.*` namespace (schemas/manifests/IDs) to preserve reproducibility of completed experiments.
 
 See `evals/README.md` for full evaluation documentation.
 
@@ -80,7 +82,7 @@ See `evals/README.md` for full evaluation documentation.
    OPENAI_MODEL=gpt-4
    ```
    
-   EXAID supports multiple LLM providers through role-based environment variable configuration. See DOCUMENTATION.md for more details.
+   EXAIM supports multiple LLM providers through role-based environment variable configuration. See DOCUMENTATION.md for more details.
 
 4. **Run the CDSS demo:**
 
@@ -88,16 +90,16 @@ See `evals/README.md` for full evaluation documentation.
    python demos/cdss_example/demo_cdss.py
    ```
 
-5. **Use the EXAID class in your code:**
+5. **Use the EXAIM class in your code:**
 
    ```python
    import asyncio
-   from exaid_core import EXAID
+   from exaim_core import EXAIM
 
    async def main():
-       exaid = EXAID()
+       exaim = EXAIM()
        # Add traces for any agent (agent_id, text)
-       summary = await exaid.received_trace("agent_1", "Some trace text")
+       summary = await exaim.received_trace("agent_1", "Some trace text")
        if summary:
            print("Updated summary:", summary)
            # Access summary fields
@@ -116,7 +118,7 @@ See `evals/README.md` for full evaluation documentation.
 
 The system is organized around a few small modules:
 
-- `exaid_core/exaid.py` — EXAID orchestrator class
+- `exaim_core/exaim.py` — EXAIM orchestrator class
   - Purpose: Collects traces from agents, buffers them, and produces summaries using an LLM. Maintains a list of all summaries.
   - Note: `flush_agent(...)` parks any remaining tokens for later summarization rather than forcing a summary.
   - Key methods:
@@ -126,7 +128,7 @@ The system is organized around a few small modules:
     - `get_summaries_by_agent(agent_id)` — Returns summaries involving a specific agent.
     - `get_agent_trace_count(agent_id)` — Returns the number of traces received from an agent.
 
-- `exaid_core/summarizer_agent/summarizer_agent.py` — Summarization wrapper
+- `exaim_core/summarizer_agent/summarizer_agent.py` — Summarization wrapper
   - Purpose: Contains the `SummarizerAgent` class, which wraps calls to the LLM (via `infra/llm_registry.py`) and produces structured `AgentSummary` objects from input text.
   - Features:
     - Uses structured output with Pydantic models for consistent summaries
@@ -134,7 +136,7 @@ The system is organized around a few small modules:
     - Optimized for medical/clinical reasoning with SBAR/SOAP-aligned prompts
     - Returns `AgentSummary` objects with fields: `status_action`, `key_findings`, `differential_rationale`, `uncertainty_confidence`, `recommendation_next_step`, `agent_contributions`
 
-- `exaid_core/buffer_agent/buffer_agent.py` — Intelligent trace buffer
+- `exaim_core/buffer_agent/buffer_agent.py` — Intelligent trace buffer
   - Purpose: Implements `BufferAgent`, a buffer that accumulates traces per agent. Uses an LLM-based prompt to decide when to trigger summarization (event-driven, not just a static threshold).
   - Features:
     - LLM-powered trigger logic that evaluates trace content
@@ -142,7 +144,7 @@ The system is organized around a few small modules:
     - Tags traces with agent IDs for multi-agent tracking
     - Tracks trace counts per agent
 
-- `exaid_core/token_gate/token_gate.py` — Token streaming pre-buffer
+- `exaim_core/token_gate/token_gate.py` — Token streaming pre-buffer
   - Purpose: A lightweight, syntax-aware pre-buffer that regulates token flow into BufferAgent for streaming scenarios.
   - Features:
     - Configurable word thresholds (min/max words, whitespace-delimited)
@@ -157,7 +159,7 @@ The system is organized around a few small modules:
   - Provides different LLM instances optimized for different use cases (speed vs. reasoning quality)
 
 - `demos/cdss_example/` — Clinical Decision Support System demo
-  - Purpose: Complete demonstration of EXAID integrated with a multi-agent clinical decision support system using LangGraph.
+  - Purpose: Complete demonstration of EXAIM integrated with a multi-agent clinical decision support system using LangGraph.
   - Components:
     - `cdss.py` — CDSS orchestrator class
     - `demo_cdss.py` — Example clinical cases demonstrating the system
@@ -189,7 +191,7 @@ The system is organized around a few small modules:
 ## Development Notes and Suggestions
 
 - The project is a prototype. Expect to iterate on the summarization prompt and LLM configuration.
-- Configure LLM settings via environment variables (`.env` file). EXAID supports Google Gemini, Groq, and OpenAI providers.
+- Configure LLM settings via environment variables (`.env` file). EXAIM supports Google Gemini, Groq, and OpenAI providers.
 - Switch between providers by changing environment variables—no code changes needed.
 - The system uses async/await patterns throughout, so ensure you're running within an async context when calling methods.
 - For streaming scenarios, use `on_new_token()` which processes tokens one at a time and leverages `TokenGate` for intelligent chunking.
@@ -198,9 +200,9 @@ The system is organized around a few small modules:
 ## Project Structure
 
 ```
-ExAID/
-├── exaid_core/             # Core EXAID package
-│   ├── exaid.py            # Main orchestrator class
+ExAIM/
+├── exaim_core/             # Core EXAIM package
+│   ├── exaim.py            # Main orchestrator class
 │   ├── buffer_agent/       # Intelligent trace buffer
 │   │   └── buffer_agent.py
 │   ├── summarizer_agent/   # Summarization logic
@@ -236,13 +238,13 @@ ExAID/
 
 ## Files Summary
 
-- `exaid_core/exaid.py`: Orchestrator class that collects traces, buffers them, and records summaries. Provides methods for trace processing, streaming token handling, and summary retrieval.
-- `exaid_core/summarizer_agent/summarizer_agent.py`: Summarization logic with structured output. Defines `SummarizerAgent` class that generates `AgentSummary` objects.
-- `exaid_core/buffer_agent/buffer_agent.py`: `BufferAgent` implementation with LLM-based trigger logic for event-driven summarization.
-- `exaid_core/token_gate/token_gate.py`: Token streaming pre-buffer that regulates token flow with configurable thresholds and timers.
-- `exaid_core/schema/agent_summary.py`: Pydantic model defining the structured `AgentSummary` format.
+- `exaim_core/exaim.py`: Orchestrator class that collects traces, buffers them, and records summaries. Provides methods for trace processing, streaming token handling, and summary retrieval.
+- `exaim_core/summarizer_agent/summarizer_agent.py`: Summarization logic with structured output. Defines `SummarizerAgent` class that generates `AgentSummary` objects.
+- `exaim_core/buffer_agent/buffer_agent.py`: `BufferAgent` implementation with LLM-based trigger logic for event-driven summarization.
+- `exaim_core/token_gate/token_gate.py`: Token streaming pre-buffer that regulates token flow with configurable thresholds and timers.
+- `exaim_core/schema/agent_summary.py`: Pydantic model defining the structured `AgentSummary` format.
 - `infra/llm_registry.py`: LLM client configuration with role-based setup using LangChain (supports environment variables for configuration).
-- `demos/cdss_example/cdss.py`: CDSS orchestrator that integrates EXAID with LangGraph for clinical decision support workflows.
+- `demos/cdss_example/cdss.py`: CDSS orchestrator that integrates EXAIM with LangGraph for clinical decision support workflows.
 - `demos/cdss_example/demo_cdss.py`: Example usage demonstrating complete clinical case workflows with multiple specialized agents.
 - `requirements.txt`: Project dependencies (LangChain, LangGraph, Pydantic, python-dotenv, etc.).
 

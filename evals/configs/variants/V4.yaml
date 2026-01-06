@@ -1,4 +1,4 @@
-# EXAID Evaluation - Variant V4 Configuration
+# EXAIM Evaluation - Variant V4 Configuration
 # No Novelty Check (Ablation: removes novelty filter from BufferAgent)
 #
 # Paper hook: "V4 disables the novelty check in BufferAgent, keeping only

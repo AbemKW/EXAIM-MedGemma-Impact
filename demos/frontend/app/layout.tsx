@@ -9,7 +9,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "EXAID - Clinical Decision Support System",
+  title: "EXAIM - Clinical Decision Support System",
   description: "AI-powered clinical decision support with real-time agent reasoning traces",
 };
 

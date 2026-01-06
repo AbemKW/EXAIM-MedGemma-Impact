@@ -9,6 +9,7 @@ from ..src.traces.generation import run_generation
 
 
 def main() -> int:
+    print("EXAIM evaluation pipeline (legacy artifact namespace: exaid.*)")
     parser = argparse.ArgumentParser(
         description="Generate timed MAS traces from clinical cases using MAC",
     )

@@ -127,7 +127,7 @@ export default function Home() {
               {/* Raw Agent Traces Panel */}
               <AgentTracesPanel />
 
-              {/* EXAID Summaries Panel */}
+              {/* EXAIM Summaries Panel */}
               <SummariesPanel />
             </div>
           </div>
