@@ -1,4 +1,4 @@
-# EXAID Evaluation Module - Docker Compose Configuration
+# EXAIM Evaluation Module - Docker Compose Configuration
 # Usage: docker compose -f docker-compose.evals.yml build
 #        docker compose -f docker-compose.evals.yml run --rm evals scripts/validate.sh
 #

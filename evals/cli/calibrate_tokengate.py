@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EXAID Evaluation - TokenGate Calibration CLI
+EXAIM Evaluation - TokenGate Calibration CLI
 
 CLI wrapper responsibilities: argument parsing, entrypoint wiring, and user-facing
 logging, while reusable calibration logic lives in evals/src/tokengate_calibration/ package.
@@ -20,7 +20,8 @@ from ..src.tokengate_calibration.runner import run_calibration_sync
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="EXAID TokenGate Calibration")
+    print("EXAIM evaluation pipeline (legacy artifact namespace: exaid.*)")
+    parser = argparse.ArgumentParser(description="EXAIM TokenGate Calibration")
     parser.add_argument(
         "--traces",
         type=Path,

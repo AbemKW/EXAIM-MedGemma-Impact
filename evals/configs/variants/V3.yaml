@@ -1,4 +1,4 @@
-# EXAID Evaluation - Variant V3 Configuration
+# EXAIM Evaluation - Variant V3 Configuration
 # Fixed-Size Chunking (Ablation: removes TokenGate, uses fixed chunk intervals)
 #
 # Paper hook: "V3 triggers BufferAgent at fixed CTU intervals calibrated

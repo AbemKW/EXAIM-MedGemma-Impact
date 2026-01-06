@@ -1,10 +1,10 @@
-# EXAID Evaluation Module
+# EXAIM Evaluation Module
 
-Reproducible evaluation framework for the EXAID conference paper. This module provides Docker-based reproducibility for all evaluation experiments.
+Reproducible evaluation framework for the EXAIM conference paper. This module provides Docker-based reproducibility for all evaluation experiments.
 
 ## Purpose and Claims Boundary
 
-**Performance-only evaluation of EXAID summarization middleware.**
+**Performance-only evaluation of EXAIM summarization middleware.**
 
 This evaluation measures:
 - Update counts
@@ -14,6 +14,8 @@ This evaluation measures:
 - Latency and resource usage
 
 **No clinical outcome claims are made.**
+
+**System name:** EXAIM (paper). Legacy evaluation artifacts retain the `exaid.*` namespace (schemas/manifests/IDs) to preserve reproducibility of completed experiments. Run ID format: `eval-<trace_dataset_hash_8>-<exaid_commit_8>` where `exaid_commit_8` is the legacy field name for the EXAIM commit hash.
 
 ---
 
@@ -26,7 +28,7 @@ This evaluation measures:
 
 ### MAC Submodule
 
-EXAID uses a forked MAC repository with delta/chunk-level streaming instrumentation:
+EXAIM uses a forked MAC repository with delta/chunk-level streaming instrumentation:
 
 - Fork URL: https://github.com/AbemKW/mac-streaming-traces
 - Path: `third_party/mac`
@@ -334,7 +336,7 @@ The replay engine loads one trace into memory (O(n) records where n = number of 
 
 **Scalability:**
 
-For the EXAID evaluation (40 cases), total memory usage is ~80-400 MB, which is well within reasonable limits. The two-pass architecture (label derivation → classification) ensures deterministic behavior at the cost of loading the full trace.
+For the EXAIM evaluation (40 cases), total memory usage is ~80-400 MB, which is well within reasonable limits. The two-pass architecture (label derivation → classification) ensures deterministic behavior at the cost of loading the full trace.
 
 **Future Enhancement:** For very large traces (>100k records), a streaming-only mode could be added that processes records without full in-memory reconstruction. This is not required for the current evaluation scale.
 
@@ -353,7 +355,7 @@ Turns with empty or whitespace-only text (`turn_text.strip() == ""`) are classif
 **TokenGate Calibration:**
 
 ```python
-from exaid_core.token_gate.token_gate import TokenGate, ManualClock
+from exaim_core.token_gate.token_gate import TokenGate, ManualClock
 from datetime import datetime, timezone
 
 # Initialize TokenGate with ManualClock for deterministic timing
@@ -414,7 +416,7 @@ for turn_id, cls in engine.get_turn_classifications().items():
 | Step | ID | Purpose |
 |------|-----|---------|
 | Trace Generation | `mas_run_id` | Trace generation campaign |
-| Evaluation | `eval_run_id` | EXAID variant evaluation |
+| Evaluation | `eval_run_id` | EXAIM variant evaluation |
 
 ### mas_run_id (Trace Generation)
 
@@ -434,9 +436,11 @@ for turn_id, cls in engine.get_turn_classifications().items():
 **Format:** `eval-<trace_dataset_hash_8>-<exaid_commit_8>`
 
 - `trace_dataset_hash_8`: First 8 chars of trace_dataset_hash (from manifest)
-- `exaid_commit_8`: First 8 chars of EXAID commit hash
+- `exaid_commit_8`: First 8 chars of EXAIM commit hash (legacy field name for artifact compatibility)
 
 **Example:** `eval-b2c3d4e5-8d45cbb1`
+
+**Note:** The field name `exaid_commit_8` is a legacy artifact namespace preserved for reproducibility. It refers to the EXAIM commit hash.
 
 **Note:** Batch-level identifier shared across all variants in an evaluation run. Deterministic: same trace dataset and code version produce the same ID. Format enforced by schema pattern `^eval-[a-f0-9]{8}-[a-f0-9]{8}$`.
 
@@ -461,7 +465,7 @@ canonical = {
 **Evaluation results are fully reproducible** when run with:
 - Same trace files (verified via SHA256 hashes)
 - Same configuration files
-- Same code version (EXAID commit hash)
+- Same code version (EXAIM commit hash, stored in legacy `exaid_commit` field)
 - Same MAC submodule commit
 
 All evaluation logic uses deterministic algorithms:
@@ -506,11 +510,11 @@ The manifest `provenance` record includes the following fields for reproducibili
 | `decoding` | Decoding parameters | ✅ **Yes** - Affects trace content |
 | `case_list_hash` | Case list file hash | ✅ **Yes** - Identifies input cases |
 | `config_hash` | Configuration hash | ✅ **Yes** - Captures generation config |
-| `exaid_commit` | EXAID repository commit | ⚠️ **Partial** - Tracks trace generation code version |
+| `exaid_commit` | EXAIM repository commit (legacy field name) | ⚠️ **Partial** - Tracks trace generation code version |
 
 ### exaid_commit Field
 
-**Purpose:** Records the Git commit hash of the EXAID repository used during trace generation.
+**Purpose:** Records the Git commit hash of the EXAIM repository used during trace generation. The field name `exaid_commit` is a legacy artifact namespace preserved for reproducibility.
 
 **Why it might be "unknown":**
 - The trace generation script was run from a directory that wasn't a git repository
@@ -519,8 +523,8 @@ The manifest `provenance` record includes the following fields for reproducibili
 
 **Impact on Reproducibility:**
 - **Trace reproducibility:** ✅ **Not affected** - Trace content depends on MAC commit, model, decoding params, and case list (all present)
-- **Evaluation reproducibility:** ✅ **Not affected** - Evaluation runs capture EXAID commit in `eval_run_id` format
-- **Documentation:** ⚠️ **Minor gap** - Missing documentation of which EXAID code version ran trace generation
+- **Evaluation reproducibility:** ✅ **Not affected** - Evaluation runs capture EXAIM commit in `eval_run_id` format
+- **Documentation:** ⚠️ **Minor gap** - Missing documentation of which EXAIM code version ran trace generation
 
 **For Research Papers:**
 - Traces with `exaid_commit: "unknown"` are valid and reproducible
@@ -794,7 +798,7 @@ evals/data/calibration/calib_<hash8>_<hash8>_<hash8>/
    - Demonstrates winner/top-k stability across α values
 
 **Reproducibility:**
-- Deterministic run ID: `calib_<trace_dataset_hash8>_<config_hash8>_<exaid_commit8>`
+- Deterministic run ID: `calib_<trace_dataset_hash8>_<config_hash8>_<exaid_commit8>` where `exaid_commit8` is the legacy field name for the EXAIM commit hash
 - All hashes logged in summary JSON
 - Same inputs → same outputs (verified)
 
@@ -1140,7 +1144,7 @@ The following parameters are frozen for the conference paper evaluation:
 #### V3 Calibration Provenance Guarantees
 The V3 calibration report is required to be reproducible and verifiable:
 - **Trace dataset hash** and **TokenGate config hash** are recorded and validated at runtime.
-- **EXAID commit hash** is recorded to pin code provenance (runtime validation can be overridden with `EXAID_ALLOW_COMMIT_MISMATCH=1`).
+- **EXAIM commit hash** (stored in legacy `exaid_commit` field) is recorded to pin code provenance (runtime validation can be overridden with `EXAID_ALLOW_COMMIT_MISMATCH=1`, legacy env var name).
 - **V0 run log hashes** are recorded to prevent silent log substitution.
 
 ---

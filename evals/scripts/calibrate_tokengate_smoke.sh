@@ -107,7 +107,7 @@ echo ""
 ALLOW_STUB_FLAG=""
 if [ "${EXAID_ALLOW_STUB:-}" = "1" ] || [ "${EXAID_ALLOW_STUB:-}" = "true" ]; then
     ALLOW_STUB_FLAG="--allow-stub"
-    echo "NOTE: Allowing stub traces (EXAID_ALLOW_STUB=1)"
+    echo "NOTE: Allowing stub traces (EXAID_ALLOW_STUB=1, legacy env var name)"
     echo ""
 fi
 

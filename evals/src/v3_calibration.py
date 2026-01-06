@@ -22,7 +22,7 @@ from typing import Iterable
 
 from .config.config_loader import get_configs_dir, get_evals_root, load_variant_config
 from .deterministic.io import compute_file_hash
-from .tokengate_calibration.io import get_exaid_commit
+from .tokengate_calibration.io import get_exaim_commit
 from .utils.hashing import compute_tokengate_config_hash
 
 
@@ -220,7 +220,7 @@ def compute_v3_chunk_size(inputs: V3CalibrationInputs) -> dict:
         "v0_run_log_hashes": run_log_hashes,
         "trace_dataset_hash": run_meta["trace_dataset_hash"],
         "tokengate_config_hash": run_meta["tokengate_config_hash"],
-        "exaid_commit": get_exaid_commit(get_evals_root().parent),
+        "exaid_commit": get_exaim_commit(get_evals_root().parent),  # Legacy field name for artifact compatibility
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -252,7 +252,7 @@ def resolve_v3_chunk_size(
     2) Otherwise, load v3_calibration.calibration_report and validate:
        - trace_dataset_hash matches (if provided and not "unknown")
        - tokengate_config_hash matches the active configs dir
-       - exaid_commit matches (unless EXAID_ALLOW_COMMIT_MISMATCH=1)
+       - exaid_commit matches (unless EXAID_ALLOW_COMMIT_MISMATCH=1, legacy env var name)
     """
     fixed_trigger = config.get("fixed_trigger", {})
     chunk_size_ctu = fixed_trigger.get("chunk_size_ctu")
@@ -303,19 +303,19 @@ def resolve_v3_chunk_size(
             )
     report_commit = report.get("exaid_commit")
     if report_commit:
-        current_commit = get_exaid_commit(get_evals_root().parent)
+        current_commit = get_exaim_commit(get_evals_root().parent)
         if report_commit != current_commit:
             if os.getenv("EXAID_ALLOW_COMMIT_MISMATCH", "").lower() in {"1", "true", "yes"}:
                 warnings.warn(
-                    "EXAID commit mismatch for V3 calibration: "
+                    "EXAIM commit mismatch for V3 calibration: "
                     f"{report_commit} != {current_commit}",
                     RuntimeWarning,
                     stacklevel=2,
                 )
             else:
                 raise ValueError(
-                    "EXAID commit mismatch for V3 calibration: "
+                    "EXAIM commit mismatch for V3 calibration: "
                     f"{report_commit} != {current_commit}. "
-                    "Set EXAID_ALLOW_COMMIT_MISMATCH=1 to override."
+                    "Set EXAID_ALLOW_COMMIT_MISMATCH=1 to override (legacy env var name)."
                 )
     return int(report_value)

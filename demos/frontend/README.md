@@ -1,6 +1,6 @@
-# EXAID Next.js Frontend (Shadcn UI + Zinc Theme)
+# EXAIM Next.js Frontend (Shadcn UI + Zinc Theme)
 
-Modern Next.js 14 (App Router) implementation of the EXAID Clinical Decision Support System frontend with Shadcn UI components, zinc dark theme, and real-time token-by-token WebSocket streaming.
+Modern Next.js 14 (App Router) implementation of the EXAIM Clinical Decision Support System frontend with Shadcn UI components, zinc dark theme, and real-time token-by-token WebSocket streaming.
 
 ## Features
 
@@ -142,4 +142,4 @@ npm run lint     # Lint check
 
 ## License
 
-Same as parent EXAID project.
+Same as parent EXAIM project.

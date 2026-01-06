@@ -109,8 +109,8 @@ def compute_config_hash(*config_paths: Path) -> str:
     return _compute_config_hash(*config_paths)
 
 
-def get_exaid_commit() -> str:
-    """Get current EXAID repository commit hash."""
+def get_exaim_commit() -> str:
+    """Get current EXAIM repository commit hash (canonical name)."""
     # Get repo root (go up from evals/src/traces/)
     repo_root = Path(__file__).resolve().parents[2]  # src -> evals -> repo root
     try:
@@ -124,6 +124,11 @@ def get_exaid_commit() -> str:
         return result.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unknown"
+
+# Backward compatibility alias
+def get_exaid_commit() -> str:
+    """Legacy alias for get_exaim_commit()."""
+    return get_exaim_commit()
 
 
 # =============================================================================
@@ -960,15 +965,16 @@ def run_generation(args) -> int:
     decoding = mac_config.get("decoding", {"temperature": 1.0})
     mac_enabled = mac_config.get("enabled", False)
     
-    # Get EXAID commit
-    exaid_commit = get_exaid_commit()
+    # Get EXAIM commit
+    exaim_commit = get_exaim_commit()
+    exaid_commit = exaim_commit  # Legacy name for artifact compatibility
     
     print()
     print("Configuration:")
     print(f"  MAC module path: {mac_module_path}")
     print(f"  MAC fork URL: {mac_fork_url}")
     print(f"  MAC commit: {mac_commit}")
-    print(f"  EXAID commit: {exaid_commit[:8]}...")
+    print(f"  EXAIM commit: {exaid_commit[:8]}...")
     print(f"  Model: {model}")
     print(f"  Decoding: {json.dumps(decoding)}")
     print(f"  MAC enabled: {mac_enabled}")

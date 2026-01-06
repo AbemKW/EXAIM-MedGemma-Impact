@@ -1,4 +1,4 @@
-# EXAID Evaluation - Concept Extractor Configuration
+# EXAIM Evaluation - Concept Extractor Configuration
 # 
 # Paper hook: "Concept extraction configuration shared between stoplist
 # generation and metrics computation to ensure drift-proof evaluation

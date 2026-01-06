@@ -2,9 +2,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from infra import get_llm, LLMRole
 from pydantic import BaseModel
 from typing import Union
-from exaid_core.schema.agent_segment import AgentSegment
-from exaid_core.schema.buffer_analysis import BufferAnalysis, BufferAnalysisNoNovelty
-from exaid_core.utils.prompts import (
+from exaim_core.schema.agent_segment import AgentSegment
+from exaim_core.schema.buffer_analysis import BufferAnalysis, BufferAnalysisNoNovelty
+from exaim_core.utils.prompts import (
     get_buffer_agent_system_prompt,
     get_buffer_agent_system_prompt_no_novelty,
     get_buffer_agent_user_prompt

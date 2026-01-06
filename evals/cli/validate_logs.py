@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EXAID Evaluation - Log Validation Script
+EXAIM Evaluation - Log Validation Script
 
 Validates JSONL and JSONL.gz files against the appropriate JSON schema.
 Supports validation of manifests, traces, runs, and metrics files.

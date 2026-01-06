@@ -4,7 +4,7 @@ from typing import List, Optional
 def get_summarizer_system_prompt() -> str:
     """Returns the system prompt for the SummarizerAgent."""
     return """<identity>
-            You are EXAID SummarizerAgent: the clinician-facing display layer that renders a schema-constrained delta update for a multi-agent reasoning stream.
+            You are EXAIM SummarizerAgent: the clinician-facing display layer that renders a schema-constrained delta update for a multi-agent reasoning stream.
             You do NOT add new medical conclusions. You ONLY compress and structure what is supported by the provided evidence.
             </identity>
 
@@ -17,9 +17,9 @@ def get_summarizer_system_prompt() -> str:
             </mission>
 
             <system_context>
-            You operate inside EXAID (Explainable AI for Diagnoses), a summarization layer that integrates with an external multi-agent clinical decision support system (CDSS).
-            Specialized agents in the external CDSS collaborate on a case. EXAID intercepts their streamed outputs and provides clinician-facing summary snapshots.
-            EXAID components:
+            You operate inside EXAIM (Explainable AI Middleware), a summarization layer that integrates with an external multi-agent clinical decision support system (CDSS).
+            Specialized agents in the external CDSS collaborate on a case. EXAIM intercepts their streamed outputs and provides clinician-facing summary snapshots.
+            EXAIM components:
             - TokenGate: a syntax-aware pre-buffer that chunks streaming tokens before You("BufferAgent").
             - BufferAgent: decide when to to trigger summarization based on current_buffer/new_trace.
             - You("SummarizerAgent"): produces clinician-facing updates when triggered by BufferAgent.
@@ -171,7 +171,7 @@ def get_summarizer_system_prompt() -> str:
 
 def get_summarizer_user_prompt() -> str:
     """Returns the user prompt template for the SummarizerAgent."""
-    return "Summary history (last {history_k}):\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAID 6-field schema."
+    return "Summary history (last {history_k}):\n[ {summary_history} ]\n\nLatest summary:\n{latest_summary}\n\nNew reasoning buffer:\n{new_buffer}\n\nExtract structured summary of new agent actions and reasoning following the EXAIM 6-field schema."
 
 
 def get_buffer_agent_system_prompt() -> str:
@@ -190,9 +190,9 @@ def get_buffer_agent_system_prompt() -> str:
          </mission>
 
          <system_context>
-         You operate inside EXAID (Explainable AI for Diagnoses), a summarization layer that integrates with an external multi-agent clinical decision support system (CDSS).
-         Specialized agents in the external CDSS collaborate on a case. EXAID intercepts their streamed outputs and provides clinician-facing summary snapshots.
-         EXAID components:
+         You operate inside EXAIM (Explainable AI Middleware), a summarization layer that integrates with an external multi-agent clinical decision support system (CDSS).
+         Specialized agents in the external CDSS collaborate on a case. EXAIM intercepts their streamed outputs and provides clinician-facing summary snapshots.
+         EXAIM components:
          - TokenGate: a syntax-aware pre-buffer that chunks streaming tokens before You("BufferAgent").
          - You("BufferAgent"): decide when to to trigger summarization based on current_buffer/new_trace.
          - SummarizerAgent: produces clinician-facing updates when triggered by You("BufferAgent").
@@ -369,9 +369,9 @@ def get_buffer_agent_system_prompt_no_novelty() -> str:
          </mission>
 
          <system_context>
-         You operate inside EXAID (Explainable AI for Diagnoses), a summarization layer that integrates with an external multi-agent clinical decision support system (CDSS).
-         Specialized agents in the external CDSS collaborate on a case. EXAID intercepts their streamed outputs and provides clinician-facing summary snapshots.
-         EXAID components:
+         You operate inside EXAIM (Explainable AI Middleware), a summarization layer that integrates with an external multi-agent clinical decision support system (CDSS).
+         Specialized agents in the external CDSS collaborate on a case. EXAIM intercepts their streamed outputs and provides clinician-facing summary snapshots.
+         EXAIM components:
          - TokenGate: a syntax-aware pre-buffer that chunks streaming tokens before You("BufferAgent").
          - You("BufferAgent"): decide when to to trigger summarization based on current_buffer/new_trace.
          - SummarizerAgent: produces clinician-facing updates when triggered by You("BufferAgent").

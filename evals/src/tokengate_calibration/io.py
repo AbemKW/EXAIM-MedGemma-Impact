@@ -172,8 +172,8 @@ def compute_config_hash(config: dict) -> str:
     return f"sha256:{hashlib.sha256(canonical_json.encode('utf-8')).hexdigest()}"
 
 
-def get_exaid_commit(repo_root: Path) -> str:
-    """Get current EXAID git commit hash."""
+def get_exaim_commit(repo_root: Path) -> str:
+    """Get current EXAIM git commit hash (canonical name)."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -185,6 +185,11 @@ def get_exaid_commit(repo_root: Path) -> str:
         return result.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unknown"
+
+# Backward compatibility alias
+def get_exaid_commit(repo_root: Path) -> str:
+    """Legacy alias for get_exaim_commit()."""
+    return get_exaim_commit(repo_root)
 
 
 def generate_calibration_run_id(

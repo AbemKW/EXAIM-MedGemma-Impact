@@ -1,6 +1,6 @@
-"""EXAID Demonstrations
+"""EXAIM Demonstrations
 
-This package contains demonstration applications built using the EXAID framework.
+This package contains demonstration applications built using the EXAIM framework.
 """
 
 __all__ = []

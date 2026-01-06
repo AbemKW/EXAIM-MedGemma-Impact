@@ -1,4 +1,4 @@
-# EXAID - Comprehensive Documentation
+# EXAIM - Comprehensive Documentation
 
 ## Table of Contents
 
@@ -16,7 +16,7 @@
 
 ## Overview
 
-**EXAID** (Explainable AI for Diagnoses) is a Python framework designed for capturing, buffering, and summarizing reasoning traces from multiple AI agents in real-time. Originally designed for medical multi-agent reasoning workflows, EXAID enables specialized agents (e.g., `InfectiousDiseaseAgent`, `HematologyAgent`, `OncologyAgent`) to collaborate on complex cases while their reasoning traces are intelligently captured and condensed into structured summaries optimized for physician understanding.
+**EXAIM** (Explainable AI Middleware) is a Python framework designed for capturing, buffering, and summarizing reasoning traces from multiple AI agents in real-time. Originally designed for medical multi-agent reasoning workflows, EXAIM enables specialized agents (e.g., `InfectiousDiseaseAgent`, `HematologyAgent`, `OncologyAgent`) to collaborate on complex cases while their reasoning traces are intelligently captured and condensed into structured summaries optimized for physician understanding.
 
 ### Key Features
 
@@ -34,7 +34,7 @@ EXAID follows a modular architecture with clear separation of concerns:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        EXAID (Orchestrator)                  │
+│                        EXAIM (Orchestrator)                  │
 │  - Manages agent lifecycle                                  │
 │  - Coordinates summarization workflow                       │
 │  - Maintains summary history                                │
@@ -55,16 +55,16 @@ EXAID follows a modular architecture with clear separation of concerns:
 
 ### Data Flow
 
-1. **Trace Reception**: Agents send traces to `EXAID.received_trace()`
+1. **Trace Reception**: Agents send traces to `EXAIM.received_trace()`
 2. **Buffering**: `BufferAgent` accumulates traces and uses LLM to determine when to trigger summarization
 3. **Summarization**: `SummarizerAgent` generates structured summaries from buffered traces
-4. **Storage**: Summaries are stored in EXAID instance
+4. **Storage**: Summaries are stored in EXAIM instance
 
 ---
 
 ## Core Components
 
-### 1. EXAID (Main Orchestrator)
+### 1. EXAIM (Main Orchestrator)
 
 The central class that coordinates all operations. It manages:
 - Trace buffering and summarization triggers
@@ -190,7 +190,7 @@ Processes a single streaming token from an agent using TokenGate for intelligent
 
 ---
 
-### `exaid_core/buffer_agent/buffer_agent.py` - Intelligent Trace Buffer
+### `exaim_core/buffer_agent/buffer_agent.py` - Intelligent Trace Buffer
 
 **Purpose**: Buffers traces per agent and uses an LLM to intelligently decide when summarization should be triggered based on trace content rather than simple thresholds.
 
@@ -332,7 +332,7 @@ Returns the total number of traces received from a specific agent.
 Returns the last analysis result for the given agent, or `None` if no analysis has been performed yet.
 
 **Prompt Template**:
-The buffer agent uses a structured prompt that instructs the LLM to analyze stream state, completeness, relevance, and novelty independently. The prompt template is defined in `exaid_core/utils/prompts.py` and includes:
+The buffer agent uses a structured prompt that instructs the LLM to analyze stream state, completeness, relevance, and novelty independently. The prompt template is defined in `exaim_core/utils/prompts.py` and includes:
 
 - **Stream State Detection**: Classifies the stream into one of three states based on topic continuity:
   - `SAME_TOPIC_CONTINUING`: Agent is still refining the same clinical issue (wait)
@@ -378,7 +378,7 @@ self.llm = self.base_llm.with_structured_output(BufferAnalysis)
 
 ---
 
-### `exaid_core/summarizer_agent/summarizer_agent.py` - Summary Generator
+### `exaim_core/summarizer_agent/summarizer_agent.py` - Summary Generator
 
 **Purpose**: Generates structured summaries from buffered traces using an LLM with structured output.
 
@@ -432,7 +432,7 @@ async def summarize(
 ```
 
 **Prompt Template**:
-The summarizer uses prompts from `exaid_core/utils/prompts.py` that align with SBAR/SOAP documentation standards. The system prompt includes:
+The summarizer uses prompts from `exaim_core/utils/prompts.py` that align with SBAR/SOAP documentation standards. The system prompt includes:
 
 - **Delta-first summarization**: Prioritizes new, changed, or newly concluded information
 - **Controlled continuity**: Allows restating prior information only for sticky context (active interventions, current leading assessment, unresolved critical abnormalities, safety constraints, decision blockers)
@@ -463,7 +463,7 @@ self.summarize_prompt = ChatPromptTemplate.from_messages([
 
 ---
 
-### `exaid_core/schema/agent_summary.py` - Summary Data Model
+### `exaim_core/schema/agent_summary.py` - Summary Data Model
 
 **Purpose**: Defines the structured data model for agent summaries using Pydantic.
 
@@ -510,7 +510,7 @@ class AgentSummary(BaseModel):
 
 ---
 
-### `exaid_core/token_gate/token_gate.py` - Token Streaming Pre-Buffer
+### `exaim_core/token_gate/token_gate.py` - Token Streaming Pre-Buffer
 
 **Purpose**: A lightweight, syntax-aware pre-buffer that regulates token flow into BufferAgent for streaming scenarios. It does not interpret meaning - it only decides when enough structure has accumulated to pass tokens upstream for semantic evaluation.
 
@@ -627,7 +627,7 @@ The module provides role-based LLM configuration using `LLMRole` enum (MAS, SUMM
 
 ### `demos/cdss_example/` - Clinical Decision Support System Demo
 
-**Purpose**: Complete demonstration of EXAID integrated with a multi-agent clinical decision support system using LangGraph for workflow orchestration.
+**Purpose**: Complete demonstration of EXAIM integrated with a multi-agent clinical decision support system using LangGraph for workflow orchestration.
 
 #### `demos/cdss_example/cdss.py` - CDSS Orchestrator
 
@@ -638,8 +638,8 @@ The module provides role-based LLM configuration using `LLMRole` enum (MAS, SUMM
 ```python
 class CDSS:
     def __init__(self):
-        self.exaid = EXAID()
-        self.graph = build_cdss_graph(self.exaid)
+        self.exaim = EXAIM()
+        self.graph = build_cdss_graph(self.exaim)
 ```
 
 **Core Methods**:
@@ -658,7 +658,7 @@ Processes a clinical case through the multi-agent system using LangGraph.
 - `running_summary`: Running summary maintained by orchestrator
 - `specialists_called`: List of specialist agents that were invoked
 - `iteration_count`: Number of workflow iterations
-- `agent_summaries`: List of AgentSummary objects from EXAID (for UI display only; workflow does not depend on these)
+- `agent_summaries`: List of AgentSummary objects from EXAIM (for UI display only; workflow does not depend on these)
 
 #### `get_all_summaries() -> list[AgentSummary]`
 
@@ -784,7 +784,7 @@ Trace metadata stored by BufferAgent:
 
 ```python
 import asyncio
-from exaid_core import EXAID
+from exaim_core import EXAIM
 
 async def main():
     # Initialize EXAID
@@ -1086,7 +1086,7 @@ OPENAI_API_KEY=your-api-key
 
 ```python
 import asyncio
-from exaid_core import EXAID
+from exaim_core import EXAIM
 
 async def main():
     exaid = EXAID()
@@ -1109,7 +1109,7 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from exaid_core import EXAID
+from exaim_core import EXAIM
 
 async def main():
     exaid = EXAID()
@@ -1133,7 +1133,7 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from exaid_core import EXAID
+from exaim_core import EXAIM
 
 async def main():
     exaid = EXAID()
@@ -1190,7 +1190,7 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from exaid_core import EXAID
+from exaim_core import EXAIM
 
 async def main():
     exaid = EXAID()
