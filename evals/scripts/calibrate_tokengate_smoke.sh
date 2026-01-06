@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# EXAID Evaluation - TokenGate Calibration Smoke Test Script
+# EXAIM Evaluation - TokenGate Calibration Smoke Test Script
 # Quick validation of calibration pipeline after reorganization
 # =============================================================================
 # Runs minimal calibration configs to verify the pipeline works correctly.
@@ -20,7 +20,7 @@ set -e
 SMOKE_TYPE="${1:-minimal}"
 
 echo "========================================"
-echo "EXAID Evaluation - TokenGate Calibration Smoke Test"
+echo "EXAIM Evaluation - TokenGate Calibration Smoke Test"
 echo "========================================"
 echo ""
 echo "Smoke test type: $SMOKE_TYPE"

@@ -1,6 +1,6 @@
-# EXAID Evaluation Module
+# EXAIM Evaluation Module
 """
-Reproducible evaluation framework for the EXAID conference paper.
+Reproducible evaluation framework for the EXAIM conference paper.
 
 This module provides:
 - Timed trace generation (raw stream capture)

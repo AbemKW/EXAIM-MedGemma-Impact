@@ -1,2 +1,2 @@
-"""Utility modules for EXAID core functionality."""
+"""Utility modules for EXAIM core functionality."""
 

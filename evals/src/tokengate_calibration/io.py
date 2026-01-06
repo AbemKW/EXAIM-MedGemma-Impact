@@ -596,7 +596,7 @@ def write_calibration_report_md(
         repro = summary.get("reproducibility", {})
         f.write(f"- **Trace Dataset Hash:** `{repro.get('trace_dataset_hash', 'N/A')}`\n")
         f.write(f"- **MAS Run ID:** `{repro.get('mas_run_id', 'N/A')}`\n")
-        f.write(f"- **EXAID Commit:** `{repro.get('exaid_commit', 'N/A')}`\n")
+        f.write(f"- **EXAIM Commit (legacy field: exaid_commit):** `{repro.get('exaid_commit', 'N/A')}`\n")
         f.write(f"- **Config Hash:** `{repro.get('calibration_config_hash', 'N/A')}`\n\n")
 
 
