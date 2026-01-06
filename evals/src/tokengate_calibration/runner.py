@@ -26,7 +26,6 @@ from .io import (
     compute_trace_dataset_hash,
     generate_calibration_run_id,
     get_exaim_commit,
-    get_exaid_commit,  # Backward compatibility alias
     load_config,
     load_manifest_entries,
     resolve_manifest_path,

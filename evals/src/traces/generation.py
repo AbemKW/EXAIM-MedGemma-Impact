@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EXAID Evaluation - Timed Trace Generation Script (v2.0.0)
+EXAIM Evaluation - Timed Trace Generation Script (v2.0.0)
 
 Generates timed MAS traces from clinical cases using the MAC (Multi-Agent Conversation)
 framework with streaming instrumentation.
@@ -281,7 +281,7 @@ def run_mac_case_instrumented(
     
     IMPORTANT: This function does NOT modify MAC's internal behavior.
     MAC controls its own decoding parameters (temperature, sampling) internally.
-    EXAID only captures the delta/chunk emission timing.
+    EXAIM only captures the delta/chunk emission timing.
     
     Args:
         mac_module_path: Path to MAC module
@@ -328,12 +328,12 @@ def run_mac_case_instrumented(
             get_inital_message,
         )
         
-        # Load EXAID-owned model configuration
+        # Load EXAIM-owned model configuration
         script_dir = Path(__file__).parent.parent
         config_path = script_dir / "configs" / "mac_model_config.json"
         
         if not config_path.exists():
-            return [], f"EXAID model config not found: {config_path}"
+            return [], f"EXAIM model config not found: {config_path}"
         
         # Load JSON and inject API key from environment
         with open(config_path, 'r') as f:
@@ -685,7 +685,7 @@ def write_trace_file(
         total_turns: Total turn count
         mas_run_id: MAS run ID
         mac_commit: MAC commit hash
-        exaid_commit: EXAID commit hash
+        exaid_commit: EXAIM commit hash (legacy field name for artifact compatibility)
         model: Model name
         decoding: Decoding parameters
         output_path: Output file path
@@ -935,7 +935,7 @@ def run_generation(args) -> int:
     args.output = resolve_path(args.output)
     args.manifests = resolve_path(args.manifests)
     print("=" * 70)
-    print("EXAID Timed Trace Generation (v2.0.0)")
+    print("EXAIM Timed Trace Generation (v2.0.0)")
     print("=" * 70)
     print()
     
