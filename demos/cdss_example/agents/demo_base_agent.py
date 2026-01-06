@@ -14,17 +14,17 @@ class DemoBaseAgent:
     No conversation history, no abstract methods, no complexity.
     
     Note: EXAIM is required for full agent functionality (token streaming to UI).
-    If exaid is None, agent will function but EXAIM integration will be disabled.
+    If exaim is None, agent will function but EXAIM integration will be disabled.
     """
     
-    def __init__(self, agent_id: str, exaid: Optional[EXAIM] = None):
-        if exaid is None:
+    def __init__(self, agent_id: str, exaim: Optional[EXAIM] = None):
+        if exaim is None:
             logger.warning(
                 f"EXAIM instance is None for agent '{agent_id}'. "
                 "Agent will function but EXAIM integration (token streaming) will be disabled."
             )
         self.agent_id = agent_id
-        self.exaid = exaid
+        self.exaim = exaim
     
     @staticmethod
     def _extract_token(chunk):

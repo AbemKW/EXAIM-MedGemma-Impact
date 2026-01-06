@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 class LaboratoryAgent(DemoBaseAgent):
     """Laboratory specialist agent for lab result interpretation and recommendations"""
     
-    def __init__(self, agent_id: str = "Laboratory Agent", exaid: EXAIM = None):
-        super().__init__(agent_id, exaid)
+    def __init__(self, agent_id: str = "Laboratory Agent", exaim: EXAIM = None):
+        super().__init__(agent_id, exaim)
         self.llm = get_llm(LLMRole.MAS)
         self.system_prompt = (
             "You are the Laboratory Medicine specialist (LaboratoryAgent) in a multi-agent clinical decision support system.\n\n"
@@ -64,8 +64,8 @@ class LaboratoryAgent(DemoBaseAgent):
                     continue
 
                 # 1. Send to EXAIM in real-time
-                if self.exaid:
-                    await self.exaid.on_new_token(self.agent_id, token)
+                if self.exaim:
+                    await self.exaim.on_new_token(self.agent_id, token)
 
                 # 2. Yield token to MAS graph
                 yield token
@@ -75,12 +75,12 @@ class LaboratoryAgent(DemoBaseAgent):
             if "No generation chunks were returned" in str(e):
                 response = await chain.ainvoke({})
                 for char in response.content:
-                    if self.exaid:
-                        await self.exaid.on_new_token(self.agent_id, char)
+                    if self.exaim:
+                        await self.exaim.on_new_token(self.agent_id, char)
                     yield char
             else:
                 raise
 
         # 3. After stream ends: flush remaining TokenGate content (parks tail content for later)
-        if self.exaid:
-            await self.exaid.flush_agent(self.agent_id)
+        if self.exaim:
+            await self.exaim.flush_agent(self.agent_id)
