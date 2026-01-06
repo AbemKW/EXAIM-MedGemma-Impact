@@ -998,9 +998,14 @@ class V3_NoTokenGate(VariantPipeline):
             last_seq_seen = seq
             
             # Append text to current agent's segment, or create new segment if agent_id changed
+            # Note: AgentSegment is frozen, so we must create a new instance instead of modifying
             if accumulated_segments and accumulated_segments[-1].agent_id == event.agent_id:
-                # Append to existing segment for same agent
-                accumulated_segments[-1].segment += text
+                # Replace last segment with updated one (frozen dataclass requires new instance)
+                last_segment = accumulated_segments[-1]
+                accumulated_segments[-1] = AgentSegment(
+                    agent_id=last_segment.agent_id,
+                    segment=last_segment.segment + text
+                )
             else:
                 # Create new segment for new agent (or first segment)
                 accumulated_segments.append(AgentSegment(agent_id=event.agent_id, segment=text))
