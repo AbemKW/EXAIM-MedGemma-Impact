@@ -8,6 +8,7 @@
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{algorithmic}
 \usepackage{graphicx}
+\graphicspath{{evals/data/metrics/figures/final/}}
 \usepackage{textcomp}
 \usepackage{xcolor}
 
@@ -34,7 +35,7 @@ email@example.com}
 \maketitle
 
 \begin{abstract}
-Clinical decision support systems (CDSS) increasingly leverage multi-agent large language model (LLM) architectures to decompose complex diagnostic reasoning into specialized components. However, these systems generate verbose, interleaved reasoning traces that are difficult for clinicians to interpret in real time, limiting transparency and clinical adoption. We present EXAIM (Explainable AI Middleware), a novel middleware architecture that transforms live multi-agent reasoning traces into structured, concise summaries optimized for clinical comprehension. EXAIM employs a three-layer pipeline: (1) TokenGate, a syntax-aware pre-buffer that regulates token flow using configurable word thresholds and boundary detection; (2) BufferAgent, an LLM-powered semantic boundary detector that uses structured output analysis to trigger summarization based on completeness, relevance, novelty, and topic coherence; and (3) SummarizerAgent, a schema-constrained compressor that generates summaries aligned with clinical communication frameworks (SBAR/SOAP) while enforcing evidence-based character limits. Unlike post-hoc explanation methods, EXAIM operates incrementally on live reasoning streams, reducing cognitive load while preserving diagnostic transparency. Our architecture addresses critical gaps in CDSS explainability by providing process-level narrative transparency rather than feature-importance visualizations, supporting real-time clinical workflows, and maintaining multi-agent attribution. The system's modular design enables integration with existing multi-agent CDSS frameworks while remaining agnostic to specific clinical domains or agent implementations. This work contributes a reproducible, evidence-grounded approach to explainable multi-agent clinical AI, with implications for human-AI collaboration in time-sensitive medical decision-making.
+Clinical decision support systems (CDSS) increasingly leverage multi-agent large language model (LLM) architectures to decompose complex diagnostic reasoning into specialized components. However, these systems generate verbose, interleaved reasoning traces that are difficult for clinicians to interpret in real time, limiting transparency and clinical adoption. We present EXAIM (Explainable AI Middleware), a novel middleware architecture that transforms live multi-agent reasoning traces into structured, concise summaries aligned with clinical documentation schemas. EXAIM employs a three-layer pipeline: (1) TokenGate, a syntax-aware pre-buffer that regulates token flow using configurable word thresholds and boundary detection; (2) BufferAgent, an LLM-powered semantic boundary detector that uses structured output analysis to trigger summarization based on completeness, relevance, novelty, and topic coherence; and (3) SummarizerAgent, a schema-constrained compressor that generates summaries aligned with clinical communication frameworks (SBAR/SOAP) while enforcing evidence-based character limits. Unlike post-hoc explanation methods, EXAIM operates incrementally on live reasoning streams, improving information density in the clinician-facing update stream while preserving diagnostic transparency. Our architecture addresses critical gaps in CDSS explainability by providing process-level narrative transparency rather than feature-importance visualizations, supporting real-time clinical workflows, and maintaining multi-agent attribution. The system's modular design enables integration with existing multi-agent CDSS frameworks while remaining agnostic to specific clinical domains or agent implementations. This work contributes a reproducible, empirically evaluated approach to explainable multi-agent clinical AI, with implications for human-AI collaboration in time-sensitive medical decision-making.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -47,11 +48,26 @@ Clinical decision support systems (CDSS) increasingly employ multi-agent large l
 
 
 
-Existing approaches to explainability in clinical AI predominantly rely on post-hoc methods such as feature importance visualizations, attention maps, or static textual explanations generated after inference completion \cite{b6}. Although valuable for auditing model behavior, these methods are poorly aligned with real-time clinical workflows \cite{b7,b12}. They expose internal model mechanics rather than the evolving clinical narrative \cite{b8,b9}. Furthermore, traditional explainability approaches fail to account for distributed reasoning and cognitive overload, often resulting in verbose or redundant information that does not reflect the specialized roles of distinct agents \cite{b10,b11}.
+Existing approaches to explainability in clinical AI predominantly rely on post-hoc methods such as feature importance visualizations, attention maps, or static textual explanations generated after inference completion \cite{b6}. Although valuable for auditing model behavior, these methods are poorly aligned with real-time clinical workflows \cite{b7,b12}. They expose internal model mechanics rather than the evolving clinical narrative \cite{b8,b9}. Furthermore, traditional explainability approaches fail to account for distributed reasoning and high-velocity, redundant trace emissions that increase output volume and update frequency in clinician-facing interfaces, often resulting in verbose or redundant information that does not reflect the specialized roles of distinct agents \cite{b10,b11}.
 
 
 
 Conversational interfaces for multi-agent systems typically rely on turn-based interaction paradigms, surfacing outputs only at agent turn boundaries. In human-human communication, turn-taking corresponds to semantic completion; however, in multi-agent LLM systems, a single turn may contain multiple topic shifts, partial hypotheses, or exploratory reasoning. Treating turns as semantic units leads to lossy compression, redundancy, and reduced faithfulness when reasoning traces are summarized for clinical consumption. These limitations highlight the need for a real-time, process-level explainability mechanism that operates during reasoning rather than after it. Such a mechanism must regulate information flow, identify semantically meaningful update points, and present structured summaries that align with clinical communication practices while preserving attribution and uncertainty \cite{b13}.
+
+\textbf{Research Questions}
+
+We investigate whether an event-driven middleware can improve the efficiency and faithfulness of real-time multi-agent transparency under a fixed output contract:
+
+\textbf{RQ1:} Can event-driven, schema-constrained summarization increase semantic trace coverage efficiency and reduce redundant updates compared to turn-based and fixed-chunk baselines, without modifying upstream diagnostic agents?
+
+To operationalize RQ1, we study four sub-questions aligned with our evaluation metrics:
+
+\begin{itemize}
+\item \textbf{RQ1a (Coverage):} Does EXAIM improve global semantic trace coverage under identical schema and length constraints?
+\item \textbf{RQ1b (Redundancy):} Does EXAIM reduce redundant and low-novelty updates while regulating update frequency?
+\item \textbf{RQ1c (Faithfulness):} Does EXAIM preserve contract-grounded faithfulness when limited continuity across summaries is permitted?
+\item \textbf{RQ1d (Overhead):} What latency and LLM usage overhead does semantic event detection introduce relative to simpler triggers?
+\end{itemize}
 
 
 
@@ -59,7 +75,7 @@ This study proposes EXAIM (Explainable AI Middleware), a real-time summarization
 
 
 
-EXAIM is implemented as a modular, domain-agnostic middleware composed of three components: (i) a syntax-aware stream regulator that segments high-velocity token streams into semantically coherent units, (ii) a semantic buffering agent that detects topic shifts, novelty, and critical events, and (iii) a schema-constrained summarization agent that produces structured updates aligned with established clinical communication frameworks. The architecture supports incremental transparency, reduces cognitive load, and preserves multi-agent attribution without requiring modification of upstream diagnostic models. This approach leverages evidence that strict length constraints and structured documentation (e.g., SOAP/SBAR) significantly improve clinical comprehension \cite{b18,b19,b20}.
+EXAIM is implemented as a modular, domain-agnostic middleware composed of three components: (i) a syntax-aware stream regulator that segments high-velocity token streams into semantically coherent units, (ii) a semantic buffering agent that detects topic shifts, novelty, and critical events, and (iii) a schema-constrained summarization agent that produces structured updates aligned with established clinical communication frameworks. The architecture supports incremental transparency, regularizes update frequency while suppressing redundant/low-value updates, and preserves multi-agent attribution without requiring modification of upstream diagnostic models. This approach leverages evidence that strict length constraints and structured documentation (e.g., SOAP/SBAR) support predictable, scannable presentation formats in clinical communication \cite{b18,b19,b20}.
 
 
 
@@ -73,7 +89,7 @@ This paper makes the following contributions:
 \item \textbf{Empirical Evaluation of Streaming Explainability Trade-offs:} Through a controlled ablation study, we quantify the impact of semantic buffering on coverage, redundancy, faithfulness, and computational cost in multi-agent clinical reasoning streams.
 \end{itemize}
 
-\section{Background and Related Work}
+\section{Literature Review}
 \subsection{Clinical Decision Support Systems and Explainability}
 Clinical decision support systems (CDSS) have demonstrated potential to improve diagnostic accuracy, guideline adherence, and patient safety \cite{b1,b2}, yet their real-world adoption remains constrained by usability and workflow integration challenges \cite{b12}. Prior studies emphasize that excessive alerting, poor timing, and opaque system behavior contribute to clinician frustration and alert fatigue, limiting trust and sustained use \cite{b13}.
 
@@ -91,12 +107,12 @@ However, multi-agent systems introduce new explainability challenges. Agent inte
 \subsection{Turn-Based Interfaces and Streaming Reasoning}
 Most conversational and multi-agent AI systems adopt turn-based interaction paradigms, surfacing outputs only when an agent completes a turn. This abstraction is inherited from human dialogue systems, where turn-taking often corresponds to semantic completion. In multi-agent LLM systems, however, a single turn may contain multiple topic shifts, partial inferences, or exploratory reasoning branches. Treating turns as semantic units can therefore result in lossy compression, redundancy, and reduced faithfulness when summarization is applied.
 
-Recent work on streaming and incremental reasoning highlights the limitations of turn-based interfaces in high-velocity information environments \cite{b14,b15}. Studies in meeting summarization, customer support, and medical dialogue demonstrate that incremental updates triggered by semantic boundaries rather than fixed intervals improve information retention and reduce cognitive load \cite{b23}. These findings suggest that real-time systems require adaptive mechanisms to regulate information flow based on content, not generation structure.
+Recent work on streaming and incremental reasoning highlights the limitations of turn-based interfaces in high-velocity information environments \cite{b14,b15}. Studies in meeting summarization, customer support, and medical dialogue demonstrate that incremental updates triggered by semantic boundaries rather than fixed intervals improve information retention and regularize update frequency \cite{b23}. These findings suggest that real-time systems require adaptive mechanisms to regulate information flow based on content, not generation structure.
 
 
 
 \subsection{Clinical Summarization and Structured Communication}
-Clinical summarization research provides important foundations for managing information overload in healthcare settings. Prior work demonstrates that structured summaries aligned with clinical documentation standards, such as SBAR and SOAP, improve comprehension, reduce errors, and support handoff communication \cite{b19,b20}. Large language models have shown strong performance in generating clinical summaries when explicit length and structure constraints are enforced \cite{b18}.
+Clinical summarization research provides important foundations for managing information overload in healthcare settings. Prior work demonstrates that structured summaries aligned with clinical documentation standards, such as SBAR and SOAP, support predictable, scannable presentation formats, reduce errors, and support handoff communication \cite{b19,b20}. Large language models have shown strong performance in generating clinical summaries when explicit length and structure constraints are enforced \cite{b18}.
 
 
 Recent studies further indicate that incremental or streaming summarization can outperform post-hoc summarization by preserving temporal context and reducing the need for retrospective compression \cite{b21}. Additionally, token filtering strategies have been proposed to reduce redundancy in clinical texts \cite{b22}. However, most clinical summarization systems operate on completed conversations or documents and do not address the challenges posed by multi-agent reasoning streams. Specifically, they assume a single narrative source rather than multiple interacting agents producing overlapping and partially redundant content.
@@ -108,13 +124,69 @@ To our knowledge, prior systems do not jointly (i) perform semantic event trigge
 
 \section{Methodology}
 
+This study follows the Design Science Research Methodology (DSRM) framework proposed by Peffers et al. \cite{b25}. Design science research is appropriate for this work as it focuses on creating and evaluating artifacts (in this case, the EXAIM middleware) to address identified problems in clinical decision support systems. The DSRM framework provides a structured approach to conducting design science research through six sequential steps, which we map to our study as follows:
+
+\textbf{Step 1: Problem Identification} The problem addressed in this research stems from the limitations identified in Section I. Multi-agent clinical decision support systems generate verbose, interleaved reasoning traces that are difficult for clinicians to interpret during time-sensitive decision-making. Existing explainability approaches are poorly aligned with real-time clinical workflows, exposing internal model mechanics rather than supporting clinical sensemaking. These limitations highlight the need for a real-time, process-level explainability mechanism that operates during reasoning rather than after it.
+
+\textbf{Step 2: Objectives} The objectives of this research are defined in Section IV (Artifact Design), where we establish the design goals for EXAIM. The primary objective is to create a middleware architecture that transforms streaming multi-agent reasoning traces into structured, clinician-aligned summaries without modifying upstream diagnostic agents. Secondary objectives include enabling semantic event-driven summarization, operationalizing process-level transparency through schema-constrained summaries, and empirically evaluating streaming explainability trade-offs.
+
+\textbf{Step 3: Design \& Development} The design and development of the EXAIM artifact is detailed in Section IV, Subsection B (EXAIM Architecture). The architecture consists of three sequential components: (1) TokenGate for syntax-aware stream regulation, (2) BufferAgent for semantic event detection, and (3) SummarizerAgent for schema-constrained synthesis. Each component is designed to progressively increase semantic abstraction while enforcing flow-control policies.
+
+\textbf{Step 4: Demonstration} The demonstration of the EXAIM artifact is provided through a case walkthrough in Section IV, Subsection C. This walkthrough illustrates how raw multi-agent reasoning traces are transformed into structured clinical summaries, demonstrating the artifact's utility in addressing the identified problem.
+
+\textbf{Step 5: Evaluation} The evaluation of the EXAIM artifact is conducted through a controlled ablation study detailed in Section V (Evaluation). This evaluation compares EXAIM against turn-based and heuristic baselines using multiple metrics including coverage, redundancy, faithfulness, and computational overhead. The evaluation demonstrates that semantic buffering significantly improves trace coverage and faithfulness while reducing redundant updates.
+
+\textbf{Step 6: Communication} This paper serves as the communication of the research, presenting the problem identification, artifact design, demonstration, and evaluation to the research community. The communication includes detailed descriptions of the architecture, design rationale, experimental methodology, and results.
+
+\section{Artifact Design}
+
+\subsection{Design Objectives \& Rationale}
+
+EXAIM is motivated by the observation that existing explainability approaches for clinical AI systems inadequately address the dynamics of real-time, multi-agent reasoning. Rather than optimizing for post-hoc transparency or exhaustive trace exposure, the design of EXAIM prioritizes timely, clinically meaningful communication under strict brevity and update-frequency constraints. This subsection articulates the key design decisions underlying the architecture and their theoretical and practical justification.
+
+\subsection{Middleware-Level Explainability}
+
+A foundational design decision in EXAIM is to implement explainability at the middleware level rather than within individual diagnostic agents. Embedding explainability mechanisms directly into agent prompts or reasoning strategies risks entangling transparency with diagnostic performance, complicating validation and limiting portability across systems. By positioning EXAIM as an intermediary layer, explainability is decoupled from reasoning generation. This separation of concerns enables independent evolution of diagnostic agents and explanation mechanisms, supports integration with heterogeneous multi-agent frameworks, and preserves upstream system behavior. Middleware-level intervention also allows EXAIM to observe the full interaction among agents, rather than isolated reasoning fragments, which is essential for process-level transparency.
+
+\subsection{Event-Driven Rather Than Turn-Based Updates}
+
+Traditional conversational interfaces rely on agent turn boundaries to structure interaction. While effective in human dialogue systems, turn-taking is a poor proxy for semantic progression in multi-agent LLM systems. A single agent turn may contain exploratory reasoning, multiple topic transitions, or internal debate, whereas clinically meaningful changes may occur mid-turn. EXAIM therefore adopts an event-driven update strategy in which summaries are triggered by semantic change rather than generation mechanics. This design aligns updates with clinically salient moments, such as the emergence of new evidence, shifts in diagnostic focus, or safety-critical findings. By decoupling update timing from turn structure, EXAIM avoids lossy compression and reduces redundant updates.
+
+\subsection{Semantic Filtering Over Heuristic Thresholding}
+
+Many streaming summarization systems rely on fixed thresholds—such as token counts or time intervals—to determine when to summarize. While computationally simple, such heuristics are insensitive to content and often produce fragmented or repetitive updates. EXAIM instead evaluates semantic properties of the reasoning stream, including completeness, relevance, and novelty. This filtering strategy allows the middleware to distinguish between verbosity and progression, suppressing repetitive grounding statements while surfacing genuinely new diagnostic information. Semantic filtering also enables EXAIM to adapt to variability in agent behavior, case complexity, and reasoning style without requiring manual retuning of thresholds for each deployment.
+
+\subsection{Novelty Gating for Update Stream Control}
+
+A key design insight in EXAIM is that redundancy reduction alone is insufficient for managing update frequency and marginal-information emissions. Multi-agent systems may produce a sequence of distinct yet marginally informative updates that are technically non-redundant but represent low marginal-information emissions. To address this, EXAIM explicitly incorporates novelty as a gating criterion. Novelty is evaluated relative to previously surfaced summaries rather than raw agent output, allowing the system to suppress low-impact incremental updates until sufficient informational value has accumulated. This design trades marginal gains in information coverage for substantial reductions in interruption frequency, aligning with evidence-based principles for alert fatigue mitigation in clinical systems.
+
+\subsection{Evidence-Informed Output Budgeting}
+
+A critical design decision in EXAIM is the enforcement of strict character limits for each field of the summary schema (e.g., 150 characters for Status, 180 for Findings). These constraints are not arbitrary; they represent evidence-informed design heuristics motivated by prior work on concise clinical communication and explanation length, establishing bounded output budgets for schema-constrained streaming summaries.
+
+\textbf{The ``Elements of Style'' for Interruptive Alerts:} Research on EHR usability emphasizes that alerts must be concise and consistently structured to reduce error rates \cite{b13}. Usability guidelines specifically identify ``title brevity'' and ``minimal introductory text'' as key principles for managing update frequency and marginal-information emissions. EXAIM operationalizes this by enforcing hard character caps, establishing a bounded output contract that prevents uncontrolled interface growth and supports predictable length for high-frequency updates.
+
+\textbf{Bounded Output Constraints:} In the domain of Explainable AI (XAI), prior research has examined trade-offs between explanation length and complexity \cite{b6,b8,b9}. Prior XAI research reports preferences for concise explanations focusing on 1–2 key causes over exhaustive causal chains. By capping the Differential/Rationale field at 210 characters, EXAIM enforces bounded output budget constraints, ensuring explanations remain within predictable length bounds suitable for streaming interfaces.
+
+\textbf{Snippet-Based Summarization:} While some clinical benchmarks (e.g., ACI-Bench) focus on full-note generation, EXAIM targets the ``live snippet'' paradigm. Van Veen et al. \cite{b18} demonstrated that for specific clinical queries, explicit length constraints (e.g., ``15 words or less'') serve as a design pattern for controlled output volume. Our character limits effectively enforce this ``snippet'' modality, ensuring the middleware functions as a real-time monitor with stream-safe output budgeting rather than a retrospective documenter.
+
+\subsection{Structured Summarization Aligned with Clinical Communication}
+
+EXAIM enforces a fixed schema inspired by established clinical frameworks (SBAR/SOAP). This structural rigidity is a functional requirement for safety, not just a formatting choice.
+
+\textbf{Consistency for Predictable Output:} Interfaces with clear information organization establish predictable output contracts as a system property. By mapping agent outputs to a consistent, predictable schema (Situation, Background, Assessment), EXAIM enables pattern-based localization through temporal alignment with semantic boundaries, ensuring schema-level consistency and comparability across updates.
+
+\textbf{Simplification for Information Density:} Clinical note simplification research explicitly aims to shorten text to improve information density. EXAIM's Key Findings and Recommendation fields serve this simplification role, acting as a real-time filter that strips away the complex, multi-turn ``reasoning scaffolding'' of the agent swarm to present only the actionable clinical signal.
+
+\subsection{EXAIM Architecture}
+
 EXAIM follows an event-driven architecture composed of three sequential components: (1) a TokenGate for syntax-aware stream regulation, (2) a BufferAgent for semantic event detection, and (3) a SummarizerAgent for schema-constrained synthesis. Each component progressively increases the semantic abstraction of the incoming data while enforcing strictly defined flow-control policies.
 
-\subsection{Middleware Placement and Data Flow}
+\subsubsection{Middleware Placement and Data Flow}
 
 EXAIM is positioned downstream of all diagnostic agents and upstream of the clinician-facing interface. The system operates on a ``push'' model where agents emit tokens asynchronously to the middleware. Unlike turn-based systems that rely on orchestration artifacts (e.g., turn\_end events), EXAIM intercepts the raw token stream, allowing it to operate at a finer granularity than conventional conversational interfaces. The middleware maintains no global diagnostic authority; instead, it functions as an interpretive layer that monitors reasoning progression and emits summaries only when specific semantic thresholds are crossed.
 
-\subsection{Syntax-Aware Stream Regulation (TokenGate)}
+\subsubsection{Syntax-Aware Stream Regulation (TokenGate)}
 
 The first stage of the EXAIM pipeline regulates the high-velocity output of large language models into semantically coherent segments suitable for downstream analysis. Raw token streams produced by LLMs are often fragmented, bursty, and misaligned with linguistic boundaries. Processing such streams directly leads to excessive summarization triggers or incomplete semantic units.
 
@@ -126,7 +198,7 @@ To maintain low latency and avoid dependencies on model-specific tokenizers (e.g
 \item \textbf{Safety Valves:} To guarantee upper-bound latency during verbose generation, a hard flush is forced if the buffer exceeds max\_words=100 or a max\_wait\_timeout of 4.0s, regardless of boundary cues.
 \end{itemize}
 
-\subsection{Semantic Buffering and Event Detection (BufferAgent)}
+\subsubsection{Semantic Buffering and Event Detection (BufferAgent)}
 
 The core innovation of EXAIM lies in its semantic buffering layer, which determines when a clinician-facing update should be generated. Rather than triggering summaries at fixed intervals or agent turn boundaries, EXAIM evaluates the semantic content of buffered segments to detect meaningful reasoning events.
 
@@ -146,51 +218,19 @@ Beyond state classification, the BufferAgent assesses incoming segments along th
 
 Based on this semantic assessment, the middleware decides whether to trigger summarization or continue accumulating context. Crucially, EXAIM distinguishes verbosity from progression. Multi-agent systems often restate known facts to ground internal reasoning; such repetition is filtered to avoid redundant clinician notifications. At the same time, EXAIM ensures that clinically significant transitions—such as changes in diagnostic focus or emergent safety concerns—are surfaced promptly.
 
-\subsection{Schema-Constrained Clinical Summarization (SummarizerAgent)}
+\subsubsection{Schema-Constrained Clinical Summarization (SummarizerAgent)}
 
 When a semantic event is detected, the accumulated context is passed to the summarization layer. This component generates a concise, structured update that reflects the current state of multi-agent reasoning rather than a retrospective summary of the entire case. Summaries are constrained to a fixed schema aligned with established clinical communication frameworks (e.g., SBAR/SOAP). Each summary captures: (i) the current diagnostic status or action, (ii) key clinical findings, (iii) rationale for leading hypotheses, (iv) uncertainty or confidence considerations, (v) recommended next steps, and (vi) attribution of contributing agents.
 
-Strict structural and length constraints are enforced to ensure consistency, readability, and cognitive manageability. The summarization layer is explicitly prohibited from inventing or extrapolating information beyond the provided context. If no new information is available for a given field, the summary reflects this absence rather than repeating prior content. By enforcing schema-level constraints, EXAIM produces updates that are predictable in form, comparable over time, and suitable for integration into clinician-facing dashboards or electronic health record workflows.
+Strict structural and length constraints are enforced to ensure consistency, readability, and predictable output contracts. The summarization layer is explicitly prohibited from inventing or extrapolating information beyond the provided context. If no new information is available for a given field, the summary reflects this absence rather than repeating prior content. By enforcing schema-level constraints, EXAIM produces updates that are predictable in form, comparable over time, and suitable for integration into clinician-facing dashboards or electronic health record workflows.
 
-\section{Design Rationale}
+\textbf{System Diagram:} [PLACEHOLDER: System architecture diagram showing TokenGate, BufferAgent, and SummarizerAgent components with data flow arrows]
 
-EXAIM is motivated by the observation that existing explainability approaches for clinical AI systems inadequately address the dynamics of real-time, multi-agent reasoning. Rather than optimizing for post-hoc transparency or exhaustive trace exposure, the design of EXAIM prioritizes timely, clinically meaningful communication under cognitive constraints. This section articulates the key design decisions underlying the architecture and their theoretical and practical justification.
+\subsubsection{Case Walkthrough}
 
-\subsection{Middleware-Level Explainability}
+[PLACEHOLDER: A specific example showing a raw input string from multi-agent reasoning traces being transformed into an EXAIM summary. This should demonstrate the complete pipeline from raw tokens through TokenGate, BufferAgent, and SummarizerAgent to the final structured summary output.]
 
-A foundational design decision in EXAIM is to implement explainability at the middleware level rather than within individual diagnostic agents. Embedding explainability mechanisms directly into agent prompts or reasoning strategies risks entangling transparency with diagnostic performance, complicating validation and limiting portability across systems. By positioning EXAIM as an intermediary layer, explainability is decoupled from reasoning generation. This separation of concerns enables independent evolution of diagnostic agents and explanation mechanisms, supports integration with heterogeneous multi-agent frameworks, and preserves upstream system behavior. Middleware-level intervention also allows EXAIM to observe the full interaction among agents, rather than isolated reasoning fragments, which is essential for process-level transparency.
-
-\subsection{Event-Driven Rather Than Turn-Based Updates}
-
-Traditional conversational interfaces rely on agent turn boundaries to structure interaction. While effective in human dialogue systems, turn-taking is a poor proxy for semantic progression in multi-agent LLM systems. A single agent turn may contain exploratory reasoning, multiple topic transitions, or internal debate, whereas clinically meaningful changes may occur mid-turn. EXAIM therefore adopts an event-driven update strategy in which summaries are triggered by semantic change rather than generation mechanics. This design aligns updates with clinically salient moments, such as the emergence of new evidence, shifts in diagnostic focus, or safety-critical findings. By decoupling update timing from turn structure, EXAIM avoids lossy compression and reduces redundant notifications.
-
-\subsection{Semantic Filtering Over Heuristic Thresholding}
-
-Many streaming summarization systems rely on fixed thresholds—such as token counts or time intervals—to determine when to summarize. While computationally simple, such heuristics are insensitive to content and often produce fragmented or repetitive updates. EXAIM instead evaluates semantic properties of the reasoning stream, including completeness, relevance, and novelty. This filtering strategy allows the middleware to distinguish between verbosity and progression, suppressing repetitive grounding statements while surfacing genuinely new diagnostic information. Semantic filtering also enables EXAIM to adapt to variability in agent behavior, case complexity, and reasoning style without requiring manual retuning of thresholds for each deployment.
-
-\subsection{Novelty as a Cognitive Load Control Mechanism}
-
-A key design insight in EXAIM is that redundancy reduction alone is insufficient for managing clinician cognitive load. Multi-agent systems may produce a sequence of distinct yet marginally informative updates that are technically non-redundant but operationally distracting. To address this, EXAIM explicitly incorporates novelty as a gating criterion. Novelty is evaluated relative to previously surfaced summaries rather than raw agent output, allowing the system to suppress low-impact incremental updates until sufficient informational value has accumulated. This design trades marginal gains in information coverage for substantial reductions in interruption frequency, aligning with evidence-based principles for alert fatigue mitigation in clinical systems.
-
-\subsection{Evidence-Based Constraints for Cognitive Load}
-
-A critical design decision in EXAIM is the enforcement of strict character limits for each field of the summary schema (e.g., 150 characters for Status, 180 for Findings). These constraints are not arbitrary; they are strictly derived from clinical usability and XAI research to prevent information overload.
-
-\textbf{The ``Elements of Style'' for Interruptive Alerts:} Research on EHR usability emphasizes that alerts must be concise and consistently structured to reduce error rates. Usability guidelines specifically identify ``title brevity'' and ``minimal introductory text'' as key factors in reducing the cognitive burden of interruptive alerts. EXAIM operationalizes this by enforcing hard character caps, preventing the generation of ``cluttered'' interfaces that are known to increase workload (NASA-TLX) and degrade performance on critical tasks like managing abnormal results.
-
-\textbf{Cognitive Limits on Explanation:} In the domain of Explainable AI (XAI), Lage et al. demonstrated that increasing the length and complexity of explanations directly overloads human cognitive abilities, harming the user's ability to mentally simulate model behavior. Furthermore, XAI theory suggests that humans prefer short explanations focusing on 1–2 key causes rather than exhaustive causal chains. By capping the Differential/Rationale field at 210 characters, EXAIM forces the system to align with this preference for brevity, ensuring explanations remain within the ``trust'' boundary for human verification.
-
-\textbf{Snippet-Based Summarization:} While some clinical benchmarks (e.g., ACI-Bench) focus on full-note generation, EXAIM targets the ``live snippet'' paradigm. Van Veen et al. showed that for specific clinical queries, explicit length constraints (e.g., ``15 words or less'') significantly improve clinician preference and conciseness compared to unconstrained generation. Our character limits effectively enforce this ``snippet'' modality, ensuring the middleware functions as a real-time monitor rather than a retrospective documenter.
-
-\subsection{Structured Summarization Aligned with Clinical Communication}
-
-EXAIM enforces a fixed schema aligned with established clinical frameworks (SBAR/SOAP). This structural rigidity is a functional requirement for safety, not just a formatting choice.
-
-\textbf{Consistency Reduces Load:} Usability studies confirm that interfaces with clear information organization result in lower cognitive workload. By mapping agent outputs to a consistent, predictable schema (Situation, Background, Assessment), EXAIM allows clinicians to parse updates using pattern recognition rather than active reading.
-
-\textbf{Simplification for Comprehensibility:} Clinical note simplification research explicitly aims to shorten text to improve human comprehensibility. EXAIM's Key Findings and Recommendation fields serve this simplification role, acting as a real-time filter that strips away the complex, multi-turn ``reasoning scaffolding'' of the agent swarm to present only the actionable clinical signal.
-
-\section{Experiment}
+\section{Evaluation}
 
 To isolate the architectural contribution of EXAIM, we employ a ``glass-box'' evaluation methodology using deterministic replays of multi-agent reasoning traces. This approach allows us to stress-test the middleware's flow-control capabilities independent of variations in upstream agent behavior.
 
@@ -207,9 +247,8 @@ The resulting outputs are stored as frozen replay traces. These traces allow us 
 To ensure reproducibility and isolate the middleware's contribution from stochastic model variance, we enforce strict configuration constraints:
 
 \begin{itemize}
-\item \textbf{Middleware Model:} Both the BufferAgent (trigger logic) and SummarizerAgent (synthesis) are powered by Gemini 2.5 Flash Lite (Google). This model was selected for its high throughput and native support for large context windows.
-\item \textbf{Deterministic Sampling:} All middleware components operate at temperature=0.0 to minimize generation variance.
-\item \textbf{Constraint Enforcement:} Schema validation and character-limit truncation are enforced using Pydantic v2 in strict mode. If a summary fails validation, it is automatically rejected and not shown to the clinician (recorded as a failure).
+\item \textbf{Middleware Model and Deterministic Sampling:} Both the BufferAgent (trigger logic) and SummarizerAgent (synthesis) are powered by Gemini 2.5 Flash Lite (Google), selected for its high throughput and native support for large context windows. All middleware components operate at temperature=0.0 to minimize generation variance and ensure deterministic, reproducible outputs.
+\item \textbf{Constraint Enforcement:} Schema validation and character-limit truncation are enforced using Pydantic v2 models with LangChain's structured output (strict=True). The SummarizerAgent employs a three-attempt strategy: initial structured output, retry with rewrite prompt for length violations, and fallback truncation. If validation fails after all attempts, an empty summary is generated and marked as failed (schema\_ok=false) for metrics exclusion, ensuring the system continues operation while tracking failure rates.
 \item \textbf{Metric Extraction:} For semantic evaluation, we utilize scispaCy (en\_core\_sci\_sm) with the UMLS Entity Linker to extract canonical medical concepts (CUIs) from both the raw traces and generated summaries.
 \end{itemize}
 
@@ -244,7 +283,7 @@ V4 (No Novelty) & \checkmark & \checkmark & — & — \\
 We assess system performance using ten ``extractor-consistent'' proxy metrics (M1–M10) grouped into four dimensions:
 
 \begin{itemize}
-\item \textbf{Volume and Overhead (M1, M2):} We measure the Update Count and Total Output Volume in Character-Normalized Token Units (CTU) to quantify the reduction in clinician reading burden.
+\item \textbf{Volume and Overhead (M1, M2):} We measure the Update Count and Total Output Volume in Character-Normalized Token Units (CTU) to quantify output volume and update frequency.
 \item \textbf{Redundancy (M3):} We calculate the Redundant Update Rate, defined as the percentage of summaries that share $\geq$ 90\% Jaccard similarity in unique UMLS concepts with their immediate predecessor.
 \item \textbf{Global Coverage (M4):} The fraction of unique medical concepts (CUIs) present in the full input trace that are successfully captured in the union of all generated summaries.
 \item \textbf{Faithfulness (M6b, M10):} We measure Contract-Groundedness (M6b), the percentage of concepts in a summary supported by the current buffer context, and Schema Compliance (M10), the rate of successful JSON generation.
@@ -254,7 +293,14 @@ We assess system performance using ten ``extractor-consistent'' proxy metrics (M
 
 \subsubsection{Full EXAIM vs. Turn-Based Baseline}
 
-Full EXAIM (V0) consistently outperforms the turn-based baseline (V1) across core explainability metrics.
+Full EXAIM (V0) consistently outperforms the turn-based baseline (V1) across core explainability metrics. Figure~\ref{fig1} provides a comprehensive comparison of all variants across Coverage (M4), Faithfulness (M6b), and Redundancy (M3) metrics.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{figure1/figure1.pdf}
+\caption{Multi-Variant Comparison: Coverage, Faithfulness, and Redundancy metrics across all ablation variants. V0 (Full EXAIM) achieves the best balance across all metrics, with higher coverage and faithfulness than the turn-based baseline (V1) while maintaining lower redundancy.}
+\label{fig1}
+\end{figure}
 
 \begin{table}[htbp]
 \caption{Performance Comparison: V0 vs. V1}
@@ -298,7 +344,7 @@ Output Volume & 1390 & 4312 \\
 \end{center}
 \end{table}
 
-Without semantic filtering, the system produces excessive, fragmented updates, overwhelming the user. This confirms that syntax-aware segmentation alone is insufficient for real-time explainability.
+Without semantic filtering, the system produces excessive, fragmented updates, increasing update frequency and output volume and lowering semantic yield per update. This confirms that syntax-aware segmentation alone is insufficient for real-time explainability.
 
 \subsubsection{Effect of Novelty Filtering}
 
@@ -322,7 +368,7 @@ Redundancy & 0.366 & 0.346 \\
 \end{center}
 \end{table}
 
-Although V4 captures marginally more information, it does so at the cost of substantially higher interruption frequency. This demonstrates that novelty filtering functions as a cognitive load control mechanism rather than a simple deduplication strategy.
+Although V4 captures marginally more information, it does so at the cost of substantially higher interruption frequency. This demonstrates that novelty filtering functions as an update frequency control mechanism rather than a simple deduplication strategy.
 
 \subsubsection{Adaptive vs. Fixed Segmentation}
 
@@ -366,7 +412,14 @@ Relative Token Usage & 5.3$\times$ & 1.0$\times$ \\
 \end{center}
 \end{table}
 
-The observed latency increase remains within acceptable bounds for clinician-facing reading tasks. While token usage is higher, this overhead reflects the cost of converting raw compute into reduced cognitive burden and improved transparency.
+The observed latency increase remains within acceptable bounds for interactive dashboard update latencies. While token usage is higher, this overhead reflects the cost of semantic analysis required for redundancy suppression and improved contract-groundedness and coverage. Figure~\ref{fig3} visualizes this trade-off, showing that the latency overhead is modest (<0.3s) despite the higher computational cost.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{figure3/figure3.pdf}
+\caption{Computational Overhead Comparison: Average Summary Latency (s) and Relative Token Usage (×) for V0 (Full EXAIM) vs V1 (Turn-Based). The latency increase remains within acceptable bounds for interactive dashboard update latencies, while the higher token usage reflects the cost of semantic analysis required for redundancy suppression and improved contract-groundedness.}
+\label{fig3}
+\end{figure}
 
 \section{Discussion}
 
@@ -376,13 +429,13 @@ The results of this study highlight a fundamental mismatch between existing inte
 
 A central insight from the evaluation is that agent turns do not reliably correspond to semantic progression in multi-agent reasoning. Turn-based summarization compresses heterogeneous content into single updates, leading to reduced coverage and weaker grounding. Conversely, EXAIM's event-driven approach decouples explanation timing from generation mechanics, allowing clinically meaningful updates to be surfaced at sub-turn granularity. This finding suggests that explainability mechanisms should treat reasoning streams as continuous processes rather than discrete conversational exchanges. For system designers, this implies that transparency should be mediated by semantic state changes rather than orchestration artifacts.
 
-\subsection{Semantic Buffering as Cognitive Mediation}
+\subsection{Semantic Buffering as Update Stream Control}
 
-The ablation results demonstrate that semantic buffering is essential for balancing transparency and cognitive load. Without semantic filtering, the system overwhelms users with frequent, low-value updates; without novelty gating, it surfaces marginal informational gains at the cost of excessive interruption. EXAIM's buffering strategy effectively converts high-frequency, verbose reasoning streams into sparse, high-signal clinician-facing updates. This behavior positions EXAIM not as an explanation generator, but as a cognitive mediation layer—one that regulates information flow to align with human attentional constraints. Such mediation is particularly important in safety-critical environments, where excessive transparency can be as harmful as insufficient transparency.
+The ablation results demonstrate that semantic buffering is essential for balancing transparency and update frequency. Without semantic filtering, the system produces frequent, low-value updates that reduce information density; without novelty gating, it surfaces marginal informational gains at the cost of excessive interruption. EXAIM's buffering strategy effectively converts high-frequency, verbose reasoning streams into sparse, high-signal clinician-facing updates. This behavior positions EXAIM not as an explanation generator, but as an update stream control layer—one that regulates information flow through redundancy suppression and update frequency regularization. Such control is particularly important in high-stakes environments, where excessive transparency can be as operationally undesirable as insufficient transparency.
 
-\subsection{Trade-offs Between Coverage and Usability}
+\subsection{Trade-offs Between Coverage and Update Frequency}
 
-The evaluation reveals an inherent trade-off between maximal information coverage and operational usability. Variants without novelty filtering achieve slightly higher coverage by surfacing incremental updates, but at the cost of significantly higher interruption frequency. EXAIM explicitly prioritizes usability by suppressing low-impact updates, accepting a small reduction in total coverage to maintain clinician focus. This trade-off reflects a broader principle in clinical system design: explainability must be selective rather than exhaustive. Transparency that disrupts workflow or induces alert fatigue undermines its own value.
+The evaluation reveals an inherent trade-off between maximal information coverage and interruption rate/output volume. Variants without novelty filtering achieve slightly higher coverage by surfacing incremental updates, but at the cost of significantly higher interruption frequency. EXAIM explicitly prioritizes stream efficiency by suppressing low-impact updates, accepting a small reduction in total coverage to regularize update frequency. This trade-off reflects a broader principle in clinical system design: explainability must be selective rather than exhaustive. Transparency that increases update frequency and redundancy undermines its own operational value.
 
 \subsection{Implications for Clinical AI System Design}
 
@@ -396,7 +449,17 @@ The findings suggest several implications for future clinical AI systems:
 
 Collectively, these insights support a shift from explanation-as-output toward explanation-as-process in clinical AI design.
 
-\section{Limitations}
+\section{Conclusion}
+
+Multi-agent large language model systems offer powerful capabilities for clinical decision support, but their adoption is constrained by the difficulty of interpreting verbose, distributed reasoning processes in real time. Existing explainability approaches largely operate post hoc or expose raw reasoning traces without regard for update frequency and redundancy suppression, limiting their utility in time-sensitive clinical environments.
+
+This paper introduced EXAIM, a real-time middleware architecture for process-level explainability in multi-agent clinical decision support systems. By decoupling transparency from diagnostic reasoning, EXAIM regulates streaming agent outputs through semantic event detection and schema-constrained summarization. The architecture enables incremental, clinician-aligned updates that preserve attribution and uncertainty while suppressing redundant or low-value information.
+
+Through a controlled ablation study on multi-agent clinical reasoning traces, we demonstrated that semantic buffering significantly improves information coverage and faithfulness while reducing redundancy compared to turn-based and heuristic baselines. These gains are achieved with modest computational overhead, highlighting the feasibility of middleware-level explainability for real-world deployment.
+
+More broadly, this work reframes explainability in clinical AI as a problem of information mediation rather than explanation exposure. As multi-agent systems become increasingly prevalent in high-stakes domains, architectures like EXAIM illustrate how real-time transparency can be achieved without inducing high-frequency, low-yield update streams or constraining upstream reasoning. Future clinical AI systems can build on this approach to deliver explainability that is not only faithful, but operationally effective.
+
+\subsection{Limitations}
 
 This study has several limitations that warrant consideration. First, the evaluation relies on replayed reasoning traces rather than live clinical deployment. While this approach enables controlled, reproducible comparison across variants, it does not capture downstream effects on clinician behavior, trust, or decision quality. Future work should incorporate human-in-the-loop evaluations to assess real-world impact.
 
@@ -405,16 +468,6 @@ Second, the dataset consists of rare-disease diagnostic cases, which tend to pro
 Third, semantic event detection in EXAIM relies on LLM-based analysis, which introduces additional computational cost. While the observed latency remains acceptable for reading tasks, future work could explore lightweight classifiers or distilled models to reduce overhead without sacrificing semantic sensitivity.
 
 Finally, the evaluation employs automated proxy metrics to assess coverage, redundancy, and faithfulness. Although these metrics are grounded in prior work, they cannot fully capture clinical nuance or contextual relevance. Complementary qualitative evaluation will be necessary to validate the practical utility of the system.
-
-\section{Conclusion}
-
-Multi-agent large language model systems offer powerful capabilities for clinical decision support, but their adoption is constrained by the difficulty of interpreting verbose, distributed reasoning processes in real time. Existing explainability approaches largely operate post hoc or expose raw reasoning traces without regard for cognitive load, limiting their utility in time-sensitive clinical environments.
-
-This paper introduced EXAIM, a real-time middleware architecture for process-level explainability in multi-agent clinical decision support systems. By decoupling transparency from diagnostic reasoning, EXAIM regulates streaming agent outputs through semantic event detection and schema-constrained summarization. The architecture enables incremental, clinician-aligned updates that preserve attribution and uncertainty while suppressing redundant or low-value information.
-
-Through a controlled ablation study on multi-agent clinical reasoning traces, we demonstrated that semantic buffering significantly improves information coverage and faithfulness while reducing redundancy compared to turn-based and heuristic baselines. These gains are achieved with modest computational overhead, highlighting the feasibility of middleware-level explainability for real-world deployment.
-
-More broadly, this work reframes explainability in clinical AI as a problem of information mediation rather than explanation exposure. As multi-agent systems become increasingly prevalent in high-stakes domains, architectures like EXAIM illustrate how real-time transparency can be achieved without overwhelming users or constraining upstream reasoning. Future clinical AI systems can build on this approach to deliver explainability that is not only faithful, but operationally effective.
 
 \section*{Acknowledgment}
 
@@ -469,7 +522,7 @@ The authors would like to thank the reviewers for their valuable feedback and su
 
 \bibitem{b24} A. Ehtesham, A. Singh, and S. Kumar, ``Enhancing Clinical Decision Support and EHR Insights through LLMs and the Model Context Protocol: An Open-Source MCP-FHIR Framework,'' \textit{arXiv preprint arXiv:2506.13800}, 2025.
 
-\bibitem{b25} B. J. vom, A. Hevner, and A. Maedche, ``Introduction to design science research,'' in \textit{Design Science Research. Cases}. Switzerland: Springer Cham, Sep. 24, 2020, ch. 13.
+\bibitem{b25} K. Peffers, T. Tuunanen, M. Rothenberger, and S. Chatterjee, ``A design science research methodology for information systems research,'' \textit{J. Management Information Systems}, vol. 24, no. 3, pp. 45--77, 2007.
 
 \end{thebibliography}
 
