@@ -11,6 +11,13 @@
 \graphicspath{{evals/data/metrics/figures/final/}}
 \usepackage{textcomp}
 \usepackage{xcolor}
+\usepackage{array}
+\usepackage[most]{tcolorbox}
+
+% Churkin Protocol: Color Palette (Harmonious & Minimal)
+\definecolor{churkinpurple}{RGB}{94,45,121}    % #5E2D79 (for State)
+\definecolor{statusgreen}{RGB}{34,139,34}      % #228B22 (Green for True - Success)
+\definecolor{statusred}{RGB}{255,99,71}       % #FF6347 (Light Red/Tomato for False - Stop/Suppressed)
 
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
@@ -148,13 +155,11 @@ EXAIM is motivated by the observation that existing explainability approaches fo
 
 A foundational design decision in EXAIM is to implement explainability at the middleware level rather than within individual diagnostic agents. Embedding explainability mechanisms directly into agent prompts or reasoning strategies risks entangling transparency with diagnostic performance, complicating validation and limiting portability across systems. By positioning EXAIM as an intermediary layer, explainability is decoupled from reasoning generation. This separation of concerns enables independent evolution of diagnostic agents and explanation mechanisms, supports integration with heterogeneous multi-agent frameworks, and preserves upstream system behavior. Middleware-level intervention also allows EXAIM to observe the full interaction among agents, rather than isolated reasoning fragments, which is essential for process-level transparency.
 
-\subsection{Event-Driven Rather Than Turn-Based Updates}
+\subsection{Semantic-Driven Update Strategy}
 
-Traditional conversational interfaces rely on agent turn boundaries to structure interaction. While effective in human dialogue systems, turn-taking is a poor proxy for semantic progression in multi-agent LLM systems. A single agent turn may contain exploratory reasoning, multiple topic transitions, or internal debate, whereas clinically meaningful changes may occur mid-turn. EXAIM therefore adopts an event-driven update strategy in which summaries are triggered by semantic change rather than generation mechanics. This design aligns updates with clinically salient moments, such as the emergence of new evidence, shifts in diagnostic focus, or safety-critical findings. By decoupling update timing from turn structure, EXAIM avoids lossy compression and reduces redundant updates.
+EXAIM's update mechanism operates on semantic content rather than structural or mechanical properties, addressing both when to trigger updates and how to evaluate content relevance. Traditional approaches rely on either turn boundaries or fixed thresholds—both of which are poor proxies for semantic progression in multi-agent LLM systems. Turn-based summarization assumes that agent turn boundaries correspond to meaningful semantic transitions, but a single agent turn may contain exploratory reasoning, multiple topic transitions, or internal debate, whereas clinically meaningful changes may occur mid-turn. Similarly, fixed thresholds—such as token counts or time intervals—are computationally simple but insensitive to content, often producing fragmented or repetitive updates.
 
-\subsection{Semantic Filtering Over Heuristic Thresholding}
-
-Many streaming summarization systems rely on fixed thresholds—such as token counts or time intervals—to determine when to summarize. While computationally simple, such heuristics are insensitive to content and often produce fragmented or repetitive updates. EXAIM instead evaluates semantic properties of the reasoning stream, including completeness, relevance, and novelty. This filtering strategy allows the middleware to distinguish between verbosity and progression, suppressing repetitive grounding statements while surfacing genuinely new diagnostic information. Semantic filtering also enables EXAIM to adapt to variability in agent behavior, case complexity, and reasoning style without requiring manual retuning of thresholds for each deployment.
+EXAIM therefore adopts a unified semantic-driven strategy that addresses both timing and content evaluation. For update timing, EXAIM uses an event-driven approach in which summaries are triggered by semantic change rather than generation mechanics. This design aligns updates with clinically salient moments, such as the emergence of new evidence, shifts in diagnostic focus, or safety-critical findings. For content evaluation, EXAIM assesses semantic properties of the reasoning stream—including completeness, relevance, and novelty—rather than relying on heuristic thresholds. This filtering strategy allows the middleware to distinguish between verbosity and progression, suppressing repetitive grounding statements while surfacing genuinely new diagnostic information. By decoupling update timing from turn structure and content evaluation from mechanical thresholds, EXAIM avoids lossy compression and reduces redundant updates, while also enabling adaptation to variability in agent behavior, case complexity, and reasoning style without requiring manual retuning of thresholds for each deployment. Together, these design decisions position semantic content as the primary signal for update decisions, ensuring that transparency mechanisms respond to meaningful clinical progression rather than structural artifacts of the reasoning process.
 
 \subsection{Novelty Gating for Update Stream Control}
 
@@ -230,7 +235,110 @@ Strict structural and length constraints are enforced to ensure consistency, rea
 
 \subsubsection{Case Walkthrough}
 
-[PLACEHOLDER: A specific example showing a raw input string from multi-agent reasoning traces being transformed into an EXAIM summary. This should demonstrate the complete pipeline from raw tokens through TokenGate, BufferAgent, and SummarizerAgent to the final structured summary output.]
+To demonstrate EXAIM's semantic filtering and redundancy detection mechanisms, we analyze a specific interaction sequence from a multi-agent reasoning trace (Case ID: 3949). This trace was generated using the MAC Framework (described in Section V-A), which simulates a team of diagnostic agents collaborating on a complex medical case.
+
+\textbf{1. Context State (Pre-Condition)} Prior to this segment, doctor0 and doctor1 had already established Spinocerebellar Ataxia (SCA) as the leading diagnosis. The middleware had generated summaries capturing this consensus and the recommended genetic tests (Log ID: summary\_3). The active buffer was empty.
+
+\textbf{2. The Raw Input Stream} doctor2 then enters the discussion. The agent generates a verbose response concurring with the previous agents and re-stating the established diagnosis.
+
+\textit{Raw Trace (doctor2):} ``\textit{\#\#\# Most Likely Diagnosis: Spinocerebellar Ataxia (SCA): I concur with both Doctor0 and Doctor1 that the most likely diagnosis is spinocerebellar ataxia... The gradual onset at age 30 years also aligns with hereditary SCAs... \#\#\# Differential Diagnoses: 1. Multiple Systems Atrophy (MSA): While I agree that MSA typically presents with...}''
+
+\textbf{3. BufferAgent Logic (Internal Rationale)} While the dashboard remained visually static (see Fig.~\ref{fig:suppression-demo}), the middleware was actively analyzing the stream. As visualized in Fig.~\ref{fig:logic-card}, the system detected semantic redundancy through its multi-stage evaluation process. Despite the input's clinical relevance, the novelty check failed, causing the middleware to suppress the update and prevent redundancy.
+
+\begin{figure}[h]
+    \centering
+    \begin{tcolorbox}[
+        enhanced,
+        colback=white,
+        colframe=black,
+        boxrule=0.5mm,
+        arc=2mm,
+        drop shadow,
+        left=4mm,
+        right=4mm,
+        top=2mm,
+        bottom=2mm,
+        title=\textbf{BufferAgent Status [doctor2]},
+        fonttitle=\bfseries\normalsize,
+        coltitle=black,
+        colbacktitle=white,
+        halign title=center,
+        fontupper=\normalsize
+    ]
+        \normalsize
+        
+        \textbf{Input Stream:}
+        \vspace{-1mm}
+        \begin{quote}
+            \itshape "...I concur with both Doctor0 and Doctor1... adding no new information."
+        \end{quote}
+        \vspace{1.5mm}
+        
+        \textbf{Decision Flags:}
+        \vspace{0.5mm}
+        
+        \begin{center}
+        \begin{tabular}{@{}c@{}}
+            \raisebox{5pt}{State} \\
+            \tcbox[colback=churkinpurple!15, colframe=churkinpurple, size=small, boxrule=0.5mm, left=2mm, right=2mm, top=0.5mm, bottom=0.5mm, fontupper=\normalsize]{\textcolor{churkinpurple}{\texttt{SAME\_TOPIC\_CONTINUING}}}
+        \end{tabular}
+        \end{center}
+        
+        \vspace{0.1mm}
+        \begin{center}
+        \begin{tabular}{@{}c@{\hspace{2mm}}c@{\hspace{2mm}}c@{}}
+            \begin{tabular}{@{}c@{}}
+                \raisebox{5pt}{Complete} \\[-3pt]
+                \tcbox[colback=statusgreen!15, colframe=statusgreen, size=small, boxrule=0.5mm, left=2mm, right=2mm, top=0.2mm, bottom=0.2mm, fontupper=\normalsize]{\textcolor{statusgreen}{\textbf{True}}}
+            \end{tabular} &
+            \begin{tabular}{@{}c@{}}
+                \raisebox{5pt}{Relevant} \\[-3pt]
+                \tcbox[colback=statusgreen!15, colframe=statusgreen, size=small, boxrule=0.5mm, left=2mm, right=2mm, top=0.2mm, bottom=0.2mm, fontupper=\normalsize]{\textcolor{statusgreen}{\textbf{True}}}
+            \end{tabular} &
+            \begin{tabular}{@{}c@{}}
+                \raisebox{5pt}{Novel} \\[-3pt]
+                \tcbox[colback=statusred!15, colframe=statusred, size=small, boxrule=0.5mm, left=2mm, right=2mm, top=0.2mm, bottom=0.2mm, fontupper=\normalsize]{\textcolor{statusred}{\textbf{False}}}
+            \end{tabular} \\
+        \end{tabular}
+        \end{center}
+        \vspace{-2mm}
+        \begin{center}
+            $\downarrow$
+        \end{center}
+        \vspace{-2mm}
+        \begin{center}
+            \tcbox[
+                enhanced,
+                colback=statusred!20,
+                colframe=statusred,
+                boxrule=0.5mm,
+                size=normal,
+                fontupper=\bfseries\normalsize,
+                left=3mm,
+                right=3mm,
+                top=0.5mm,
+                bottom=0.5mm
+            ]{\textcolor{statusred}{Trigger = False (Suppressed)}}
+        \end{center}
+        
+        \vspace{0.1mm}
+        \noindent\rule{\linewidth}{0.5mm}
+        \vspace{0.5mm}
+        
+        \textbf{Rationale:} Doctor2 concurs with SCA based on ataxia/dysarthria/MRI... adding no new information. The content is \textcolor{statusgreen}{relevant} as it details planned actions, but it is \textcolor{statusred}{not novel} as these details were already broadly mentioned in previous summaries.
+    \end{tcolorbox}
+    \caption{BufferAgent System Status Card showing the hierarchical decision logic. Three evaluation conditions (\textcolor{statusgreen}{Complete=True}, \textcolor{statusgreen}{Relevant=True}, \textcolor{statusred}{Novel=False}) combine to produce the final result: \textcolor{statusred}{Trigger=False (Suppressed)}, preventing redundant update generation.}
+    \label{fig:logic-card}
+\end{figure}
+
+\begin{figure*}[htbp]
+\centering
+\includegraphics[width=\textwidth]{figure4/CaseWalkthroughImage.png}
+\caption{The EXAIM dashboard during redundancy suppression. The left panel shows the raw, verbose stream from doctor2 concurring with the diagnosis. The right panel remains static (displaying the previous doctor1 update), visually confirming that the middleware successfully filtered the non-novel content.}
+\label{fig:suppression-demo}
+\end{figure*}
+
+\textbf{4. Outcome} Consequently, EXAIM filtered this update, preventing the generation of a low-value summary. The middleware continued to buffer doctor2's subsequent tokens silently until the agent introduced specific new details regarding ``High-Resolution MRI techniques'' and ``Oligoclonal bands,'' which finally triggered a consolidated, high-density update.
 
 \section{Evaluation}
 
