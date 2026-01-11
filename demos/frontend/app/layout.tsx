@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Space_Grotesk } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-space-grotesk",
-  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-inter",
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -19,10 +19,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+    <html lang="en" className="dark" style={{ fontFamily: 'var(--font-inter)' }}>
       <body
-        className={`${spaceGrotesk.variable} antialiased`}
-        style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
+        className={`${inter.variable} antialiased`}
+        style={{ 
+          fontFamily: 'var(--font-inter), sans-serif',
+          WebkitFontSmoothing: 'antialiased',
+          MozOsxFontSmoothing: 'grayscale'
+        }}
       >
         {children}
         {/* Portal container for modal */}
