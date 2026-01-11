@@ -198,6 +198,8 @@ To maintain low latency and avoid dependencies on model-specific tokenizers (e.g
 \item \textbf{Safety Valves:} To guarantee upper-bound latency during verbose generation, a hard flush is forced if the buffer exceeds max\_words=100 or a max\_wait\_timeout of 4.0s, regardless of boundary cues.
 \end{itemize}
 
+These parameter values were selected through systematic calibration across 625 policy combinations using multi-objective optimization (see Section V.A.1).
+
 \subsubsection{Semantic Buffering and Event Detection (BufferAgent)}
 
 The core innovation of EXAIM lies in its semantic buffering layer, which determines when a clinician-facing update should be generated. Rather than triggering summaries at fixed intervals or agent turn boundaries, EXAIM evaluates the semantic content of buffered segments to detect meaningful reasoning events.
@@ -241,6 +243,14 @@ To evaluate the EXAIM middleware, we utilized the Multi-Agent Conversation (MAC)
 For this study, we instrumented the MAC framework to capture the real-time dynamics of these multi-agent interactions. Specifically, we modified the upstream codebase to log granular stream deltas (chunk-level text outputs) and precise generation timestamps (both absolute and relative to the turn start) during the agent reasoning process. This instrumentation enables us to capture the exact cadence of token generation without altering the agents' underlying prompts, roles, or decision-making logic.
 
 The resulting outputs are stored as frozen replay traces. These traces allow us to simulate a live stream deterministically, feeding identical token sequences and timing delays into the EXAIM middleware across all experimental runs. This decoupling ensures that any measured variance in latency or summarization quality is attributable solely to the EXAIM configuration, rather than stochastic variations in the upstream diagnostic agents.
+
+\subsubsection{TokenGate Parameter Calibration}
+
+The TokenGate component requires four configurable parameters: minimum word threshold (min\_words), maximum word threshold (max\_words), silence detection timer (silence\_timer), and maximum wait timeout (max\_wait\_timeout). To ensure reproducible parameter selection, we conducted systematic calibration across a grid of 625 policy combinations evaluated on frozen replay traces. The parameter grid explored min\_words $\in$ [30, 40, 50, 60, 70], max\_words $\in$ [80, 100, 120, 140, 160], silence\_timer $\in$ [1.0, 1.5, 2.0, 2.5, 3.0] seconds, and max\_wait\_timeout $\in$ [4.0, 5.0, 6.0, 7.0, 8.0] seconds, with validity constraints ensuring min\_words $<$ max\_words and max\_wait\_timeout $\geq$ silence\_timer.
+
+Each policy was evaluated using metrics that balance latency, computational cost, and semantic coherence: time-to-first-flush (TTFF), average flush frequency per case, median chunk size, spam percentage (flushes below 70\% of min\_words threshold), and worst-case wait times. Policies were filtered through hard constraints: spam percentage $\leq$ 10\%, timer-triggered flushes below min\_words $\leq$ 20\%, median chunk size $\geq$ 50 words, flush count $\leq$ 100 per case, and maximum chunk size $\leq$ 180 words. Derived constraints from trace timing distributions were also applied to ensure policies respect realistic token generation cadences.
+
+From the surviving policies that passed all constraints, selection employed a three-objective Pareto frontier analysis optimizing simultaneously for low TTFF, low flush frequency, and high median chunk size. Objectives were normalized to a [0,1] goodness space using percentile-based bounds computed from survivor policies. The policy with minimum dimension-normalized Euclidean distance to the utopia point (1, 1, 1) was selected, ensuring balanced optimization across all three objectives. This process selected min\_words=60, max\_words=100, silence\_timer=1.0s, and max\_wait\_timeout=4.0s, which balance low latency (rapid first flush), moderate flush frequency (reducing BufferAgent computational overhead), and semantic coherence (sufficient chunk size for meaningful boundary detection).
 
 \subsubsection{EXAIM Implementation Details}
 
