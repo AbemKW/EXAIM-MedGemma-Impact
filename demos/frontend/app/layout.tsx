@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import ThemeProvider from "@/components/ThemeProvider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -19,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" style={{ fontFamily: 'var(--font-inter)' }}>
+    <html lang="en" style={{ fontFamily: 'var(--font-inter)' }} suppressHydrationWarning>
       <body
         className={`${inter.variable} antialiased`}
         style={{ 
@@ -28,7 +29,27 @@ export default function RootLayout({
           MozOsxFontSmoothing: 'grayscale'
         }}
       >
-        {children}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  const theme = localStorage.getItem('theme') || 'dark';
+                  if (theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                  } else {
+                    document.documentElement.classList.remove('dark');
+                  }
+                } catch (e) {
+                  document.documentElement.classList.add('dark');
+                }
+              })();
+            `,
+          }}
+        />
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
         {/* Portal container for modal */}
         <div id="modal-portal" />
       </body>

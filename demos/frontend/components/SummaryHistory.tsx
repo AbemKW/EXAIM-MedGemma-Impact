@@ -64,11 +64,11 @@ export default function SummaryHistory({ onSummarySelect }: SummaryHistoryProps)
   }
 
   return (
-    <Card className="flex flex-col h-full bg-card/30 backdrop-blur-xl border-white/10 glass-card">
+    <Card className="flex flex-col h-full bg-card/30 backdrop-blur-xl border-border/50 dark:border-white/10 glass-card">
       {/* Panel Header */}
-      <CardHeader className="bg-gradient-to-r from-zinc-950/40 to-zinc-900/30 backdrop-blur-md border-b border-white/10 py-3 px-5 glass-header flex-shrink-0">
+      <CardHeader className="bg-gradient-to-r from-muted/60 to-muted/40 dark:from-zinc-950/40 dark:to-zinc-900/30 backdrop-blur-md border-b border-border/50 dark:border-white/10 py-3 px-5 glass-header flex-shrink-0">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-xl font-bold">Summary Timeline</CardTitle>
+          <CardTitle className="text-xl font-bold text-foreground">Summary Timeline</CardTitle>
           <Badge variant="secondary" className="text-sm">
             {summaries.length} summar{summaries.length !== 1 ? 'ies' : 'y'}
           </Badge>

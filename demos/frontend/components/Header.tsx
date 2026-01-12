@@ -3,12 +3,15 @@
 import { useWsStatus, useCDSSStore, useActiveAgents } from '@/store/cdssStore';
 import { Badge } from '@/components/ui/badge';
 import TypingIndicator from './TypingIndicator';
+import ThemeToggle from './ThemeToggle';
+import { useTheme } from '@/hooks/useTheme';
 
 export default function Header() {
   const wsStatus = useWsStatus();
   const reconnectAttempts = useCDSSStore((state) => state.reconnectAttempts);
   const activeAgents = useActiveAgents();
   const activeAgentCount = activeAgents.size;
+  const { theme } = useTheme();
 
   const getStatusVariant = () => {
     switch (wsStatus) {
@@ -48,7 +51,7 @@ export default function Header() {
       <div className="max-w-[1800px] w-full mx-auto flex justify-between items-center h-full">
         <div className="flex items-center gap-3">
           <img
-            src="/EXAIMLogo.png"
+            src={theme === 'dark' ? '/EXAIMLogo.png' : '/EXAIMLogoLightTheme.png'}
             alt="EXAIM Logo"
             width={200}
             height={200}
@@ -82,6 +85,7 @@ export default function Header() {
             <span className={`w-2 h-2 rounded-full ${getStatusDotClass()}`} />
             {getStatusText()}
           </Badge>
+          <ThemeToggle />
         </div>
       </div>
     </header>

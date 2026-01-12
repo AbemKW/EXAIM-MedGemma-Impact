@@ -1,4 +1,4 @@
-"""Figure 3: Price of Transparency (Computational Cost)
+"""Computational Overhead Bar Chart
 
 Compares Latency (s) vs Relative Token Usage for V0 (Full EXAIM) vs V1 (Turn-Based).
 Justifies the "modest computational overhead" mentioned in the abstract and results.
@@ -13,12 +13,12 @@ from matplotlib.ticker import MultipleLocator
 import numpy as np
 
 
-def generate_figure3(metrics_data: Dict, output_dir: Path) -> None:
-    """Generate Figure 3: Price of Transparency (Computational Cost)
+def generate_computational_overhead(metrics_data: Dict, output_dir: Path) -> None:
+    """Generate Computational Overhead Bar Chart
     
     Args:
         metrics_data: Dictionary containing metrics data from aggregate.metrics.json
-        output_dir: Directory to save the figure (will create figure3/ subdirectory)
+        output_dir: Directory to save the figure (will create raw/computational_overhead/ subdirectory)
     """
     # Extract latency data (convert ms to seconds)
     v0_latency_ms = metrics_data['variants']['V0']['m8_latency_ms_mean']['summary']
@@ -173,18 +173,18 @@ def generate_figure3(metrics_data: Dict, output_dir: Path) -> None:
     # Code writes to raw/ folder (safe to overwrite anytime)
     # Human edits raw/ and saves to final/ folder
     # LaTeX reads only from final/ folder
-    raw_dir = output_dir / 'raw' / 'figure3'
+    raw_dir = output_dir / 'raw' / 'computational_overhead'
     raw_dir.mkdir(parents=True, exist_ok=True)
     
     # Churkin Protocol: Export Format
-    svg_path = raw_dir / 'figure3.svg'
-    pdf_path = raw_dir / 'figure3.pdf'
+    svg_path = raw_dir / 'computational_overhead.svg'
+    pdf_path = raw_dir / 'computational_overhead.pdf'
     
     plt.savefig(svg_path, bbox_inches='tight', pad_inches=0.1, format='svg')
-    print(f"Figure 3 (raw) saved as {svg_path}")
+    print(f"Computational Overhead (raw) saved as {svg_path}")
     
     plt.savefig(pdf_path, bbox_inches='tight', pad_inches=0.1, format='pdf')
-    print(f"Figure 3 (raw) saved as {pdf_path}")
+    print(f"Computational Overhead (raw) saved as {pdf_path}")
     
     plt.close()
 
