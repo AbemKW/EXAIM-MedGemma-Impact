@@ -6,9 +6,10 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import ConsoleLogEntry from './ConsoleLogEntry';
+import { useTheme } from '@/hooks/useTheme';
 
 // Generate consistent color for an agent name using hash
-function getAgentColor(agentName: string): string {
+function getAgentColor(agentName: string, isDark: boolean): string {
   let hash = 0;
   for (let i = 0; i < agentName.length; i++) {
     hash = agentName.charCodeAt(i) + ((hash << 5) - hash);
@@ -17,7 +18,10 @@ function getAgentColor(agentName: string): string {
   // Generate a color in the blue-green-purple range (console-friendly)
   const hue = (hash % 180) + 180; // 180-360 range (blue to purple)
   const saturation = 60 + (hash % 20); // 60-80%
-  const lightness = 65 + (hash % 15); // 65-80%
+  // Adjust lightness based on theme: darker for light theme, lighter for dark theme
+  const lightness = isDark 
+    ? 65 + (hash % 15) // 65-80% for dark theme
+    : 35 + (hash % 10); // 35-45% for light theme (darker for better contrast)
   
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 }
@@ -29,17 +33,19 @@ export default function AgentTracesPanel() {
   const consoleRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
   const [showGoToLatest, setShowGoToLatest] = useState(false);
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
   // Create a map of agent colors for consistency
   const agentColors = useMemo(() => {
     const colorMap = new Map<string, string>();
     agents.forEach(agent => {
       if (!colorMap.has(agent.agentName)) {
-        colorMap.set(agent.agentName, getAgentColor(agent.agentName));
+        colorMap.set(agent.agentName, getAgentColor(agent.agentName, isDark));
       }
     });
     return colorMap;
-  }, [agents]);
+  }, [agents, isDark]);
 
   // Check if user is at the bottom of the scroll container
   const isAtBottom = useCallback((element: HTMLDivElement, threshold = 50): boolean => {
@@ -219,11 +225,11 @@ export default function AgentTracesPanel() {
   }, [agents]);
 
   return (
-    <Card className="flex flex-col overflow-hidden h-full console-panel bg-card/30 backdrop-blur-xl border-white/10 glass-card">
+    <Card className="flex flex-col overflow-hidden h-full console-panel bg-card/30 backdrop-blur-xl border-border/50 dark:border-white/10 glass-card">
       {/* Panel Header */}
-      <CardHeader className="bg-gradient-to-r from-zinc-950/40 to-zinc-900/30 backdrop-blur-md border-b border-white/10 py-3 px-5 glass-header">
+      <CardHeader className="bg-gradient-to-r from-muted/60 to-muted/40 dark:from-zinc-950/40 dark:to-zinc-900/30 backdrop-blur-md border-b border-border/50 dark:border-white/10 py-3 px-5 glass-header">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-xl font-bold">Raw Agent Traces</CardTitle>
+          <CardTitle className="text-xl font-bold text-foreground">Raw Agent Traces</CardTitle>
           <div className="flex gap-2 items-center">
             <Badge variant="secondary" className="text-sm">
               {totalWords.toLocaleString()} word{totalWords !== 1 ? 's' : ''}

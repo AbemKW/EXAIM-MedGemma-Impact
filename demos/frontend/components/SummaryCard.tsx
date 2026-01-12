@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { useCDSSStore } from '@/store/cdssStore';
 import type { Summary } from '@/lib/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { useTheme } from '@/hooks/useTheme';
 
 interface SummaryCardProps {
   summary: Summary;
@@ -28,42 +29,47 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({
     });
   };
 
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  // Use theme-aware background colors - more visible in light theme
+  const bgOpacity = isDark ? 0.04 : 0.12;
+  
   const fields = [
     { 
       label: 'Status / Action', 
       value: summary.data.status_action,
       color: 'var(--summary-status-action)',
-      bgColor: 'oklch(0.50 0.08 260 / 0.04)',
+      bgColor: `oklch(0.50 0.08 260 / ${bgOpacity})`,
     },
     { 
       label: 'Key Findings', 
       value: summary.data.key_findings,
       color: 'var(--summary-key-findings)',
-      bgColor: 'oklch(0.55 0.08 150 / 0.04)',
+      bgColor: `oklch(0.55 0.08 150 / ${bgOpacity})`,
     },
     { 
       label: 'Differential & Rationale', 
       value: summary.data.differential_rationale,
       color: 'var(--summary-differential)',
-      bgColor: 'oklch(0.50 0.08 300 / 0.04)',
+      bgColor: `oklch(0.50 0.08 300 / ${bgOpacity})`,
     },
     { 
       label: 'Uncertainty / Confidence', 
       value: summary.data.uncertainty_confidence,
       color: 'var(--summary-uncertainty)',
-      bgColor: 'oklch(0.58 0.08 60 / 0.04)',
+      bgColor: `oklch(0.58 0.08 60 / ${bgOpacity})`,
     },
     { 
       label: 'Recommendation / Next Step', 
       value: summary.data.recommendation_next_step,
       color: 'var(--summary-recommendation)',
-      bgColor: 'oklch(0.50 0.08 180 / 0.04)',
+      bgColor: `oklch(0.50 0.08 180 / ${bgOpacity})`,
     },
     { 
       label: 'Agent Contributions', 
       value: summary.data.agent_contributions,
       color: 'var(--summary-contributions)',
-      bgColor: 'oklch(0.50 0.03 0 / 0.04)',
+      bgColor: `oklch(0.50 0.03 0 / ${bgOpacity})`,
     },
   ];
 
@@ -79,11 +85,11 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({
         transition={{ duration: 0.3 }}
         data-summary-id={summary.id}
       >
-        <Card className="overflow-hidden transition-all duration-300 border-white/20 bg-teal-950/30 backdrop-blur-xl shadow-2xl glass-card spotlight-glow h-full flex flex-col">
+        <Card className="overflow-hidden transition-all duration-300 border-border/50 bg-card/80 dark:bg-teal-950/30 backdrop-blur-xl shadow-2xl glass-card spotlight-glow h-full flex flex-col">
           {/* Header */}
-          <CardHeader className="py-1.5 px-2 border-b border-white/10 flex-shrink-0">
+          <CardHeader className="py-1.5 px-2 border-b border-border/30 dark:border-white/10 flex-shrink-0">
             <div className="flex justify-between items-center">
-              <CardTitle className="text-sm font-bold text-teal-100 leading-tight">
+              <CardTitle className="text-sm font-bold text-foreground dark:text-teal-100 leading-tight">
                 {summary.data.status_action}
               </CardTitle>
               <span className="text-xs text-muted-foreground font-medium flex-shrink-0 ml-2">
@@ -98,11 +104,11 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({
               {fields.map((field, index) => (
                 <div 
                   key={index} 
-                  className="summary-field-group rounded-lg p-1 transition-all backdrop-blur-md border border-white/10 hover:border-white/20 min-h-0"
+                  className="summary-field-group rounded-lg p-1 transition-all backdrop-blur-md border border-border/50 dark:border-white/10 hover:border-border dark:hover:border-white/20 min-h-0"
                   style={{
                     borderLeft: `2px solid ${field.color}`,
                     backgroundColor: field.bgColor,
-                    boxShadow: 'inset 0 1px 1px 0 rgba(255, 255, 255, 0.05)',
+                    boxShadow: 'inset 0 1px 1px 0 rgba(0, 0, 0, 0.05)',
                   }}
                 >
                   <div 
@@ -137,7 +143,7 @@ const SummaryCard = forwardRef<HTMLDivElement, SummaryCardProps>(({
       data-summary-id={summary.id}
     >
       <Card 
-        className="overflow-hidden transition-all duration-200 border-white/10 bg-card/40 backdrop-blur-md hover:bg-card/60 hover:border-white/20 cursor-pointer glass-card"
+        className="overflow-hidden transition-all duration-200 border-border/50 dark:border-white/10 bg-card/60 dark:bg-card/40 backdrop-blur-md hover:bg-card/80 dark:hover:bg-card/60 hover:border-border dark:hover:border-white/20 cursor-pointer glass-card"
         onClick={onClick}
       >
         {/* Header - Clickable */}

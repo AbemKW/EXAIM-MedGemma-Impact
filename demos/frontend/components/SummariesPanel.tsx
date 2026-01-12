@@ -56,11 +56,11 @@ export default function SummariesPanel() {
   }, [summaries, spotlightSummary]);
 
   return (
-    <Card className="flex flex-col overflow-hidden h-full bg-card/30 backdrop-blur-xl border-white/10 glass-card">
+    <Card className="flex flex-col overflow-hidden h-full bg-card/30 backdrop-blur-xl border-border/50 dark:border-white/10 glass-card">
       {/* Panel Header */}
-      <CardHeader className="bg-gradient-to-r from-zinc-950/40 to-zinc-900/30 backdrop-blur-md border-b border-white/10 py-3 px-5 glass-header">
+      <CardHeader className="bg-gradient-to-r from-muted/60 to-muted/40 dark:from-zinc-950/40 dark:to-zinc-900/30 backdrop-blur-md border-b border-border/50 dark:border-white/10 py-3 px-5 glass-header">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-xl font-bold">EXAIM Summaries</CardTitle>
+          <CardTitle className="text-xl font-bold text-foreground">EXAIM Summaries</CardTitle>
           <div className="flex items-center gap-2">
             <Button
               variant={comparisonMode ? 'default' : 'outline'}

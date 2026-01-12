@@ -1,4 +1,4 @@
-"""Figure 1: Core Ablation Cluster Bar Chart
+"""Ablation Comparison Bar Chart
 
 Shows Coverage, Faithfulness, and Redundancy across all variants (V0-V4).
 This is the "hero figure" comparing all ablation variants across critical metrics.
@@ -13,12 +13,12 @@ from matplotlib.ticker import MultipleLocator
 import numpy as np
 
 
-def generate_figure1(metrics_data: Dict, output_dir: Path) -> None:
-    """Generate Figure 1: Core Ablation Cluster Bar Chart
+def generate_ablation_comparison(metrics_data: Dict, output_dir: Path) -> None:
+    """Generate Ablation Comparison Bar Chart
     
     Args:
         metrics_data: Dictionary containing metrics data from aggregate.metrics.json
-        output_dir: Directory to save the figure (will create raw/figure1/ subdirectory)
+        output_dir: Directory to save the figure (will create raw/ablation_comparison/ subdirectory)
     """
     variants = ['V0', 'V1', 'V2', 'V3', 'V4']
     variant_labels = ['V0\n(Full EXAIM)', 'V1\n(Turn-Based)', 'V2\n(No BufferAgent)', 
@@ -131,18 +131,18 @@ def generate_figure1(metrics_data: Dict, output_dir: Path) -> None:
     plt.tight_layout(rect=[0, 0, 1, 0.92], pad=1.2)
     
     # Churkin Protocol: Separate Raw Assets from Production Assets
-    raw_dir = output_dir / 'raw' / 'figure1'
+    raw_dir = output_dir / 'raw' / 'ablation_comparison'
     raw_dir.mkdir(parents=True, exist_ok=True)
     
     # Churkin Protocol: Export Format
     # Save as PDF (for LaTeX) and SVG (for vector editing/Word)
-    svg_path = raw_dir / 'figure1.svg'
-    pdf_path = raw_dir / 'figure1.pdf'
+    svg_path = raw_dir / 'ablation_comparison.svg'
+    pdf_path = raw_dir / 'ablation_comparison.pdf'
     
     plt.savefig(svg_path, bbox_inches='tight', pad_inches=0.1, format='svg')
-    print(f"Figure 1 (raw) saved as {svg_path}")
+    print(f"Ablation Comparison (raw) saved as {svg_path}")
     
     plt.savefig(pdf_path, bbox_inches='tight', pad_inches=0.1, format='pdf')
-    print(f"Figure 1 (raw) saved as {pdf_path}")
+    print(f"Ablation Comparison (raw) saved as {pdf_path}")
     
     plt.close()

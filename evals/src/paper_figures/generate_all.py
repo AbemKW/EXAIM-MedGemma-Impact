@@ -36,14 +36,14 @@ def main():
     output_dir = metrics_path.parent / 'figures'
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    print("Generating Figure 1: Core Ablation Cluster Bar Chart...")
-    figure1.generate_figure1(metrics_data, output_dir)
+    print("Generating Ablation Comparison Bar Chart...")
+    figure1.generate_ablation_comparison(metrics_data, output_dir)
     
-    print("\nGenerating Figure 2: Efficiency Frontier Scatter Plot...")
-    figure2.generate_figure2(metrics_data, output_dir)
+    print("\nGenerating Efficiency Frontier Scatter Plot...")
+    figure2.generate_efficiency_frontier(metrics_data, output_dir)
     
-    print("\nGenerating Figure 3: Price of Transparency...")
-    figure3.generate_figure3(metrics_data, output_dir)
+    print("\nGenerating Computational Overhead Bar Chart...")
+    figure3.generate_computational_overhead(metrics_data, output_dir)
     
     print("\nAll figures generated successfully!")
     print(f"Figures saved to: {output_dir}")
