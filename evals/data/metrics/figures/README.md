@@ -78,3 +78,4 @@ In your LaTeX file (`paper.tex`), reference the **final** folder:
 4. **Version control**: Consider committing `final/` but not `raw/` (or use `.gitignore`)
 
 
+
