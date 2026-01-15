@@ -33,11 +33,11 @@
 Madison, SD, USA \\
 abem.woldesenbet@trojans.dsu.edu}
 \and
-\IEEEauthorblockN{Andrew Behrens}
+\IEEEauthorblockN{Andy Behrens}
 \IEEEauthorblockA{\textit{Information Systems, College of Business \& Information Systems} \\
 \textit{Dakota State University}\\
 Madison, SD, USA \\
-andrew.behrens@dsu.edu}
+andy.behrens@dsu.edu}
 }
 
 \maketitle
@@ -56,7 +56,7 @@ Clinical decision support systems (CDSS) increasingly employ multi-agent large l
 
 
 
-Existing approaches to explainability in clinical AI predominantly rely on post-hoc methods such as feature importance visualizations, attention maps, or static textual explanations generated after inference completion \cite{b6}. Although valuable for auditing model behavior, these methods are poorly aligned with real-time clinical workflows \cite{b7,b12}. They expose internal model mechanics rather than the evolving clinical narrative \cite{b8,b9}. Furthermore, traditional explainability approaches fail to account for distributed reasoning and high-velocity, redundant trace emissions that increase output volume and increase cognitive overload in clinicians (cite appropriate paper). The update frequency in clinician-facing interfaces often results in verbose or redundant information that does not reflect the summarized  treatment plan (maybe need a new cite? double check) \cite{b10,b11}.
+Existing approaches to explainability in clinical AI predominantly rely on post-hoc methods such as feature importance visualizations, attention maps, or static textual explanations generated after inference completion \cite{b6,b8,b30,b32}. Although valuable for auditing model behavior, these methods are poorly aligned with real-time clinical workflows \cite{b6,b8,b12,b32}. They expose internal model mechanics rather than the evolving clinical narrative \cite{b7,b8,b16,b32}. Furthermore, traditional explainability approaches fail to account for distributed reasoning and high-velocity, redundant trace emissions that increase output volume and increase cognitive overload in clinicians \cite{b14,b10,b16,b15}. The update frequency in clinician-facing interfaces often results in verbose or redundant information that does not reflect the summarized  treatment plan \cite{b14,b15,b19}.
 
 
 
@@ -64,37 +64,36 @@ Conversational interfaces for multi-agent systems typically rely on turn-based i
 
 \textbf{Research Questions}
 
-We investigate whether an event-driven middleware can improve the efficiency and faithfulness of real-time multi-agent transparency under a fixed output contract:
 
-\textbf{RQ1:} Can event-driven, schema-constrained summarization increase semantic trace coverage efficiency and reduce redundant updates compared to turn-based and fixed-chunk baselines, without modifying upstream diagnostic agents?
+Therefore, We propose EXAIM (Explainable AI Middleware), a real-time summarization architecture designed to bridge the gap between multi-agent reasoning complexity and clinical information needs.  to improve output summarizations and reduce clinician cognitive overload. The following research questions are presented:
 
-To operationalize RQ1, we study four sub-questions aligned with our evaluation metrics:
+\textbf{RQ1:} Can event-driven, schema-constrained summarization reduce cognitive overload in LLM reasoning traces?
+
+Following a design science research paradigm, RQ1 is investigated through the construction and evaluation of a summarization middleware artifact. The research question is operationalized via four sub-questions, each corresponding to a distinct evaluation dimension of the artifact:
 
 \begin{itemize}
-\item \textbf{RQ1a (Coverage):} Does EXAIM improve global semantic trace coverage under identical schema and length constraints?
-\item \textbf{RQ1b (Redundancy):} Does EXAIM reduce redundant and low-novelty updates while regulating update frequency?
-\item \textbf{RQ1c (Faithfulness):} Does EXAIM preserve contract-grounded faithfulness when limited continuity across summaries is permitted?
-\item \textbf{RQ1d (Overhead):} What latency and LLM usage overhead does semantic event detection introduce relative to simpler triggers?
+\item \textbf{RQ1a:} Does EXAIM improve global semantic trace coverage under identical schema and length constraints?
+\item \textbf{RQ1b:} Does EXAIM reduce redundant and low-novelty updates while regulating update frequency?
+\item \textbf{RQ1c:} Does EXAIM preserve contract-grounded faithfulness when limited continuity across summaries is permitted?
+\item \textbf{RQ1d:} What impact does semantic event detection introduce relative to simpler triggers such as...?
 \end{itemize}
 
+To evaluate these questions, we conducted an ablation study in which we instantiated a real-time summarization middleware that intercepts LLM reasoning traces and emits structured summaries constrained by a fixed schema. The artifact enables controlled variation of triggering strategies (event-driven versus baseline triggers), continuity constraints, and update policies, allowing systematic assessment of their effects on semantic coverage, redundancy, faithfulness, and computational overhead.
 
 
-This study proposes EXAIM (Explainable AI Middleware), a real-time summarization architecture designed to bridge the gap between multi-agent reasoning complexity and clinical information needs. Building on recent advances in incremental summarization \cite{b14,b15}, EXAIM operates as an intermediary layer between upstream diagnostic agents and clinician-facing interfaces, continuously monitoring reasoning streams and generating concise, structured summaries at clinically meaningful moments. Rather than relying on fixed turn boundaries or static thresholds, EXAIM employs semantic event detection to trigger updates only when new, relevant, and non-redundant clinical information emerges.
-
+The study builds on recent advances in incremental summarization \cite{b14,b15}. EXAIM operates as an intermediary layer between upstream diagnostic agents and clinician-facing interfaces. EXAIM continuously monitors reasoning streams and generates concise, structured summaries at clinically meaningful moments. Rather than relying on fixed turn boundaries or static thresholds, EXAIM employs semantic event detection to trigger updates only when new, relevant, and non-redundant clinical information emerges.
 
 
 EXAIM is implemented as a modular, domain-agnostic middleware composed of three components: (i) a syntax-aware stream regulator that segments high-velocity token streams into semantically coherent units, (ii) a semantic buffering agent that detects topic shifts, novelty, and critical events, and (iii) a schema-constrained summarization agent that produces structured updates aligned with established clinical communication frameworks. The architecture supports incremental transparency, regularizes update frequency while suppressing redundant/low-value updates, and preserves multi-agent attribution without requiring modification of upstream diagnostic models. This approach leverages evidence that strict length constraints and structured documentation (e.g., SOAP/SBAR) support predictable, scannable presentation formats in clinical communication \cite{b18,b19,b20}.
 
 
 
-We evaluate EXAIM using replayed multi-agent clinical reasoning traces and compare it against turn-based and heuristic baselines through a controlled ablation study. Results demonstrate that semantic buffering achieves a better operating point for trace coverage and faithfulness under interruption and budget constraints, with reduced redundant updates compared to turn-based baselines, at the cost of modest computational overhead. These findings suggest that middleware-level intervention is a viable and effective strategy for enabling real-time explainability in multi-agent clinical AI systems.
-
 This paper makes the following contributions:
 \begin{itemize}
-\item \textbf{Middleware Architecture for Real-Time Explainability:} We propose EXAIM, a modular middleware architecture that transforms streaming multi-agent reasoning traces into structured, clinician-aligned summaries without modifying upstream diagnostic agents.
-\item \textbf{Semantic Event–Driven Summarization:} We introduce a semantic buffering mechanism that detects topic shifts, novelty, and critical clinical events to trigger summaries based on meaning rather than agent turn boundaries.
-\item \textbf{Schema-Constrained Clinical Summarization:} We operationalize process-level transparency through structured summaries aligned with SBAR/SOAP communication patterns, preserving agent attribution and uncertainty while enforcing strict brevity constraints.
-\item \textbf{Empirical Evaluation of Streaming Explainability Trade-offs:} Through a controlled ablation study, we quantify the impact of semantic buffering on coverage, redundancy, faithfulness, and computational cost in multi-agent clinical reasoning streams.
+\item \textbfA modular middleware architecture that transforms streaming multi-agent reasoning traces into structured, clinician-aligned summaries.
+\item \textbfA semantic buffering mechanism that detects topic shifts, novelty, and critical clinical events to trigger summaries based on context.
+\item \textbfDevelopment of process-level transparency through structured summaries aligned with SBAR/SOAP communication patterns, preserving agent attribution and uncertainty while enforcing strict brevity constraints.
+\item \textbf Identification of the impact of semantic buffering on coverage, redundancy, faithfulness, and computational cost in clinical reasoning streams.
 \end{itemize}
 
 \section{Literature Review}
@@ -103,14 +102,14 @@ Clinical decision support systems (CDSS) have demonstrated potential to improve 
 
 
 
-As CDSS increasingly incorporate machine learning and large language models (LLMs), explainability has emerged as a critical requirement for safe deployment in clinical environments. Explainable AI (XAI) approaches in CDSS have largely focused on post-hoc interpretation methods, including feature importance rankings, attention visualization, and surrogate model explanations \cite{b6}. While these techniques provide insight into model behavior, they primarily expose internal model mechanics rather than supporting clinical sensemaking \cite{b8}. Empirical studies show that clinicians often prefer concise, narrative explanations grounded in clinical reasoning over probabilistic or feature-based explanations, particularly in time-sensitive contexts \cite{b9}. This misalignment between existing XAI techniques and clinical information needs motivates alternative approaches to explainability that prioritize process transparency and communication fidelity.
+As CDSS increasingly incorporate machine learning and large language models (LLMs), explainability has emerged as a critical requirement for safe deployment in clinical environments \cite{b6,}. Explainable AI (XAI) approaches in CDSS have largely focused on post-hoc interpretation methods, including feature importance rankings, attention visualization, and surrogate model explanations \cite{b6}. While these techniques provide insight into model behavior, they primarily expose internal model mechanics rather than supporting clinical sensemaking \cite{b8}. Empirical studies show that clinicians often prefer concise, narrative explanations grounded in clinical reasoning over probabilistic or feature-based explanations in time-sensitive contexts \cite{b9}. This misalignment between existing XAI techniques and clinical information motivates alternative approaches to explainability that prioritize process, transparency, and understanding.
 
 \subsection{Multi-Agent Systems for Clinical Reasoning}
 Multi-agent LLM architectures have gained traction as a means of decomposing complex clinical reasoning tasks across specialized agents responsible for information retrieval, hypothesis generation, verification, and safety assessment \cite{b3,b4}. Prior work demonstrates that distributing reasoning across agents can improve diagnostic performance, robustness, and oversight compared to monolithic models \cite{b3}. These systems also offer theoretical advantages for transparency, as individual agents can be assigned interpretable roles within the diagnostic process \cite{b10,b11}.
 
 
 
-However, multi-agent systems introduce new explainability challenges. Agent interactions generate long, interleaved reasoning traces that include exploratory hypotheses, internal deliberation, and repetitive grounding statements \cite{b5,b16}. While some systems explicitly expose agent reasoning to users, these traces are typically verbose and require post-hoc review, limiting their practical utility during live clinical decision-making \cite{b17}. Existing multi-agent frameworks largely assume that transparency is achieved by exposing reasoning in full, rather than by managing how and when information is presented to clinicians.
+However, multi-agent systems introduce new explainability challenges. Agent interactions generate long, interleaved reasoning traces that include exploratory hypotheses, internal deliberation, and repetitive grounding statements \cite{b5,b16}. While some systems explicitly expose agent reasoning to users, these traces are typically verbose and require post-hoc review. This limits their practical utility during live clinical decision-making \cite{b17}. Existing multi-agent frameworks largely assume that transparency is achieved by exposing reasoning in full, rather than by managing how and when information is presented to clinicians (cite here).
 
 \subsection{Turn-Based Interfaces and Streaming Reasoning}
 Most conversational and multi-agent AI systems adopt turn-based interaction paradigms, surfacing outputs only when an agent completes a turn. This abstraction is inherited from human dialogue systems, where turn-taking often corresponds to semantic completion. In multi-agent LLM systems, however, a single turn may contain multiple topic shifts, partial inferences, or exploratory reasoning branches. Treating turns as semantic units can therefore result in lossy compression, redundancy, and reduced faithfulness when summarization is applied.
@@ -120,19 +119,17 @@ Recent work on streaming and incremental reasoning highlights the limitations of
 
 
 \subsection{Clinical Summarization and Structured Communication}
-Clinical summarization research provides important foundations for managing information overload in healthcare settings. Prior work demonstrates that structured summaries aligned with clinical documentation standards, such as SBAR and SOAP, support predictable, scannable presentation formats, reduce errors, and support handoff communication \cite{b19,b20}. Large language models have shown strong performance in generating clinical summaries when explicit length and structure constraints are enforced \cite{b18}.
+Clinical summarization research provides important foundations for managing information overload in healthcare settings (Cite?). Prior work demonstrates that structured summaries aligned with clinical documentation standards, such as SBAR and SOAP, support predictable, scannable presentation formats, reduce errors, and support handoff communication \cite{b19,b20}. Large language models have shown strong performance in generating clinical summaries when explicit length and structure constraints are enforced \cite{b18}. Therefore, the introduction of structured summaries is ideal in EXAIM.
 
 
-Recent studies further indicate that incremental or streaming summarization can outperform post-hoc summarization by preserving temporal context and reducing the need for retrospective compression \cite{b21}. Additionally, token filtering strategies have been proposed to reduce redundancy in clinical texts \cite{b22}. However, most clinical summarization systems operate on completed conversations or documents and do not address the challenges posed by multi-agent reasoning streams. Specifically, they assume a single narrative source rather than multiple interacting agents producing overlapping and partially redundant content.
+Recent studies further indicate that streaming summarization can outperform post-hoc summarization by preserving context and reduce the need for retrospective compression \cite{b21}. Additionally, token filtering strategies have been proposed to reduce redundancy in clinical texts \cite{b22}. However, most clinical summarization systems operate on completed conversations or documents and do not address the challenges posed by multi-agent reasoning streams (cite?). Specifically, they assume a single narrative source rather than multiple interacting agents producing overlapping and partially redundant content.
 
-\subsection{Middleware Architectures for Clinical AI}
-Middleware approaches have been proposed to integrate AI reasoning with electronic health records and clinical workflows, enabling data normalization, orchestration, and post-processing \cite{b24}. These architectures demonstrate the feasibility of inserting intermediate layers between AI models and user interfaces to manage complexity and ensure compliance. However, existing middleware solutions primarily focus on data access, interoperability, or static summarization and do not address real-time explainability for streaming multi-agent reasoning.
 
-To our knowledge, prior systems do not jointly (i) perform semantic event triggering over interleaved multi-agent traces and (ii) emit clinician-aligned schema summaries as a decoupled middleware layer. EXAIM builds insights from XAI, clinical summarization, and streaming systems by introducing a dedicated middleware layer that regulates information flow, detects meaningful reasoning events, and generates clinician-aligned summaries in real time.
+To our knowledge, prior systems do not jointly perform semantic event triggering over interleaved multi-agent traces and emit clinician-aligned schema summaries. EXAIM integrates concepts literature streams from XAI, clinical summarization, and streaming systems by introducing a dedicated middleware layer that regulates information flow, detects meaningful reasoning events, and generates clinician-aligned summaries in real time.
 
 \section{Methodology}
 
-This study follows the Design Science Research Methodology (DSRM) \cite{b25}. We mapped the six DSRM steps to our research lifecycle as follows: (1) Problem Identification: We identified the lack of real-time transparency in multi-agent CDSS (Section I). (2) Objectives: We derived design goals for a middleware-based solution (Section IV-A). (3) Design \& Development: We iteratively constructed the EXAIM architecture (Sections IV-B through IV-F). (4) Demonstration: We validated utility via a clinical case walkthrough (Section IV-F.5). (5) Evaluation: We assessed the artifact using a controlled ablation study (Section V). (6) Communication: This paper serves as the dissemination artifact for the scientific community.
+This study follows the Design Science Research Methodology (DSRM) \cite{b25}. Write a bit just in general about the DSR methodology here. Summarization of why it is used and why it was effective for this research.
 
 \begin{figure*}[htbp]
 \centering
@@ -141,15 +138,17 @@ This study follows the Design Science Research Methodology (DSRM) \cite{b25}. We
 \label{fig:dsr}
 \end{figure*}
 
+We mapped the six DSRM steps to our research as follows: (1) Problem Identification: The introduction highlights the lack of real-time transparency in multi-agent CDSS (2) Objectives: Our research questions are centered around proposing and validating a structured artifact that produces more effective and contextual summarizations. (3) Design \& Development: The research objectives informed the design of the EXAIM artifact. (4) Demonstration: The EXAIM artifact was instantiated and successfully completed a clinical case walkthrough. (5) Evaluation: Following the demonstration, the artifact was evaluated using a controlled ablation study. (6) Communication: This paper serves as the dissemination artifact for the scientific community.
+
 \section{Artifact Design}
 
 \subsection{Design Objectives \& Rationale}
 
-EXAIM is motivated by the observation that existing explainability approaches for clinical AI systems inadequately address the dynamics of real-time, multi-agent reasoning. Rather than optimizing for post-hoc transparency or exhaustive trace exposure, the design of EXAIM prioritizes timely, clinically meaningful communication under strict brevity and update-frequency constraints. This subsection articulates the key design decisions underlying the architecture and their theoretical and practical justification.
+The design of EXAIM prioritizes timely, clinically meaningful communication under strict brevity and update-frequency constraints. This subsection articulates the key design decisions underlying the architecture and their theoretical and practical justification.
 
-\subsection{Middleware-Level Explainability}
+\subsection{System Architecture}
 
-A foundational design decision in EXAIM is to implement explainability at the middleware level rather than within individual diagnostic agents. Embedding explainability mechanisms directly into agent prompts or reasoning strategies risks entangling transparency with diagnostic performance, complicating validation and limiting portability across systems. By positioning EXAIM as an intermediary layer, explainability is decoupled from reasoning generation. This separation of concerns enables independent evolution of diagnostic agents and explanation mechanisms, supports integration with heterogeneous multi-agent frameworks, and preserves upstream system behavior. Middleware-level intervention also allows EXAIM to observe the full interaction among agents, rather than isolated reasoning fragments, which is essential for process-level transparency.
+A foundational design decision for EXAIM is to implement as middleware rather than within individual diagnostic agents. Embedding explainability mechanisms directly into prompts or reasoning risks obfuscating transparency with diagnostic performance (cite?). This limitation complicates validation and limits portability. By positioning EXAIM as an intermediary layer, explainability is decoupled from reasoning generation. This separation enables independent evolution of diagnostic agents and explanation mechanisms, supports integration with heterogeneous multi-agent frameworks, and preserves upstream system behavior. Middleware-level intervention also allows EXAIM to observe the full interaction among agents, rather than isolated reasoning fragments, which is essential for process-level transparency.
 
 \subsection{Semantic-Driven Update Strategy}
 
@@ -631,6 +630,8 @@ The authors would like to thank the reviewers for their valuable feedback and su
 \bibitem{b30} K. Goel, R. Sindhgatta, S. Kalra, R. Goel, and P. Mutreja, ``The effect of machine learning explanations on user trust for automated diagnosis of COVID-19,'' \textit{Comput. Biol. Med.}, vol. 146, p. 105587, Jul. 2022.
 
 \bibitem{b31} I. Donadello and M. Dragoni, ``SeXAI: A semantic explainable artificial intelligence framework,'' in \textit{Explainable and Transparent AI and Multi-Agent Systems}, vol. 12175, Springer, 2021, pp. 51--66.
+
+\bibitem{b32} T. A. J. Schoonderwoerd, W. Jorritsma, M. A. Neerincx, and K. van den Bosch, ``Human-centered XAI: Developing design patterns for explanations of clinical decision support systems,'' 2021.
 
 \end{thebibliography}
 
