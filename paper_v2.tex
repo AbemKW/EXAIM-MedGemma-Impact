@@ -85,7 +85,7 @@ This paper makes the following contributions:
 \item \textbf{Identification of the impact of semantic buffering on coverage, redundancy, faithfulness, and computational cost in clinical reasoning streams.}
 \end{itemize}
 
-The remainder of this paper is organized as follows. Section II provides a comprehensive review of related work in clinical decision support explainability, multi-agent architectures, streaming interfaces, and clinical summarization, establishing the technical foundations and identifying gaps that motivate our approach. Section III describes the Design Science Research Methodology employed. Section IV provides a systematic description of the EXAIM artifact, including its architecture, component specifications, and operational contracts. Section V presents the experimental design, ablation study, and evaluation results. Section VI discusses key findings and implications for clinical AI system design. Section VII concludes with limitations and future directions.
+The remainder of this paper is organized as follows. Section II provides a comprehensive review of related work in clinical decision support explainability, multi-agent architectures, streaming interfaces, and clinical summarization, establishing the technical foundations and identifying gaps that motivate our approach. Section III provides a systematic description of the EXAIM artifact, including its architecture, component specifications, and design rationale. Section IV presents the experimental design, ablation study, and evaluation results. Section V discusses key findings and implications for clinical AI system design. Section VI concludes with limitations and future directions.
 
 \section{Literature Review}
 \subsection{Clinical Decision Support Systems and Explainability}
@@ -129,50 +129,31 @@ Large language models have shown strong performance in generating clinical summa
 \subsubsection{Streaming and Real-Time Summarization}
 Recent studies indicate that streaming summarization can outperform post-hoc summarization by preserving context and reducing the need for retrospective compression \cite{bailly2025divide}. Additionally, token filtering strategies have been proposed to reduce redundancy in clinical texts \cite{piya2025contextual}. However, most clinical summarization systems operate on completed conversations or documents and do not address the challenges posed by multi-agent reasoning streams \cite{wu2025incremental,schneider2024meeting}. Specifically, they assume a single narrative source rather than multiple interacting agents producing overlapping and partially redundant content. Human-in-the-loop dialogue systems literature emphasizes the importance of faithfulness and coherence as critical evaluation dimensions for interactive systems \cite{chen2022hitl}. To our knowledge, prior systems do not jointly perform semantic event triggering over interleaved multi-agent traces and emit clinician-aligned schema summaries. EXAIM integrates concepts from XAI, clinical summarization, and streaming systems by introducing a dedicated middleware layer that regulates information flow, detects meaningful reasoning events, and generates clinician-aligned summaries in real time. % Added positioning statement
 
-\section{Methodology}
-
-This study follows the Design Science Research Methodology (DSRM) \cite{peffers2007dsr}, which is appropriate for developing and evaluating novel artifacts that address identified problems in practice. The DSRM framework guides the systematic development of EXAIM through problem identification, artifact design, demonstration, and evaluation. This approach aligns with recent applications of DSR for developing AI-based clinical tools that balance technical innovation with practical usability requirements \cite{hor2025design}.
-
-\begin{figure*}[htbp]
-\centering
-\includegraphics[width=\textwidth]{dsr/DSR.pdf}
-\caption{EXAIM Design Science Research Methodology (DSRM) process model showing the six stages of our research lifecycle and the process iteration feedback loops.}
-\label{fig:dsr}
-\end{figure*}
-
-We mapped the six DSRM steps to our research as follows: (1) Problem Identification: The introduction highlights the lack of real-time transparency in multi-agent CDSS (2) Objectives: Our research questions are centered around proposing and validating a structured artifact that produces more effective and contextual summarizations. (3) Design \& Development: The research objectives informed the design of the EXAIM artifact. (4) Demonstration: The EXAIM artifact was instantiated and successfully completed a clinical case walkthrough. (5) Evaluation: Following the demonstration, the artifact was evaluated using a controlled ablation study. (6) Communication: This paper serves as the dissemination artifact for the scientific community.
-
 \section{Artifact Description}
 
-This section provides a systematic, technical description of the EXAIM middleware artifact. We describe what EXAIM does, how its components operate, and the contracts it enforces. The presentation follows a specification-oriented style: we first establish the system's input-output contracts and design invariants (IV-A), then provide a walkthrough of the complete pipeline (IV-B), and finally detail each component's internal operation (IV-C through IV-E). Implementation and reproducibility notes are provided in IV-F.
+Design Science aims to create and evaluate IT artifacts intended to solve identified organizational problems \cite{hevner2004design}. We adhere to the six design steps of DSR and the nominal process model outlined by Peffers et al. \cite{peffers2007dsr} in designing EXAIM. This approach aligns with recent applications of DSR for developing AI-based clinical tools that balance technical innovation with practical usability requirements \cite{hor2025design}. This section systematically provides a comprehensive description of the artifact design, EXAIM.
 
-\subsection{Overview and Contracts}
+\subsection{System Model and Interface Assumptions}
 
-EXAIM is a real-time middleware system that transforms streaming multi-agent reasoning traces into structured clinical summaries. The system operates on asynchronous token streams and emits summaries at semantically meaningful moments rather than fixed intervals or turn boundaries.
+EXAIM operates as a stateful observer middleware positioned between upstream multi-agent diagnostic systems and clinician-facing interfaces. The system processes asynchronous streams of text deltas and emits structured summaries at semantically detected events rather than fixed intervals or turn boundaries.
 
-\subsubsection{Input Contract}
+\subsubsection{Input Model}
 
-EXAIM accepts a stream of text deltas from multiple upstream diagnostic agents via the \texttt{on\_new\_token(agent\_id, token)} API. Each invocation provides:
+The system assumes a stream-based input model where multiple upstream agents emit incremental text deltas asynchronously. Each delta is a tuple $(a, \tau)$ where $a$ is the agent identifier and $\tau$ is a text fragment (substring of ongoing generation). The middleware subscribes to this stream via callback registration, operating in push mode without blocking upstream generation. Timing information is inferred from arrival timestamps rather than explicit metadata, allowing integration with any agent framework supporting token-level streaming.
+
+\subsubsection{Output Schema}
+
+EXAIM emits structured summaries conforming to a fixed six-field schema with hard character limits totaling 990 characters. The schema enforces alignment with SBAR \cite{haig2006sbar} and SOAP \cite{podder2023soap} clinical communication patterns:
 \begin{itemize}
-\item \textbf{agent\_id} (str): Identifier of the emitting agent
-\item \textbf{token} (str): Incremental text content (substring of ongoing generation)
-\end{itemize}
-
-The middleware maintains internal timestamps for timeout detection but does not require external timing metadata from agents or modification of upstream agent prompts, architectures, or orchestration logic. It operates in ``push'' mode, receiving text increments as they are generated without blocking or altering agent behavior.
-
-\subsubsection{Output Contract}
-
-EXAIM produces structured summaries conforming to a fixed JSON schema (AgentSummary). Each summary contains six fields with hard character limits:
-\begin{itemize}
-\item \textbf{status\_action} (150 chars): Current system activity (SBAR: Situation)
+\item \textbf{status\_action} (150 chars): Current diagnostic activity (SBAR: Situation)
 \item \textbf{key\_findings} (180 chars): Salient clinical evidence (SOAP: Subjective/Objective)
 \item \textbf{differential\_rationale} (210 chars): Diagnostic interpretation (SOAP: Assessment)
-\item \textbf{uncertainty\_confidence} (120 chars): Confidence calibration
+\item \textbf{uncertainty\_confidence} (120 chars): Confidence signals
 \item \textbf{recommendation\_next\_step} (180 chars): Actionable plan (SBAR: Recommendation / SOAP: Plan)
-\item \textbf{agent\_contributions} (150 chars): Multi-agent attribution
+\item \textbf{agent\_contributions} (150 chars): Multi-agent attribution metadata
 \end{itemize}
 
-Character budgets are strict constraints enforced through validation and truncation. The schema alignment with SBAR \cite{haig2006sbar} and SOAP \cite{podder2023soap} clinical communication frameworks ensures predictable structure for clinician-facing interfaces.
+This bounded schema serves as a UI contract, guaranteeing stable interface footprint regardless of trace verbosity—a key requirement for real-time clinical dashboards.
 
 \begin{figure*}[htbp]
     \centering
@@ -181,15 +162,16 @@ Character budgets are strict constraints enforced through validation and truncat
     \label{fig:system-architecture}
 \end{figure*}
 
-\subsubsection{Design Invariants}
+\subsubsection{System Assumptions and Constraints}
 
-EXAIM maintains the following invariants across all operational modes:
+The architecture enforces three core constraints:
 \begin{itemize}
-\item \textbf{Non-Blocking}: Middleware processing does not delay or alter upstream agent token generation
-\item \textbf{Schema Compliance}: All emitted summaries conform to the AgentSummary schema or are marked as validation failures
-\item \textbf{Grounding Constraint}: Summaries are prompt-restricted to buffered content and limited prior context (history\_k=3); the system does not retrieve external documents or knowledge bases
-\item \textbf{Deterministic Sampling}: The system is configured for deterministic generation (temperature=0.0); replay results are stable across runs in our evaluation
+\item \textbf{Non-Blocking Observation}: Middleware processing occurs asynchronously without delaying upstream agent generation
+\item \textbf{Schema Compliance}: All emitted outputs conform to the AgentSummary schema or are marked as validation failures
+\item \textbf{Grounding Constraint}: Summary generation is restricted to buffered trace content and limited prior context (history\_k=3). No external retrieval or extrapolation beyond observed agent outputs is permitted
 \end{itemize}
+
+These constraints operationalize the middleware's role as a transparency layer rather than an autonomous reasoning component.
 
 \subsection{Pipeline Walkthrough}
 
@@ -240,83 +222,69 @@ This staged design decouples stream regulation (syntactic), event detection (sem
 
 \subsection{TokenGate: Syntax-Aware Stream Regulation}
 
-TokenGate regulates high-velocity LLM token streams into semantically coherent chunks suitable for downstream semantic analysis. Raw token streams are fragmented, bursty, and often misaligned with linguistic boundaries. Processing such streams directly would trigger excessive summarization attempts or operate on incomplete semantic units.
-
-\subsubsection{Design Rationale}
+TokenGate addresses a fundamental problem in streaming LLM interfaces: raw token streams are fragmented, bursty, and misaligned with linguistic boundaries. Applying semantic analysis directly to these streams would either trigger excessive processing on partial phrases or buffer indefinitely on incomplete units. TokenGate solves this by accumulating text deltas into coherent chunks using a syntax-aware segmentation policy.
 
 To maintain low latency and avoid dependencies on model-specific tokenizers (e.g., BPE, TikToken), TokenGate operates on whitespace-delimited word counts rather than subword tokens. This design choice trades fine-grained precision for computational simplicity and cross-model portability.
 
-\subsubsection{Operational Mechanism}
+\subsubsection{Segmentation Policy}
 
-TokenGate maintains independent buffers for each agent and evaluates flush conditions with the following prioritized policy:
+TokenGate accumulates per-agent text deltas and emits chunks under a prioritized four-clause policy designed to balance latency, linguistic coherence, and computational efficiency:
 
 \begin{enumerate}
-\item \textbf{Boundary-Aware Flush}: If buffer exceeds min\_words=60 and ends with sentence-terminating punctuation (regex: \verb|r"[.?!][)\]\}\'\"]*$"|), flush immediately
-\item \textbf{Hard Limit Flush}: If buffer exceeds max\_words=100, flush regardless of boundary status
-\item \textbf{Silence-Based Flush}: If no new tokens received for silence\_timer=1.0 seconds after exceeding min\_words, flush
-\item \textbf{Safety Valve}: If buffer age exceeds max\_wait\_timeout=4.0 seconds, force flush to prevent unbounded accumulation
+\item \textbf{Boundary-Aware}: Flush when word count $\geq$ 60 AND text ends with sentence-final punctuation (\texttt{[.?!]})
+\item \textbf{Hard Limit}: Flush when word count $>$ 100 regardless of boundary status
+\item \textbf{Silence Timeout}: Flush after 1.0s idle time if word count $\geq$ 60
+\item \textbf{Safety Valve}: Force flush after 4.0s total accumulation time regardless of other conditions
 \end{enumerate}
 
-\subsubsection{Parameter Configuration}
+This policy prioritizes sentence boundaries when available (clause 1) but prevents indefinite blocking through hard limits (clauses 2-4). The design avoids dependencies on model-specific tokenizers by operating on whitespace-delimited word counts, ensuring portability across LLM providers.
 
-The parameter values (min\_words=60, max\_words=100, silence\_timer=1.0s, max\_wait\_timeout=4.0s) were selected through systematic calibration across 625 policy combinations using multi-objective Pareto optimization (see Section V-A). These values balance latency (rapid first flush), semantic coherence (sufficient chunk size), and computational efficiency (moderate flush frequency).
+\subsubsection{Design Rationale and Ablation}
 
-\subsubsection{Component Specification}
-
-\begin{itemize}
-\item \textbf{Input}: Token delta stream $(agent\_id, text, timestamp)$
-\item \textbf{State}: Per-agent buffers with word count, first token timestamp, last token timestamp
-\item \textbf{Output}: Flushed text chunks with agent attribution
-\item \textbf{Timing Guarantee}: p95 chunk latency $<$ 5 seconds from first token to flush
-\end{itemize}
+Clause 1 implements adaptive boundary detection, allowing chunks to align with semantic units. Ablation variant V3 (fixed-chunk baseline) disables this adaptivity by removing the boundary condition. This isolates the impact of syntax-aware segmentation on downstream semantic coverage. Parameter values (60/100 words, 1.0s/4.0s timeouts) were calibrated through Pareto optimization across 625 configurations (Section IV-A), balancing first-chunk latency, semantic coherence, and processing overhead.
 
 \subsection{BufferAgent: Semantic Event Detection}
 
-BufferAgent performs LLM-powered semantic analysis to determine when buffered content warrants a clinician-facing update. This component implements the core innovation of EXAIM: decoupling summary triggers from generation mechanics (turns, fixed intervals) and instead basing decisions on content semantics.
+BufferAgent implements the core innovation of EXAIM: event-driven triggering based on content semantics rather than generation mechanics. This component operationalizes RQ1b (reducing redundant updates) and RQ1d (comparing semantic versus structural triggers) by detecting when buffered content represents a clinically meaningful update.
 
-\subsubsection{Evaluation Framework}
+\subsubsection{Semantic Evaluation Predicates}
 
-BufferAgent employs a multi-path trigger logic that evaluates flushed chunks along multiple semantic dimensions:
+The system evaluates each flushed chunk using an LLM-based semantic classifier that produces four boolean predicates:
 
 \begin{enumerate}
-\item \textbf{Completeness}: Does the chunk represent phrase-level structural closure (finished clause, complete action statement, or sentence-final punctuation) when evaluating the concatenation of previous trace and new content?
-\item \textbf{Relevance}: Does the content contribute interruption-worthy clinical value (new/changed actions, diagnostic stance shifts, or abnormal findings)?
-\item \textbf{Novelty}: Does the content introduce substantively new information not already covered in recent summaries (history\_k=3)?
-\item \textbf{Stream State}: Classification into SAME\_TOPIC\_CONTINUING, TOPIC\_SHIFT, or CRITICAL\_ALERT based on topic continuity.
+\item $\mathit{complete}$: Chunk exhibits phrase-level structural closure (finished clause, action statement, or sentence boundary)
+\item $\mathit{relevant}$: Content contributes interruption-worthy clinical value (diagnostic shifts, abnormal findings, or action changes)
+\item $\mathit{novel}$: Content introduces substantive information not already captured in recent summaries (history\_k=3)
+\item $\mathit{state} \in \{\text{CONTINUING}, \text{SHIFT}, \text{CRITICAL}\}$: Topic continuity classification
 \end{enumerate}
 
-Trigger decisions follow three prioritized paths: (1) \textbf{Critical alerts} (stream\_state=CRITICAL\_ALERT) always trigger regardless of other conditions; (2) \textbf{Completed value path} triggers when completeness, relevance, and novelty are all satisfied; (3) \textbf{Topic shift path} (stream\_state=TOPIC\_SHIFT) triggers on topic transitions if content is relevant and novel, even without full completeness. This multi-path logic balances responsiveness to urgent information and topic boundaries with filtering of incomplete, low-value, or redundant content.
+Crucially, novelty is assessed against prior \textit{summaries} rather than raw trace content, preventing redundancy at the output level where it impacts clinician cognitive load.
 
-\subsubsection{State Machine}
+\subsubsection{Multi-Path Trigger Function}
 
-BufferAgent classifies chunks into one of three reasoning states that influence trigger decisions:
+The trigger decision follows a three-path logic that balances urgency, topic boundaries, and content quality:
+
+\[
+\mathit{trigger} = \begin{cases}
+\mathit{true} & \text{if } \mathit{state} = \text{CRITICAL} \\
+\mathit{true} & \text{if } \mathit{complete} \land \mathit{relevant} \land \mathit{novel} \\
+\mathit{true} & \text{if } (\mathit{state} = \text{SHIFT}) \land \mathit{relevant} \land \mathit{novel} \\
+\mathit{false} & \text{otherwise}
+\end{cases}
+\]
+
+Path 1 (critical alerts) bypasses all filtering for urgent events. Path 2 (complete value) requires full semantic and structural criteria. Path 3 (topic shift) relaxes the completeness requirement at topic boundaries, enabling responsive updates when diagnostic focus changes. This prioritization addresses a key limitation of turn-based or fixed-interval approaches: they cannot distinguish between incremental elaboration and substantive topic transitions.
+
+\subsubsection{Ablation Points}
+
+The multi-path design enables targeted ablations:
 \begin{itemize}
-\item \textbf{SAME\_TOPIC\_CONTINUING}: Elaboration on existing diagnostic thread (requires full completion criteria for trigger)
-\item \textbf{TOPIC\_SHIFT}: Transition to new clinical domain or reasoning phase (can trigger even without structural closure)
-\item \textbf{CRITICAL\_ALERT}: High-priority clinical event requiring immediate attention (always triggers)
+\item \textbf{V4 (No Novelty)}: Forces $\mathit{novel} = \mathit{true}$, isolating novelty filtering's impact on redundancy
+\item \textbf{V2 (Turn Baseline)}: Bypasses semantic evaluation entirely, triggering on agent turn boundaries
+\item \textbf{V1 (No BufferAgent)}: Removes semantic layer, processing all TokenGate chunks
 \end{itemize}
 
-State classification directly affects trigger logic: critical alerts bypass all other conditions, topic shifts enable earlier triggering on semantic boundaries, while continuing topics require full structural and semantic completion.
-
-\subsubsection{Novelty Gating Mechanism}
-
-Novelty assessment compares the current chunk against the last $k=3$ summaries (not raw agent output). This design prevents redundancy at the summary level rather than the trace level. The system prompts the BufferAgent to assess whether the chunk ``adds substantive new information beyond what was already captured in recent summaries.''
-
-When novelty filtering is disabled (ablation variant V4), the system still evaluates completeness and relevance but always returns novel=True, allowing all complete and relevant content to trigger updates.
-
-\subsubsection{Component Specification}
-
-\begin{itemize}
-\item \textbf{Input}: Text chunk, summary history (last 3 summaries), previous trace context
-\item \textbf{Model}: Gemini 2.5 Flash Lite, temperature=0.0, structured output (Pydantic strict mode)
-\item \textbf{Output}: BufferAnalysis(stream\_state, is\_complete, is\_relevant, is\_novel, rationale)
-\item \textbf{Trigger Logic}: Three-path decision computed deterministically from analysis:
-\begin{itemize}
-    \item Path C (Critical): $\text{CRITICAL\_ALERT}$
-    \item Path A (Complete): $is\_complete \land is\_relevant \land is\_novel$
-    \item Path B (Shift): $\text{TOPIC\_SHIFT} \land is\_relevant \land is\_novel$
-\end{itemize}
-\end{itemize}
+These variants directly test the contribution of semantic event detection to coverage (RQ1a), redundancy (RQ1b), and comparative performance (RQ1d).
 
 \subsection{SummarizerAgent: Schema-Constrained Synthesis}
 
@@ -348,14 +316,13 @@ Schema compliance is enforced through a three-attempt strategy:
 
 Failed summaries (after all attempts) are logged with schema\_ok=false and excluded from metrics, but the system continues operation to maintain availability.
 
-\subsubsection{Component Specification}
+\subsubsection{Implementation Details}
 
 \begin{itemize}
 \item \textbf{Input}: Text chunk, summary history (last 3), agent\_id
-\item \textbf{Model}: Gemini 2.5 Flash Lite, temperature=0.0, structured output
 \item \textbf{Output}: AgentSummary (6 fields, total $\leq$990 characters)
-\item \textbf{Validation}: Pydantic v2 with max\_length constraints
-\item \textbf{Determinism}: Temperature=0.0 produces highly stable outputs; replay results were consistent across evaluation runs
+\item \textbf{Validation}: Three-attempt strategy (structured generation $\rightarrow$ rewrite prompt $\rightarrow$ truncation fallback)
+\item \textbf{LLM Configuration}: Structured output mode with schema enforcement (Pydantic strict mode). Model selection and sampling parameters detailed in Section IV-A
 \end{itemize}
 
 \subsection{Implementation and Reproducibility}
@@ -376,7 +343,7 @@ EXAIM follows the Observer pattern: it subscribes to agent token streams via cal
 
 \subsubsection{Reproducibility Statement}
 
-All evaluation code, configuration files, frozen traces, and metric computation scripts are provided in the /evals directory. Docker-based execution ensures environment reproducibility. The calibration process (Section V-A) and metric definitions (Section V-C) are fully documented and deterministic given fixed random seeds.
+All evaluation code, configuration files, frozen traces, and metric computation scripts are provided in the /evals directory. Docker-based execution ensures environment reproducibility. The calibration process (Section IV-A) and metric definitions (Section IV-C) are fully documented and deterministic given fixed random seeds.
 
 \subsection{Schema Specification}
 
@@ -409,7 +376,7 @@ Note: Character budgets are hard constraints that enforce a bounded UI contract,
 
 \subsection{Demonstrative Case Walkthrough}
 
-To demonstrate EXAIM's semantic filtering and redundancy detection mechanisms, we analyze a specific interaction sequence from a multi-agent reasoning trace (Case ID: 3949). This trace was generated using the MAC Framework (described in Section V-A), which simulates a team of diagnostic agents collaborating on a complex medical case. This example illustrates how the middleware distinguishes between verbose repetition and genuinely novel clinical information.
+To demonstrate EXAIM's semantic filtering and redundancy detection mechanisms, we analyze a specific interaction sequence from a multi-agent reasoning trace (Case ID: 3949). This trace was generated using the MAC Framework (described in Section IV-A), which simulates a team of diagnostic agents collaborating on a complex medical case. This example illustrates how the middleware distinguishes between verbose repetition and genuinely novel clinical information.
 
 \textbf{1. Context State (Pre-Condition)} Prior to this segment, doctor0 and doctor1 had already established Spinocerebellar Ataxia (SCA) as the leading diagnosis. The middleware had generated summaries capturing this consensus and the recommended genetic tests (Log ID: summary\_3). The active buffer was empty.
 
@@ -609,7 +576,7 @@ To ensure reproducibility and isolate the middleware's contribution from stochas
 
 \begin{itemize}
 \item \textbf{Middleware Model and Deterministic Sampling:} Both the BufferAgent (trigger logic) and SummarizerAgent (synthesis) are powered by Gemini 2.5 Flash Lite (Google), selected for its engineering focus on high-throughput, low-latency, low-cost workloads while retaining native support for large context windows. All middleware components operate at temperature=0.0 to minimize generation variance and ensure deterministic, reproducible outputs.
-\item \textbf{Constraint Enforcement:} Schema validation uses Pydantic v2 with LangChain's structured output (strict=True) as described in Section IV-D.3. For evaluation purposes, failed summaries are marked (schema\_ok=false) and excluded from metrics while the system continues operation.
+\item \textbf{Constraint Enforcement:} Schema validation uses Pydantic v2 with LangChain's structured output (strict=True) as described in Section III-D.3. For evaluation purposes, failed summaries are marked (schema\_ok=false) and excluded from metrics while the system continues operation.
 \item \textbf{Evaluation-Only Concept Extraction:} For semantic evaluation metrics (M3, M4, M5, M6a, M6b, M7), we utilize scispaCy (en\_core\_sci\_sm) with the UMLS Entity Linker to extract canonical medical concepts (CUIs) from both the raw traces and generated summaries. This extraction pipeline is used only for metric computation and is not part of the EXAIM middleware runtime.
 \item \textbf{Token Measurement Unit:} All token volume metrics (M2, M7, M9) report CTU (Character-Normalized Token Units), computed as $\lceil \text{len(text)} / 4 \rceil$. This vendor-agnostic, deterministic unit provides a token-equivalent estimate that enables consistent measurement across different LLM providers and tokenization schemes. For LLM usage measurement (M9), CTU values report user prompt and completion text only, excluding fixed system prompts. System prompts are constant across variants and represent fixed infrastructure overhead rather than variable computational cost per decision.
 \end{itemize}
@@ -637,7 +604,7 @@ We prioritized five metrics that directly quantify utility and reliability proxi
     \begin{equation}
     M6b = \frac{|\text{summary\_CUIs} \cap \text{trace\_CUIs}|}{|\text{summary\_CUIs}|}
     \end{equation}
-    Higher scores indicate stronger concept-level grounding. This metric penalizes unsupported insertions but does not account for semantic paraphrase (see Section V-C.3). Faithfulness is a standard evaluation criterion in human-in-the-loop dialogue systems \cite{chen2022hitl}.
+    Higher scores indicate stronger concept-level grounding. This metric penalizes unsupported insertions but does not account for semantic paraphrase (see Section IV-C.3). Faithfulness is a standard evaluation criterion in human-in-the-loop dialogue systems \cite{chen2022hitl}.
     \item \textbf{Redundancy Reduction (M3):} Measured via mean Jaccard similarity between consecutive summary updates:
     \begin{equation}
     M3 = \frac{1}{n-1}\sum_{i=1}^{n-1} \frac{|C_i \cap C_{i+1}|}{|C_i \cup C_{i+1}|}
@@ -720,9 +687,9 @@ This subsection interprets the marginal contributions of each component through 
 
 \subsubsection{Full EXAIM vs. Turn-Based Baseline (V0 vs. V1)}
 
-Table~\ref{tab:primary-metrics} shows V0 achieves 26\% higher faithfulness and 20\% lower redundancy than V1, with modest coverage gains (Section V-E). While V0 generates 37\% more updates than V1, these updates contain higher informational value and less redundancy. This illustrates that semantic event detection does not reduce update frequency relative to turn-based triggering, but rather reallocates updates to semantically meaningful boundaries. Turn-based summarization compresses multi-topic agent turns into single summaries, leading to information loss and reduced grounding. The semantic event detection mechanism allows EXAIM to surface clinically meaningful updates at sub-turn granularity, improving both faithfulness and coverage.
+Table~\ref{tab:primary-metrics} shows V0 achieves 26\% higher faithfulness and 20\% lower redundancy than V1, with modest coverage gains (Section IV-E). While V0 generates 37\% more updates than V1, these updates contain higher informational value and less redundancy. This illustrates that semantic event detection does not reduce update frequency relative to turn-based triggering, but rather reallocates updates to semantically meaningful boundaries. Turn-based summarization compresses multi-topic agent turns into single summaries, leading to information loss and reduced grounding. The semantic event detection mechanism allows EXAIM to surface clinically meaningful updates at sub-turn granularity, improving both faithfulness and coverage.
 
-EXAIM introduces additional computational cost due to semantic analysis of the reasoning stream. Table~\ref{tab:supplementary-metrics} shows average summary latency increases from V1 to V0, with p95 tail latencies of 1.59s and 1.84s respectively. In streaming systems, tail latencies are critical for user experience; the observed p95 values remain within acceptable bounds for interactive dashboard update latencies ($<$ 2 seconds). Total LLM token-equivalent usage increases by 5.3$\times$ from V1 to V0, reflecting the cost of semantic buffering and novelty analysis. While this represents significant computational overhead, it must be evaluated relative to the benefits: 26\% improved faithfulness, 20\% reduced redundancy, and event-driven triggering that aligns updates with clinical meaning rather than arbitrary turn boundaries (addressing RQ1d; see Section VI-A for implications on transparency primitives and Section VI-C for broader trade-off analysis).
+EXAIM introduces additional computational cost due to semantic analysis of the reasoning stream. Table~\ref{tab:supplementary-metrics} shows average summary latency increases from V1 to V0, with p95 tail latencies of 1.59s and 1.84s respectively. In streaming systems, tail latencies are critical for user experience; the observed p95 values remain within acceptable bounds for interactive dashboard update latencies ($<$ 2 seconds). Total LLM token-equivalent usage increases by 5.3$\times$ from V1 to V0, reflecting the cost of semantic buffering and novelty analysis. While this represents significant computational overhead, it must be evaluated relative to the benefits: 26\% improved faithfulness, 20\% reduced redundancy, and event-driven triggering that aligns updates with clinical meaning rather than arbitrary turn boundaries (addressing RQ1d; see Section V-A for implications on transparency primitives and Section V-C for broader trade-off analysis).
 
 Having established the baseline semantic event detection advantage, we now examine component-specific contributions to faithfulness and update control.
 
@@ -730,7 +697,7 @@ Having established the baseline semantic event detection advantage, we now exami
 
 Table~\ref{tab:primary-metrics} shows V4 achieves the best faithfulness among all variants, but this marginal improvement over V0 (0.7\%) comes at the expense of 41\% more updates and 27\% higher output volume. Although V4 captures marginally more information (8\% coverage gain), it does so at the cost of significantly higher interruption frequency.
 
-This demonstrates that novelty filtering functions primarily as an update frequency control mechanism rather than a simple deduplication strategy. The novelty gate suppresses incremental updates that are technically novel but represent low marginal information gain, trading small coverage losses for substantial reductions in clinician interruptions. The nearly identical redundancy between V0 and V4 indicates that novelty filtering operates at a different level than consecutive-update similarity: it prevents semantically distinct but marginally informative updates rather than blocking redundant repetitions (answering RQ1b; see Section VI-C for coverage-frequency trade-offs).
+This demonstrates that novelty filtering functions primarily as an update frequency control mechanism rather than a simple deduplication strategy. The novelty gate suppresses incremental updates that are technically novel but represent low marginal information gain, trading small coverage losses for substantial reductions in clinician interruptions. The nearly identical redundancy between V0 and V4 indicates that novelty filtering operates at a different level than consecutive-update similarity: it prevents semantically distinct but marginally informative updates rather than blocking redundant repetitions (answering RQ1b; see Section V-C for coverage-frequency trade-offs).
 
 While novelty filtering provides marginal faithfulness improvements, semantic buffering plays a more dramatic role in controlling update streams.
 
@@ -740,7 +707,7 @@ Without semantic buffering, Table~\ref{tab:supplementary-metrics} shows the syst
 
 This demonstrates a critical insight: maximal information coverage undermines operational value when achieved through excessive interruption frequency. V2 illustrates that exhaustive transparency is not equivalent to effective transparency—a finding that validates EXAIM's design philosophy of selective, high-value disclosure over comprehensive exposure. The relationship between update frequency and LLM usage is not strictly linear: V2 generates 4.0$\times$ more updates than V0 but incurs 40\% lower LLM usage, demonstrating that BufferAgent's semantic analysis adds per-decision overhead. However, V2's approach is clinically unusable due to extreme interruption frequency. V0 trades higher per-update analysis cost for substantially better filtering, achieving 75\% fewer updates than V2 with superior faithfulness and redundancy suppression.
 
-This result confirms that syntax-aware segmentation alone is insufficient for real-time explainability. The BufferAgent's semantic filtering is essential for converting high-frequency, low-signal flushes into sparse, high-value clinician-facing updates. V2's slightly better redundancy score is an artifact of over-fragmentation rather than genuine improvement (validating RQ1b; see Section VI-B for semantic buffering as update stream control).
+This result confirms that syntax-aware segmentation alone is insufficient for real-time explainability. The BufferAgent's semantic filtering is essential for converting high-frequency, low-signal flushes into sparse, high-value clinician-facing updates. V2's slightly better redundancy score is an artifact of over-fragmentation rather than genuine improvement (validating RQ1b; see Section V-B for semantic buffering as update stream control).
 
 Beyond semantic filtering, syntax-aware segmentation quality affects downstream summarization performance.
 
@@ -805,7 +772,7 @@ Second, the dataset consists of rare-disease diagnostic cases, which tend to pro
 
 Third, semantic event detection in EXAIM relies on LLM-based analysis, which introduces additional computational cost. While the observed latency remains acceptable for reading tasks, future work could explore lightweight classifiers or distilled models to reduce overhead without sacrificing semantic sensitivity.
 
-Finally, the evaluation employs automated proxy metrics to assess coverage, redundancy, and faithfulness. As detailed in Section V-A.5, concept-level faithfulness metrics operate at the level of explicit lexical realization rather than semantic equivalence, systematically under-scoring compressed summaries due to abbreviation, normalization, compression, and schema remapping. While relative comparisons across variants remain informative, these metrics cannot fully capture clinical nuance, contextual relevance, or semantic entailment. Complementary qualitative evaluation—including clinician-judged factual consistency, sentence-level entailment verification, and task-based assessment—will be necessary to validate the practical utility and safety of the system. Expert clinician evaluation has been successfully employed in prior work on LLM-based clinical summarization, providing validation of automated metrics through human judgment \cite{fraile2025llm}.
+Finally, the evaluation employs automated proxy metrics to assess coverage, redundancy, and faithfulness. As detailed in Section IV-C.3, concept-level faithfulness metrics operate at the level of explicit lexical realization rather than semantic equivalence, systematically under-scoring compressed summaries due to abbreviation, normalization, compression, and schema remapping. While relative comparisons across variants remain informative, these metrics cannot fully capture clinical nuance, contextual relevance, or semantic entailment. Complementary qualitative evaluation—including clinician-judged factual consistency, sentence-level entailment verification, and task-based assessment—will be necessary to validate the practical utility and safety of the system. Expert clinician evaluation has been successfully employed in prior work on LLM-based clinical summarization, providing validation of automated metrics through human judgment \cite{fraile2025llm}.
 
 \section*{Acknowledgment}
 
