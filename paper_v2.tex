@@ -3,6 +3,7 @@
 % The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{graphicx}
 \graphicspath{{evals/data/metrics/figures/final/}}
@@ -157,9 +158,7 @@ EXAIM accepts a stream of text deltas from multiple upstream diagnostic agents v
 \item \textbf{token} (str): Incremental text content (substring of ongoing generation)
 \end{itemize}
 
-The middleware maintains internal timestamps for timeout detection but does not require external timing metadata from agents. For evaluation purposes, frozen trace replays include additional metadata (absolute timestamps, turn IDs, sequence numbers) to enable deterministic replay, but these fields are not part of the runtime middleware contract.
-
-The middleware does not require modification of upstream agent prompts, architectures, or orchestration logic. It operates in ``push'' mode, receiving text increments as they are generated without blocking or altering agent behavior.
+The middleware maintains internal timestamps for timeout detection but does not require external timing metadata from agents or modification of upstream agent prompts, architectures, or orchestration logic. It operates in ``push'' mode, receiving text increments as they are generated without blocking or altering agent behavior.
 
 \subsubsection{Output Contract}
 
@@ -194,9 +193,11 @@ EXAIM maintains the following invariants across all operational modes:
 
 \subsection{Pipeline Walkthrough}
 
-EXAIM implements a three-stage pipeline that progressively transforms raw token streams into structured summaries. Figure~\ref{fig:system-architecture} illustrates the complete data flow. The pipeline pseudocode is presented below.
+EXAIM implements a three-stage pipeline that progressively transforms raw token streams into structured summaries. Figure~\ref{fig:system-architecture} illustrates the complete data flow. The pipeline pseudocode is presented in Algorithm~\ref{alg:exaim-pipeline}.
 
-\begin{figure*}[htbp]
+\begin{algorithm*}[htbp]
+\caption{EXAIM Pipeline: Event-Driven Summarization of Multi-Agent Reasoning Traces}
+\label{alg:exaim-pipeline}
 \begin{algorithmic}[1]
 \STATE \textbf{Input:} Asynchronous token stream $\{(agent\_id, text\_delta)\}$
 \STATE \textbf{Output:} Sequence of structured summaries $\{S_1, S_2, \ldots, S_n\}$
@@ -226,9 +227,7 @@ EXAIM implements a three-stage pipeline that progressively transforms raw token 
     \ENDIF
 \ENDFOR
 \end{algorithmic}
-\caption{EXAIM Pipeline: Event-Driven Summarization of Multi-Agent Reasoning Traces}
-\label{alg:exaim-pipeline}
-\end{figure*}
+\end{algorithm*}
 
 The pipeline operates as follows:
 \begin{enumerate}
@@ -410,9 +409,7 @@ Note: Character budgets are hard constraints that enforce a bounded UI contract,
 
 \subsection{Demonstrative Case Walkthrough}
 
-To illustrate EXAIM's semantic filtering and redundancy suppression in operation, we present a specific interaction sequence from a frozen multi-agent trace (Case ID: 3949). This example demonstrates how the middleware distinguishes between verbose repetition and genuinely novel clinical information.
-
-To demonstrate EXAIM's semantic filtering and redundancy detection mechanisms, we analyze a specific interaction sequence from a multi-agent reasoning trace (Case ID: 3949). This trace was generated using the MAC Framework (described in Section V-A), which simulates a team of diagnostic agents collaborating on a complex medical case.
+To demonstrate EXAIM's semantic filtering and redundancy detection mechanisms, we analyze a specific interaction sequence from a multi-agent reasoning trace (Case ID: 3949). This trace was generated using the MAC Framework (described in Section V-A), which simulates a team of diagnostic agents collaborating on a complex medical case. This example illustrates how the middleware distinguishes between verbose repetition and genuinely novel clinical information.
 
 \textbf{1. Context State (Pre-Condition)} Prior to this segment, doctor0 and doctor1 had already established Spinocerebellar Ataxia (SCA) as the leading diagnosis. The middleware had generated summaries capturing this consensus and the recommended genetic tests (Log ID: summary\_3). The active buffer was empty.
 
@@ -424,6 +421,7 @@ To demonstrate EXAIM's semantic filtering and redundancy detection mechanisms, w
 
 \begin{figure}[h]
     \centering
+    \scalebox{0.75}{%
     \begin{tcolorbox}[
         enhanced,
         colback=white,
@@ -503,7 +501,8 @@ To demonstrate EXAIM's semantic filtering and redundancy detection mechanisms, w
         \vspace{0.5mm}
         
         \textbf{Rationale:} Doctor2 concurs with SCA based on ataxia/dysarthria/MRI... adding no new information. The content is \textcolor{statusgreen}{relevant} as it details planned actions, but it is \textcolor{statusred}{not novel} as these details were already broadly mentioned in previous summaries.
-    \end{tcolorbox}
+    \end{tcolorbox}%
+    }
     \caption{BufferAgent System Status Card showing the hierarchical decision logic. Three evaluation conditions (\textcolor{statusgreen}{Complete=True}, \textcolor{statusgreen}{Relevant=True}, \textcolor{statusred}{Novel=False}) combine to produce the final result: \textcolor{statusred}{Trigger=False (Suppressed)}, preventing redundant update generation.}
     \label{fig:logic-card}
 \end{figure}
@@ -583,14 +582,11 @@ To isolate the contribution of individual architectural components, we conduct a
 \textbf{Variant} & \textbf{TokenGate} & \textbf{BufferAgent} & \textbf{Novelty} & \textbf{Trigger} & \textbf{Description} \\
 \midrule
 V0 (Full EXAIM) & \checkmark & \checkmark & \checkmark & Semantic & Complete pipeline with all components \\
-& (60/100 words) & & & & \\
 V1 (Turn-End) & $\times$ & $\times$ & N/A & Turn boundaries & Baseline: summarize only at turn\_end events \\
 V2 (No BufferAgent) & \checkmark & $\times$ & N/A & All TokenGate flushes & Tests impact of semantic filtering \\
-& (60/100 words) & & & & \\
 V3 (Fixed-Chunk) & $\times$ & \checkmark & \checkmark & Fixed CTU intervals & Calibrated fixed-size chunking \\
 & (fixed CTU) & & & & vs. adaptive segmentation \\
 V4 (No Novelty) & \checkmark & \checkmark & $\times$ & Semantic & Tests novelty gating impact \\
-& (60/100 words) & & (disabled) & & \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -612,8 +608,8 @@ Each variant tests a specific architectural hypothesis:
 To ensure reproducibility and isolate the middleware's contribution from stochastic model variance, we enforce strict configuration constraints:
 
 \begin{itemize}
-\item \textbf{Middleware Model and Deterministic Sampling:} Both the BufferAgent (trigger logic) and SummarizerAgent (synthesis) are powered by Gemini 2.5 Flash Lite (Google), selected for its high throughput and native support for large context windows. All middleware components operate at temperature=0.0 to minimize generation variance and ensure deterministic, reproducible outputs.
-\item \textbf{Constraint Enforcement:} Schema validation and character-limit truncation are enforced using Pydantic v2 models with LangChain's structured output (strict=True). The SummarizerAgent employs a three-attempt strategy: initial structured output, retry with rewrite prompt for length violations, and fallback truncation. If validation fails after all attempts, an empty summary is generated and marked as failed (schema\_ok=false) for metrics exclusion, ensuring the system continues operation while tracking failure rates.
+\item \textbf{Middleware Model and Deterministic Sampling:} Both the BufferAgent (trigger logic) and SummarizerAgent (synthesis) are powered by Gemini 2.5 Flash Lite (Google), selected for its engineering focus on high-throughput, low-latency, low-cost workloads while retaining native support for large context windows. All middleware components operate at temperature=0.0 to minimize generation variance and ensure deterministic, reproducible outputs.
+\item \textbf{Constraint Enforcement:} Schema validation uses Pydantic v2 with LangChain's structured output (strict=True) as described in Section IV-D.3. For evaluation purposes, failed summaries are marked (schema\_ok=false) and excluded from metrics while the system continues operation.
 \item \textbf{Evaluation-Only Concept Extraction:} For semantic evaluation metrics (M3, M4, M5, M6a, M6b, M7), we utilize scispaCy (en\_core\_sci\_sm) with the UMLS Entity Linker to extract canonical medical concepts (CUIs) from both the raw traces and generated summaries. This extraction pipeline is used only for metric computation and is not part of the EXAIM middleware runtime.
 \item \textbf{Token Measurement Unit:} All token volume metrics (M2, M7, M9) report CTU (Character-Normalized Token Units), computed as $\lceil \text{len(text)} / 4 \rceil$. This vendor-agnostic, deterministic unit provides a token-equivalent estimate that enables consistent measurement across different LLM providers and tokenization schemes. For LLM usage measurement (M9), CTU values report user prompt and completion text only, excluding fixed system prompts. System prompts are constant across variants and represent fixed infrastructure overhead rather than variable computational cost per decision.
 \end{itemize}
@@ -724,15 +720,15 @@ This subsection interprets the marginal contributions of each component through 
 
 \subsubsection{Full EXAIM vs. Turn-Based Baseline (V0 vs. V1)}
 
-Table I shows V0 achieves 26\% higher faithfulness and 20\% lower redundancy than V1, with modest coverage gains (Section V-E). While V0 generates 37\% more updates than V1, these updates contain higher informational value and less redundancy. This illustrates that semantic event detection does not reduce update frequency relative to turn-based triggering, but rather reallocates updates to semantically meaningful boundaries. Turn-based summarization compresses multi-topic agent turns into single summaries, leading to information loss and reduced grounding. The semantic event detection mechanism allows EXAIM to surface clinically meaningful updates at sub-turn granularity, improving both faithfulness and coverage.
+Table~\ref{tab:primary-metrics} shows V0 achieves 26\% higher faithfulness and 20\% lower redundancy than V1, with modest coverage gains (Section V-E). While V0 generates 37\% more updates than V1, these updates contain higher informational value and less redundancy. This illustrates that semantic event detection does not reduce update frequency relative to turn-based triggering, but rather reallocates updates to semantically meaningful boundaries. Turn-based summarization compresses multi-topic agent turns into single summaries, leading to information loss and reduced grounding. The semantic event detection mechanism allows EXAIM to surface clinically meaningful updates at sub-turn granularity, improving both faithfulness and coverage.
 
-EXAIM introduces additional computational cost due to semantic analysis of the reasoning stream. Table II shows average summary latency increases from V1 to V0, with p95 tail latencies of 1.59s and 1.84s respectively. In streaming systems, tail latencies are critical for user experience; the observed p95 values remain within acceptable bounds for interactive dashboard update latencies ($<$ 2 seconds). Total LLM token-equivalent usage increases by 5.3$\times$ from V1 to V0, reflecting the cost of semantic buffering and novelty analysis. While this represents significant computational overhead, it must be evaluated relative to the benefits: 26\% improved faithfulness, 20\% reduced redundancy, and event-driven triggering that aligns updates with clinical meaning rather than arbitrary turn boundaries (addressing RQ1d; see Section VI-A for implications on transparency primitives and Section VI-C for broader trade-off analysis).
+EXAIM introduces additional computational cost due to semantic analysis of the reasoning stream. Table~\ref{tab:supplementary-metrics} shows average summary latency increases from V1 to V0, with p95 tail latencies of 1.59s and 1.84s respectively. In streaming systems, tail latencies are critical for user experience; the observed p95 values remain within acceptable bounds for interactive dashboard update latencies ($<$ 2 seconds). Total LLM token-equivalent usage increases by 5.3$\times$ from V1 to V0, reflecting the cost of semantic buffering and novelty analysis. While this represents significant computational overhead, it must be evaluated relative to the benefits: 26\% improved faithfulness, 20\% reduced redundancy, and event-driven triggering that aligns updates with clinical meaning rather than arbitrary turn boundaries (addressing RQ1d; see Section VI-A for implications on transparency primitives and Section VI-C for broader trade-off analysis).
 
 Having established the baseline semantic event detection advantage, we now examine component-specific contributions to faithfulness and update control.
 
 \subsubsection{Effect of Novelty Filtering (V0 vs. V4)}
 
-Table I shows V4 achieves the best faithfulness among all variants, but this marginal improvement over V0 (0.7\%) comes at the expense of 41\% more updates and 27\% higher output volume. Although V4 captures marginally more information (8\% coverage gain), it does so at the cost of significantly higher interruption frequency.
+Table~\ref{tab:primary-metrics} shows V4 achieves the best faithfulness among all variants, but this marginal improvement over V0 (0.7\%) comes at the expense of 41\% more updates and 27\% higher output volume. Although V4 captures marginally more information (8\% coverage gain), it does so at the cost of significantly higher interruption frequency.
 
 This demonstrates that novelty filtering functions primarily as an update frequency control mechanism rather than a simple deduplication strategy. The novelty gate suppresses incremental updates that are technically novel but represent low marginal information gain, trading small coverage losses for substantial reductions in clinician interruptions. The nearly identical redundancy between V0 and V4 indicates that novelty filtering operates at a different level than consecutive-update similarity: it prevents semantically distinct but marginally informative updates rather than blocking redundant repetitions (answering RQ1b; see Section VI-C for coverage-frequency trade-offs).
 
@@ -740,7 +736,7 @@ While novelty filtering provides marginal faithfulness improvements, semantic bu
 
 \subsubsection{Impact of Semantic Buffering (V0 vs. V2)}
 
-Without semantic buffering, Table II shows the system produces a dramatic 4.0$\times$ increase in update frequency and 3.1$\times$ increase in output volume. The system generates excessive, fragmented updates directly from every TokenGate flush. While V2 achieves the highest coverage among all variants, this comes at the cost of extreme interruption frequency that would be operationally unusable in clinical settings.
+Without semantic buffering, Table~\ref{tab:supplementary-metrics} shows the system produces a dramatic 4.0$\times$ increase in update frequency and 3.1$\times$ increase in output volume. The system generates excessive, fragmented updates directly from every TokenGate flush. While V2 achieves the highest coverage among all variants, this comes at the cost of extreme interruption frequency that would be operationally unusable in clinical settings.
 
 This demonstrates a critical insight: maximal information coverage undermines operational value when achieved through excessive interruption frequency. V2 illustrates that exhaustive transparency is not equivalent to effective transparency—a finding that validates EXAIM's design philosophy of selective, high-value disclosure over comprehensive exposure. The relationship between update frequency and LLM usage is not strictly linear: V2 generates 4.0$\times$ more updates than V0 but incurs 40\% lower LLM usage, demonstrating that BufferAgent's semantic analysis adds per-decision overhead. However, V2's approach is clinically unusable due to extreme interruption frequency. V0 trades higher per-update analysis cost for substantially better filtering, achieving 75\% fewer updates than V2 with superior faithfulness and redundancy suppression.
 
@@ -750,7 +746,7 @@ Beyond semantic filtering, syntax-aware segmentation quality affects downstream 
 
 \subsubsection{Adaptive vs. Fixed Segmentation (V0 vs. V3)}
 
-Table I shows fixed-size chunking degrades both coverage (17\% reduction) and faithfulness (9\% reduction) relative to V0. Fixed segmentation frequently splits semantically complete reasoning units mid-sentence or mid-thought, forcing the summarizer to operate on incomplete context. This fragmentation leads to:
+Table~\ref{tab:primary-metrics} shows fixed-size chunking degrades both coverage (17\% reduction) and faithfulness (9\% reduction) relative to V0. Fixed segmentation frequently splits semantically complete reasoning units mid-sentence or mid-thought, forcing the summarizer to operate on incomplete context. This fragmentation leads to:
 
 \begin{itemize}
 \item \textbf{Information Loss}: Partial hypotheses or incomplete evidence chains cannot be accurately summarized
@@ -758,7 +754,7 @@ Table I shows fixed-size chunking degrades both coverage (17\% reduction) and fa
 \item \textbf{Higher Redundancy}: V3's redundancy is worse than V0, suggesting that fixed chunking creates artificial update boundaries that split coherent reasoning and force the summarizer to repeat context across fragments
 \end{itemize}
 
-Despite operating at comparable update frequencies and having access to the same BufferAgent filtering, V3's fixed boundaries systematically underperform adaptive syntax-aware segmentation. This demonstrates that TokenGate's boundary detection is not merely a latency optimization—it directly improves semantic coherence of the buffered units, enabling better downstream summarization. Interestingly, Table II shows V3 has the highest LLM usage among all variants, suggesting that BufferAgent must work harder to analyze fragmented, context-poor chunks, leading to longer prompts or more complex reasoning (confirming RQ1d).
+Despite operating at comparable update frequencies and having access to the same BufferAgent filtering, V3's fixed boundaries systematically underperform adaptive syntax-aware segmentation. This demonstrates that TokenGate's boundary detection is not merely a latency optimization—it directly improves semantic coherence of the buffered units, enabling better downstream summarization. Interestingly, Table~\ref{tab:supplementary-metrics} shows V3 has the highest LLM usage among all variants, suggesting that BufferAgent must work harder to analyze fragmented, context-poor chunks, leading to longer prompts or more complex reasoning (confirming RQ1d).
 
 
 
