@@ -68,15 +68,6 @@ Following a design science research paradigm, RQ1 is investigated through the co
 
 To evaluate these questions, we conducted an ablation study in which we instantiated a real-time summarization middleware that intercepts LLM reasoning traces and emits structured summaries constrained by a fixed schema. The artifact enables controlled variation of triggering strategies (event-driven versus baseline triggers), continuity constraints, and update policies, allowing systematic assessment of their effects on semantic coverage, redundancy, faithfulness, and computational overhead.
 
-Building on recent advances in incremental summarization \cite{leduc2025speech,wu2025incremental}, EXAIM operates as an intermediary layer between upstream diagnostic agents and clinician-facing interfaces. EXAIM continuously monitors reasoning streams and generates concise, structured summaries at clinically meaningful moments. Rather than relying on fixed turn boundaries or static thresholds, EXAIM employs semantic event detection to trigger updates only when new, relevant, and non-redundant clinical information emerges.
-
-
-EXAIM is implemented as a modular, domain-agnostic middleware composed of three components: (i) a syntax-aware stream regulator that segments high-velocity token streams into semantically coherent units, (ii) a semantic buffering agent that detects topic shifts, novelty, and critical events, and (iii) a schema-constrained summarization agent that produces structured updates aligned with established clinical communication frameworks.
-
-The architecture supports incremental transparency, controls update stream quality through semantic event detection and novelty filtering while suppressing redundant/low-value updates, and preserves multi-agent attribution without requiring modification of upstream diagnostic models. This approach leverages evidence that strict length constraints and structured documentation (e.g., SOAP/SBAR) \cite{haig2006sbar,podder2023soap} support predictable, scannable presentation formats in clinical communication \cite{vanveen2023summarization,krishna2021soap,zhang2024annotate}.
-
-
-
 This paper makes the following contributions:
 \begin{itemize}
 \item \textbf{A modular middleware architecture that transforms streaming multi-agent reasoning traces into structured, clinician-aligned summaries.}
@@ -131,17 +122,30 @@ Recent studies indicate that streaming summarization can outperform post-hoc sum
 
 \section{Artifact Description}
 
-Design Science aims to create and evaluate IT artifacts intended to solve identified organizational problems \cite{hevner2004design}. We adhere to the six design steps of DSR and the nominal process model outlined by Peffers et al. \cite{peffers2007dsr} in designing EXAIM. This approach aligns with recent applications of DSR for developing AI-based clinical tools that balance technical innovation with practical usability requirements \cite{hor2025design}. This section systematically provides a comprehensive description of the artifact design, EXAIM.
+Design Science aims to create and evaluate IT artifacts intended to solve identified organizational problems \cite{hevner2004design}. We adhere to the six design steps of DSR and the nominal process model outlined by Peffers et al. \cite{peffers2007dsr} in designing EXAIM (Figure~\ref{fig:dsr}). This approach aligns with recent applications of DSR for developing AI-based clinical tools that balance technical innovation with practical usability requirements \cite{hor2025design}. This section systematically provides a comprehensive description of the artifact design, EXAIM.
 
-\subsection{System Model and Interface Assumptions}
+\begin{figure*}[htbp]
+\centering
+\includegraphics[width=\textwidth]{dsr/DSR.pdf}
+\caption{EXAIM Design Science Research Methodology (DSRM) process model showing the six stages of our research lifecycle and the process iteration feedback loops.}
+\label{fig:dsr}
+\end{figure*}
 
-EXAIM operates as a stateful observer middleware positioned between upstream multi-agent diagnostic systems and clinician-facing interfaces. The system processes asynchronous streams of text deltas and emits structured summaries at semantically detected events rather than fixed intervals or turn boundaries.
+\subsection{EXAIM Architecture Overview}
 
-\subsubsection{Input Model}
+Building on recent advances in incremental summarization \cite{leduc2025speech,wu2025incremental}, EXAIM operates as an intermediary layer between upstream diagnostic agents and clinician-facing interfaces, continuously monitoring reasoning streams and generating concise, structured summaries at clinically meaningful moments. Rather than relying on fixed turn boundaries or static thresholds, the system employs semantic event detection to trigger updates only when new, relevant, and non-redundant clinical information emerges.
 
-The system assumes a stream-based input model where multiple upstream agents emit incremental text deltas asynchronously. Each delta is a tuple $(a, \tau)$ where $a$ is the agent identifier and $\tau$ is a text fragment (substring of ongoing generation). The middleware subscribes to this stream via callback registration, operating in push mode without blocking upstream generation. Timing information is inferred from arrival timestamps rather than explicit metadata, allowing integration with any agent framework supporting token-level streaming.
+Figure~\ref{fig:system-architecture} illustrates EXAIM's three-stage transformation pipeline. The architecture is implemented as a modular, domain-agnostic middleware composed of three specialized components: (i) \textbf{TokenGate}, a syntax-aware stream regulator that segments high-velocity token streams into semantically coherent units, (ii) \textbf{BufferAgent}, a semantic buffering agent that detects topic shifts, novelty, and critical events, and (iii) \textbf{SummarizerAgent}, a schema-constrained summarization agent that produces structured updates aligned with established clinical communication frameworks (SBAR/SOAP).
 
-\subsubsection{Output Schema}
+This design supports incremental transparency by progressively transforming raw token streams into structured summaries. The architecture controls update stream quality through semantic event detection and novelty filtering, suppressing redundant or low-value updates while preserving multi-agent attribution. Importantly, EXAIM operates without requiring modification of upstream diagnostic models, functioning purely as an observational transparency layer. The approach leverages evidence that strict length constraints and structured documentation \cite{haig2006sbar,podder2023soap} support predictable, scannable presentation formats in clinical communication \cite{vanveen2023summarization,krishna2021soap,zhang2024annotate}.
+
+The three-stage pipeline operates as follows: First, TokenGate accumulates per-agent text deltas and flushes chunks when syntax-aware conditions are met (word thresholds, sentence boundaries, or timeouts). Second, BufferAgent analyzes each flushed chunk for semantic properties—completeness, relevance, and novelty—deciding whether to trigger summarization. Third, when triggered, SummarizerAgent generates a schema-constrained summary that enforces character limits and clinical framework alignment. This staged design decouples stream regulation (syntactic), event detection (semantic), and summary generation (structural), enabling independent tuning and ablation of each component. Sections 3.B--3.D detail the implementation of each component, while Section 3.E specifies the output schema and Section 3.F demonstrates the system's filtering behavior through a case walkthrough.
+
+\subsubsection{Interface Model}
+
+EXAIM processes asynchronous streams of text deltas and emits structured summaries at semantically detected events. The system assumes a stream-based input model where multiple upstream agents emit incremental text deltas asynchronously. Each delta is a tuple $(a, \tau)$ where $a$ is the agent identifier and $\tau$ is a text fragment (substring of ongoing generation). The middleware subscribes to this stream via callback registration, operating in push mode without blocking upstream generation. Timing information is inferred from arrival timestamps rather than explicit metadata, allowing integration with any agent framework supporting token-level streaming.
+
+\subsubsection{Output Contract}
 
 EXAIM emits structured summaries conforming to a fixed six-field schema with hard character limits totaling 990 characters. The schema enforces alignment with SBAR \cite{haig2006sbar} and SOAP \cite{podder2023soap} clinical communication patterns:
 \begin{itemize}
@@ -173,53 +177,6 @@ The architecture enforces three core constraints:
 
 These constraints operationalize the middleware's role as a transparency layer rather than an autonomous reasoning component.
 
-\subsection{Pipeline Walkthrough}
-
-EXAIM implements a three-stage pipeline that progressively transforms raw token streams into structured summaries. Figure~\ref{fig:system-architecture} illustrates the complete data flow. The pipeline pseudocode is presented in Algorithm~\ref{alg:exaim-pipeline}.
-
-\begin{algorithm*}[htbp]
-\caption{EXAIM Pipeline: Event-Driven Summarization of Multi-Agent Reasoning Traces}
-\label{alg:exaim-pipeline}
-\begin{algorithmic}[1]
-\STATE \textbf{Input:} Asynchronous token stream $\{(agent\_id, text\_delta)\}$
-\STATE \textbf{Output:} Sequence of structured summaries $\{S_1, S_2, \ldots, S_n\}$
-\STATE \textbf{Initialize:} Per-agent buffers $B_{agent} \leftarrow \emptyset$, summary history $H \leftarrow []$, summary count $n \leftarrow 0$
-\STATE
-\FOR{each incoming $(agent\_id, text\_delta)$}
-    \STATE // \textbf{Stage 1: TokenGate (Syntax-Aware Stream Regulation)}
-    \STATE Append $text\_delta$ to $B_{agent\_id}$
-    \STATE $flush \leftarrow$ \textsc{EvaluateFlushPolicy}($B_{agent\_id}$) \COMMENT{Internal timestamp tracking}
-    \IF{$flush = \text{True}$}
-        \STATE $chunk \leftarrow B_{agent\_id}$
-        \STATE $B_{agent\_id} \leftarrow \emptyset$
-        \STATE
-        \STATE // \textbf{Stage 2: BufferAgent (Semantic Event Detection)}
-        \STATE $analysis \leftarrow$ \textsc{BufferAgent}($chunk$, $H[-3:]$) \COMMENT{LLM-powered analysis}
-        \STATE $trigger \leftarrow$ \textsc{ComputeTrigger}($analysis$) \COMMENT{Three-path decision logic}
-        \IF{$trigger = \text{True}$}
-            \STATE
-            \STATE // \textbf{Stage 3: SummarizerAgent (Schema-Constrained Synthesis)}
-            \STATE $S_n \leftarrow$ \textsc{SummarizerAgent}($chunk$, $H[-3:]$) \COMMENT{Generate structured summary}
-            \IF{\textsc{ValidateSchema}($S_n$) = \text{True}}
-                \STATE Emit $S_n$ to clinician interface
-                \STATE Append $S_n$ to $H$
-                \STATE $n \leftarrow n + 1$
-            \ENDIF
-        \ENDIF
-    \ENDIF
-\ENDFOR
-\end{algorithmic}
-\end{algorithm*}
-
-The pipeline operates as follows:
-\begin{enumerate}
-\item \textbf{TokenGate} accumulates per-agent buffers and flushes chunks when syntax-aware conditions are met (word thresholds, sentence boundaries, or timeouts)
-\item \textbf{BufferAgent} analyzes each flushed chunk for semantic properties (completeness, relevance, novelty) and decides whether to trigger summarization
-\item \textbf{SummarizerAgent} generates a schema-constrained summary when triggered, enforcing character limits and clinical framework alignment
-\end{enumerate}
-
-This staged design decouples stream regulation (syntactic), event detection (semantic), and summary generation (structural), allowing independent tuning and ablation of each component.
-
 \subsection{TokenGate: Syntax-Aware Stream Regulation}
 
 TokenGate addresses a fundamental problem in streaming LLM interfaces: raw token streams are fragmented, bursty, and misaligned with linguistic boundaries. Applying semantic analysis directly to these streams would either trigger excessive processing on partial phrases or buffer indefinitely on incomplete units. TokenGate solves this by accumulating text deltas into coherent chunks using a syntax-aware segmentation policy.
@@ -241,7 +198,7 @@ This policy prioritizes sentence boundaries when available (clause 1) but preven
 
 \subsubsection{Design Rationale and Ablation}
 
-Clause 1 implements adaptive boundary detection, allowing chunks to align with semantic units. Ablation variant V3 (fixed-chunk baseline) disables this adaptivity by removing the boundary condition. This isolates the impact of syntax-aware segmentation on downstream semantic coverage. Parameter values (60/100 words, 1.0s/4.0s timeouts) were calibrated through Pareto optimization across 625 configurations (Section IV-A), balancing first-chunk latency, semantic coherence, and processing overhead.
+Clause 1 implements adaptive boundary detection, allowing chunks to align with semantic units. Ablation variant V3 (Fixed-Chunk) disables this adaptivity by removing the boundary condition. This isolates the impact of syntax-aware segmentation on downstream semantic coverage. Parameter values (60/100 words, 1.0s/4.0s timeouts) were calibrated through Pareto optimization across 625 configurations (Section IV-A), balancing first-chunk latency, semantic coherence, and processing overhead.
 
 \subsection{BufferAgent: Semantic Event Detection}
 
@@ -280,8 +237,8 @@ Path 1 (critical alerts) bypasses all filtering for urgent events. Path 2 (compl
 The multi-path design enables targeted ablations:
 \begin{itemize}
 \item \textbf{V4 (No Novelty)}: Forces $\mathit{novel} = \mathit{true}$, isolating novelty filtering's impact on redundancy
-\item \textbf{V2 (Turn Baseline)}: Bypasses semantic evaluation entirely, triggering on agent turn boundaries
-\item \textbf{V1 (No BufferAgent)}: Removes semantic layer, processing all TokenGate chunks
+\item \textbf{V1 (Turn-End)}: Bypasses semantic evaluation entirely, triggering on agent turn boundaries
+\item \textbf{V2 (No BufferAgent)}: Removes semantic layer, processing all TokenGate chunks
 \end{itemize}
 
 These variants directly test the contribution of semantic event detection to coverage (RQ1a), redundancy (RQ1b), and comparative performance (RQ1d).
@@ -325,26 +282,6 @@ Failed summaries (after all attempts) are logged with schema\_ok=false and exclu
 \item \textbf{LLM Configuration}: Structured output mode with schema enforcement (Pydantic strict mode). Model selection and sampling parameters detailed in Section IV-A
 \end{itemize}
 
-\subsection{Implementation and Reproducibility}
-
-EXAIM is implemented in Python 3.11 using LangChain for LLM orchestration and Pydantic v2 for schema validation. The middleware operates asynchronously using Python's asyncio framework to handle concurrent agent streams without blocking.
-
-\subsubsection{Deterministic Replay Infrastructure}
-
-To enable reproducible evaluation, the system supports deterministic trace replay. Upstream multi-agent interactions are captured as frozen JSON traces containing token deltas, timestamps, and turn metadata. During evaluation, these traces are replayed with precise timing simulation, ensuring identical inputs across all experimental runs.
-
-\subsubsection{Configuration Management}
-
-Component parameters (TokenGate thresholds, history\_k, novelty filtering) are externalized in YAML configuration files. Each ablation variant (V0-V4) has a dedicated config specifying which components are enabled and their parameter values. This design supports controlled ablation without code modification.
-
-\subsubsection{Middleware Architecture Pattern}
-
-EXAIM follows the Observer pattern: it subscribes to agent token streams via callback registration but does not participate in agent orchestration. Agents emit tokens to registered observers; EXAIM processes these emissions independently. This loose coupling allows integration with any multi-agent framework that supports token-level streaming callbacks.
-
-\subsubsection{Reproducibility Statement}
-
-All evaluation code, configuration files, frozen traces, and metric computation scripts are provided in the /evals directory. Docker-based execution ensures environment reproducibility. The calibration process (Section IV-A) and metric definitions (Section IV-C) are fully documented and deterministic given fixed random seeds.
-
 \subsection{Schema Specification}
 
 The AgentSummary schema (Table~\ref{tab:schema}) enforces a structured contract between the middleware and clinician-facing interfaces. Each of the six fields maps directly to elements of SBAR (Situation-Background-Assessment-Recommendation) \cite{haig2006sbar} and SOAP (Subjective-Objective-Assessment-Plan) \cite{podder2023soap} clinical communication frameworks. Character budgets operationalize qualitative usability principles from clinical alert systems \cite{pourian2025alerts} and patient-centered CDSS design \cite{harrison2022patient} into deterministic constraints.
@@ -364,7 +301,7 @@ Status / Action & SBAR: Situation & Alert header; scannable update. & 150 chars 
 Key Findings & SOAP: Obj/Subj & Salient facts; ``live snippet'' paradigm. & 180 chars & Supports $\sim$2 concise snippets aligned with targeted summarization limits \cite{vanveen2023summarization}. Structured presentation addresses transparency barriers identified in patient-centered CDSS deployment \cite{harrison2022patient}. \\
 Differential & SOAP: Assessment & Diagnostic interpretation. & 210 chars & Bounds complexity to maintain interpretability \cite{lage2019interpretability}. \\
 Uncertainty & SOAP: Assessment & Explicit confidence signal. & 120 chars & Simplified framing for trust calibration \cite{goel2022covid}. \\
-Rec. / Plan & SOAP: Plan & Actionable next step. & 180 chars & Action-linked explanations \cite{silva2023xai,bergomi2022impact}. \\
+Rec. / Plan & SOAP: Plan & Actionable next step. & 180 chars & Action-linked explanations \cite{silva2023xai}. \\
 Agent Contrib. & System Meta & Attribution of active agents. & 150 chars & Pipeline transparency patterns \cite{donadello2021sexai}. \\
 \bottomrule
 \end{tabular}
@@ -576,7 +513,7 @@ To ensure reproducibility and isolate the middleware's contribution from stochas
 
 \begin{itemize}
 \item \textbf{Middleware Model and Deterministic Sampling:} Both the BufferAgent (trigger logic) and SummarizerAgent (synthesis) are powered by Gemini 2.5 Flash Lite (Google), selected for its engineering focus on high-throughput, low-latency, low-cost workloads while retaining native support for large context windows. All middleware components operate at temperature=0.0 to minimize generation variance and ensure deterministic, reproducible outputs.
-\item \textbf{Constraint Enforcement:} Schema validation uses Pydantic v2 with LangChain's structured output (strict=True) as described in Section III-D.3. For evaluation purposes, failed summaries are marked (schema\_ok=false) and excluded from metrics while the system continues operation.
+\item \textbf{Constraint Enforcement:} Schema validation uses Pydantic v2 with LangChain's structured output (strict=True) as described in the SummarizerAgent validation strategy (Section III). For evaluation purposes, failed summaries are marked (schema\_ok=false) and excluded from metrics while the system continues operation.
 \item \textbf{Evaluation-Only Concept Extraction:} For semantic evaluation metrics (M3, M4, M5, M6a, M6b, M7), we utilize scispaCy (en\_core\_sci\_sm) with the UMLS Entity Linker to extract canonical medical concepts (CUIs) from both the raw traces and generated summaries. This extraction pipeline is used only for metric computation and is not part of the EXAIM middleware runtime.
 \item \textbf{Token Measurement Unit:} All token volume metrics (M2, M7, M9) report CTU (Character-Normalized Token Units), computed as $\lceil \text{len(text)} / 4 \rceil$. This vendor-agnostic, deterministic unit provides a token-equivalent estimate that enables consistent measurement across different LLM providers and tokenization schemes. For LLM usage measurement (M9), CTU values report user prompt and completion text only, excluding fixed system prompts. System prompts are constant across variants and represent fixed infrastructure overhead rather than variable computational cost per decision.
 \end{itemize}
@@ -635,7 +572,7 @@ Despite these limitations, concept-level metrics remain informative. Relative di
 
 \subsection{Results}
 
-We target a streaming transparency regime that maximizes coverage and contract-grounded alignment under strict interruption (updates/case) and output budget constraints. While automated metrics provide reproducible, scalable evaluation of XAI systems, they should be complemented by human-centered evaluation for comprehensive assessment \cite{vilone2021explainable}. Table~\ref{tab:primary-metrics} presents the primary performance metrics comparing V0 (Full EXAIM) against all baseline variants. Table~\ref{tab:supplementary-metrics} provides supplementary contextual metrics for comprehensive analysis. Figure~\ref{fig:efficiency-frontier} visualizes the trade-off between interruption frequency and faithfulness, showing V0's position as a favorable operating point in the trade-off space.
+We target a streaming transparency regime that maximizes coverage and contract-grounded alignment under strict interruption (updates/case) and output budget constraints. While automated metrics provide reproducible, scalable evaluation of XAI systems, they should be complemented by human-centered evaluation for comprehensive assessment \cite{vilone2021explainable}. Table~\ref{tab:primary-metrics} presents the primary performance metrics comparing V0 (Full EXAIM) against all baseline variants. Table~\ref{tab:supplementary-metrics} provides supplementary contextual metrics for comprehensive analysis.
 
 \begin{table}[htbp]
 \caption{Primary Performance Metrics: V0 vs. Baselines}
