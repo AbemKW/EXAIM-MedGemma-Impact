@@ -193,7 +193,7 @@ When BufferAgent determines that a chunk merits clinician attention, SummarizerA
 
 The agent receives three inputs: the triggering chunk $C$, the agent context (identifier and role), and a sliding window of the three most recent summaries $H_{k=3}$. This limited history serves dual purposes---it enables the summarizer to avoid repeating recently stated information while providing continuity for multi-turn reasoning threads.
 
-Generation proceeds through a three-stage pipeline. First, \textbf{Draft}: the LLM generates a structured prediction using strict Pydantic type definitions mapped to SBAR/SOAP fields (Table~\ref{tab:schema}). Second, \textbf{Validate}: the system checks whether the generated content respects all character limits. Third, \textbf{Repair}: if validation fails, the system iteratively invokes the LLM with increasingly aggressive compression instructions until the output fits or a maximum retry count is reached.
+Generation employs a three-attempt validation strategy. First, \textbf{Initial Generation}: the LLM generates structured output using strict Pydantic type definitions with schema enforcement (strict=True) mapped to SBAR/SOAP fields (Table~\ref{tab:schema}). Second, \textbf{Retry with Rewrite}: if character limits are exceeded, the system creates a targeted rewrite prompt identifying the violating fields and their required length reductions, then re-invokes the LLM. Third, \textbf{Fallback Truncation}: if validation still fails after the rewrite attempt, the system applies hard truncation at character boundaries to ensure schema compliance.
 
 This schema-first approach differs fundamentally from unconstrained summarization. Traditional abstractive summarizers optimize for semantic coverage or fluency but provide no length guarantees. EXAIM inverts this priority: the character budgets are non-negotiable constraints derived from UI layout requirements, while semantic coverage is maximized subject to these bounds.
 
@@ -345,15 +345,14 @@ We verify the effectiveness of the EXAIM artifact through a "glass-box" evaluati
 
 \subsection{Data / Trace Replay Setup}
 
-We utilized the Multi-Agent Conversation (MAC) framework \cite{chenx2025diagnostic} as the upstream trace generator. MAC is a multi-agent diagnostic system where diverse doctor agents and a supervisor collaborate to solve complex medical cases.
-We instrumented MAC to capture real-time token dynamics, logging granular stream deltas and precise timestamps. These logs serve as a frozen replay dataset of 40 rare-disease diagnostic cases (seed=42), enabling deterministic simulation of live streams.
+We utilized the Multi-Agent Conversation (MAC) framework \cite{chenx2025diagnostic} as the upstream trace generator. MAC is a multi-agent diagnostic system where diverse doctor agents and a supervisor collaborate to solve complex medical cases. We executed MAC with GPT-4o-mini using the authors' default configuration without modification. To capture realistic streaming dynamics, we instrumented MAC via a transparent OpenAI API monkeypatch that logs per-delta emissions and microsecond timestamps without altering MAC's conversation logic, speaker selection, or termination behavior. These logs serve as a frozen replay dataset of 40 rare-disease diagnostic cases from MAC's dataset (seed=42), enabling deterministic simulation of live streams.
 
 \subsection{Calibration Protocol}
 
 To ensure fair evaluation, we executed a rigorous parameter selection process before final testing:
 \begin{enumerate}
     \item \textbf{TokenGate Calibration}: We performed a grid search over 625 policy combinations (varying word counts and timeouts) on the replay dataset. The final policy (min\_words=60, max\_word=100, silence=1.0s, safe\_wait=4.0s) was selected via Pareto frontier analysis to jointly optimize latency and linguistic coherence.
-    \item \textbf{Baseline Calibration}: The fixed-chunk baseline (V3) was calibrated to the median flush size of the full system to ensure valid comparison.
+    \item \textbf{V3 Fixed-Chunk Calibration}: V3 chunk size was derived from V0 TokenGate regular flushes (excluding end-of-trace and turn-end) using a two-stage median: per-case median CTU, then median across the first 40 cases. This ensures V3 operates at comparable segmentation granularity to V0 while isolating the contribution of adaptive boundaries.
     \item \textbf{Measurement Standardization}: We report all token volumes and costs in \textbf{Character-Normalized Token Units (CTU)}, defined as $\lceil \text{len(text)} / 4 \rceil$, to ensure vendor-agnostic reproducibility.
 \end{enumerate}
 Table~\ref{tab:tokengate-grid} details the explored parameter space.
