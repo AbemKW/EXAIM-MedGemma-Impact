@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 1600 450"
+   style="font-family:Arial, Helvetica, sans-serif"
+   version="1.1"
+   id="svg35"
+   sodipodi:docname="DSR.svg"
+   inkscape:export-filename="DSR.pdf"
+   inkscape:export-xdpi="300"
+   inkscape:export-ydpi="300"
+   width="1600"
+   height="450"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview35"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="0.99728246"
+     inkscape:cx="1078.4307"
+     inkscape:cy="360.47962"
+     inkscape:window-width="1920"
+     inkscape:window-height="1009"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg35" />
+  <defs
+     id="defs2">
+    <marker
+       id="arrow"
+       markerWidth="10"
+       markerHeight="10"
+       refX="9"
+       refY="3"
+       orient="auto"
+       markerUnits="strokeWidth">
+      <path
+         d="M 0,0 V 6 L 9,3 Z"
+         fill="#000000"
+         id="path1" />
+    </marker>
+    <marker
+       id="arrow-gray"
+       markerWidth="10"
+       markerHeight="10"
+       refX="9"
+       refY="3"
+       orient="auto"
+       markerUnits="strokeWidth">
+      <path
+         d="M 0,0 V 6 L 9,3 Z"
+         fill="#666666"
+         id="path2" />
+    </marker>
+  </defs>
+  <style
+     id="style2">
+    .box { fill:#f9f9f9; stroke:#000; stroke-width:1.5; }
+    .title { font-size:20px; font-weight:bold; text-anchor:middle; fill:#000; }
+    .content { font-size:18px; text-anchor:middle; fill:#333; }
+    .connector { stroke:#000; stroke-width:2.5; fill:none; marker-end:url(#arrow); }
+    .feedback { stroke:#666; stroke-width:2; stroke-dasharray:6,4; fill:none; marker-end:url(#arrow-gray); }
+  </style>
+  <!-- Main Boxes and Flow -->
+  <rect
+     x="50"
+     y="100"
+     width="180"
+     height="220"
+     rx="8"
+     ry="8"
+     class="box"
+     id="rect2" />
+  <text
+     x="140"
+     y="130"
+     class="title"
+     id="text3">Problem ID &amp;</text>
+  <text
+     x="140"
+     y="155"
+     class="title"
+     id="text4">Motivation</text>
+  <text
+     x="140"
+     y="200"
+     class="content"
+     id="text5">Opaque, verbose</text>
+  <text
+     x="140"
+     y="225"
+     class="content"
+     id="text6">multi-agent traces</text>
+  <text
+     x="140"
+     y="250"
+     class="content"
+     id="text7">hinder transparency</text>
+  <rect
+     x="320"
+     y="100"
+     width="180"
+     height="220"
+     rx="8"
+     ry="8"
+     class="box"
+     id="rect7" />
+  <text
+     x="410"
+     y="130"
+     class="title"
+     id="text8">Objectives of</text>
+  <text
+     x="410"
+     y="155"
+     class="title"
+     id="text9">a Solution</text>
+  <text
+     x="410"
+     y="200"
+     class="content"
+     id="text10">Schema-aligned</text>
+  <text
+     x="410"
+     y="225"
+     class="content"
+     id="text11">real-time summaries</text>
+  <text
+     x="410"
+     y="250"
+     class="content"
+     id="text12">for clinicians</text>
+  <rect
+     x="590"
+     y="100"
+     width="180"
+     height="220"
+     rx="8"
+     ry="8"
+     class="box"
+     id="rect12" />
+  <text
+     x="680"
+     y="130"
+     class="title"
+     id="text13">Design &amp;</text>
+  <text
+     x="680"
+     y="155"
+     class="title"
+     id="text14">Development</text>
+  <text
+     x="680"
+     y="200"
+     class="content"
+     id="text15">EXAIM Artifact:</text>
+  <text
+     x="680"
+     y="225"
+     class="content"
+     id="text16">TokenGate +</text>
+  <text
+     x="680"
+     y="250"
+     class="content"
+     id="text17">BufferAgent +</text>
+  <text
+     x="680"
+     y="275"
+     class="content"
+     id="text18">SummarizerAgent</text>
+  <rect
+     x="860"
+     y="100"
+     width="180"
+     height="220"
+     rx="8"
+     ry="8"
+     class="box"
+     id="rect18" />
+  <text
+     x="950"
+     y="130"
+     class="title"
+     id="text19">Demonstration</text>
+  <text
+     x="950"
+     y="200"
+     class="content"
+     id="text20">Clinical case</text>
+  <text
+     x="950"
+     y="225"
+     class="content"
+     id="text21">trace replay</text>
+  <text
+     x="950"
+     y="250"
+     class="content"
+     id="text22">in EXAIM UI</text>
+  <rect
+     x="1130"
+     y="100"
+     width="180"
+     height="220"
+     rx="8"
+     ry="8"
+     class="box"
+     id="rect22" />
+  <text
+     x="1220"
+     y="130"
+     class="title"
+     id="text23">Evaluation</text>
+  <text
+     x="1220"
+     y="200"
+     class="content"
+     id="text24">Ablation study</text>
+  <text
+     x="1220"
+     y="225"
+     class="content"
+     id="text25">Metrics M1–M10</text>
+  <text
+     x="1220"
+     y="250"
+     class="content"
+     id="text26">Coverage, Latency</text>
+  <rect
+     x="1400"
+     y="100"
+     width="180"
+     height="220"
+     rx="8"
+     ry="8"
+     class="box"
+     id="rect26" />
+  <text
+     x="1490"
+     y="130"
+     class="title"
+     id="text27">Communication</text>
+  <text
+     x="1490"
+     y="207"
+     class="content"
+     id="text29">Paper &amp; Artifact</text>
+  <text
+     x="1490"
+     y="236"
+     class="content"
+     id="text30">release</text>
+  <line
+     x1="230"
+     y1="210"
+     x2="320"
+     y2="210"
+     class="connector"
+     id="line30" />
+  <line
+     x1="500"
+     y1="210"
+     x2="590"
+     y2="210"
+     class="connector"
+     id="line31" />
+  <line
+     x1="770"
+     y1="210"
+     x2="860"
+     y2="210"
+     class="connector"
+     id="line32" />
+  <line
+     x1="1040"
+     y1="210"
+     x2="1130"
+     y2="210"
+     class="connector"
+     id="line33" />
+  <line
+     x1="1310"
+     y1="210"
+     x2="1400"
+     y2="210"
+     class="connector"
+     id="line34" />
+  <path
+     d="M 1130,100 C 950,40 770,40 590,100"
+     class="feedback"
+     id="path34" />
+  <path
+     d="m 320,320 c -90,60 -180,60 -270,0"
+     class="feedback"
+     id="path35" />
+  <!-- Bottom Annotation -->
+  <text
+     x="800"
+     y="410"
+     font-size="19px"
+     font-weight="bold"
+     text-anchor="middle"
+     id="text35">Nominal Process Sequence – Iterative Feedback Loops Represent Design Science Cycles</text>
+</svg>
