@@ -7,7 +7,7 @@ Usage:
 import json
 from pathlib import Path
 
-from . import figure1, figure2, figure3
+from . import figure1, figure2, figure3, figure4
 
 
 def main():
@@ -44,6 +44,9 @@ def main():
     
     print("\nGenerating Computational Overhead Bar Chart...")
     figure3.generate_computational_overhead(metrics_data, output_dir)
+    
+    print("\nGenerating Saturation Plot...")
+    figure4.generate_saturation_plot(metrics_data, output_dir)
     
     print("\nAll figures generated successfully!")
     print(f"Figures saved to: {output_dir}")
