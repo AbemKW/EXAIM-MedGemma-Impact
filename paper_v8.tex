@@ -40,9 +40,9 @@ andy.behrens@dsu.edu}
 \maketitle
 
 \begin{abstract}
-Multi-agent Large Language Models (LLMs) offer diverse diagnostic perspectives but generate verbose, interleaved reasoning traces that overwhelm clinicians. We present EXAIM, a middleware artifact that transforms streaming multi-agent reasoning into structured summaries aligned with standard clinical communication protocols (SBAR/SOAP). Unlike simple turn-based summarizers, EXAIM employs semantic event detection to trigger updates only when novel clinical information appears.
+Multi-agent Large Language Models (LLMs) offer diverse diagnostic perspectives but generate verbose, interleaved reasoning traces that overwhelm clinicians. We present EXAIM, a middleware artifact that transforms streaming multi-agent reasoning into structured summaries aligned with standard clinical communication protocols (SBAR/SOAP). In contrast to heuristic turn-based approaches, EXAIM integrates a semantic novelty filter that triggers summary updates exclusively upon the detection of state-altering clinical events (e.g., differential shifts, new evidence), effectively decoupling the update frequency from the generation rate.
 
-In a controlled ablation study on rare-disease diagnostic traces, EXAIM reduces update frequency by 75\% compared to non-filtering baselines (11.7 vs. 46.4 updates per case) while maintaining competitive information coverage under strict, clinically aligned length constraints. The system achieves strict schema compliance (96.8\%) and a median latency of 1.22s, validating its feasibility for real-time deployment. These results demonstrate that event-driven, schema-constrained summarization can effectively mediate the tension between diagnostic transparency and clinical workflow efficiency.
+In a controlled ablation study on rare-disease diagnostic traces, EXAIM reduces update frequency by 75\% compared to non-filtering baselines (11.7 vs. 46.4 updates per case) while maintaining high information density under strict, clinically aligned length constraints. The system achieves strict schema compliance (96.8\%) and a median latency of 1.22s, validating its computational feasibility for real-time deployment. These results demonstrate that event-driven, schema-constrained summarization can effectively mediating the tension between transparency and interruption frequency.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -53,14 +53,14 @@ Explainable AI, Multi-agent systems, Clinical decision support, Real-time summar
 
 Multi-agent large language model (LLM) systems are increasingly explored as a clinical decision-support paradigm in which multiple role-specialized agents collaborate to reason over a case \cite{peng2025tree}, often motivated by multidisciplinary consultation workflows \cite{chenx2025diagnostic}. Prior work frames these systems as a path toward more capable diagnostic reasoning on complex cases \cite{peng2025tree}, and reports that multi-agent consultation can yield substantially larger conversational outputs than single-agent setups \cite{chenx2025diagnostic}. However, increasing output volume and interleaving across agents create a transparency tension in time-constrained settings: the information a clinician would need to inspect is dispersed across long, evolving traces rather than consolidated into stable, decision-oriented updates. This is not only an interface problem; human-grounded evidence shows that explanation complexity can impair users’ ability to simulate and apply a model’s reasoning when explanations are longer or more demanding \cite{lage2019interpretability}. Separately, CDSS adoption is sensitive to workflow fit and interruption burden, including alert fatigue \cite{sutton2020cdss} and other implementation barriers observed in qualitative syntheses \cite{derksen2025cdss}.
 
-To address these challenges, we develop EXAIM (Explainable AI Middleware), an IT artifact constructed under a design science research (DSR) paradigm that transforms opaque multi-agent text streams into transparent, clinically actionable summaries. 
+To address these challenges, we develop EXAIM (Explainable AI Middleware), an IT artifact constructed under a design science research (DSR) paradigm that transforms opaque multi-agent text streams into transparent, clinically actionable summaries. Unlike monolithic summarizers, our proposed solution operates as a pipeline: first regulating the token stream, then filtering for semantic novelty, and finally synthesizing schema-compliant outputs.
+Crucially, existing systems lack a mechanism to perform semantic event triggering over interleaved traces. EXAIM addresses this unidentified gap by introducing a middleware layer that regulates information flow.
 
-Unlike monolithic summarizers, our proposed solution operates as a pipeline: first regulating the token stream, then filtering for semantic novelty, and finally synthesizing schema-compliant outputs.
-
+While current literature emphasizes clinical utility metrics such as diagnostic accuracy \cite{chenx2025diagnostic}, successful deployment requires validating architectural stability and information efficiency, the organizational and technical capacity to integrate AI-enabled decision support into clinical workflows without inducing cognitive overload or alert fatigue \cite{scott2024bmjhci}. Prior to human-subject deployment, generative middleware requires deterministic architectural validation to isolate the mechanism's impact from the stochasticity of live user interactions \cite{sauser2006trl}. We therefore evaluate EXAIM as a workflow-facing systems mechanism under controlled deterministic replays, quantifying how semantic event triggering and buffering policies affect interruption frequency, update timing, and constrained information delivery. This study validates system-level transparency and information-flow control properties rather than clinical decision outcomes.
 
 The following research question guides the evaluation of this artifact:
 
-	\textbf{RQ1:} Can event-driven, schema-constrained summarization improve trace utility by increasing semantic coverage while reducing redundant updates?
+	\textbf{RQ1:} Can event-driven, schema-constrained summarization improve information density under fixed output constraints by increasing semantic coverage while reducing redundant and low-novelty updates?
 
 We operationalize RQ1 through four sub-questions corresponding to distinct evaluation dimensions:
 \begin{itemize}
@@ -71,34 +71,33 @@ We operationalize RQ1 through four sub-questions corresponding to distinct evalu
 \end{itemize}
 This paper makes the following contributions:
 \begin{itemize}
-\item \textbf{We develop a modular middleware architecture} that transforms streaming multi-agent reasoning traces into structured, clinician-aligned summaries, optimizing information density and reducing alert frequency in real-time CDSS.
-\item \textbf{We introduce a semantic buffering mechanism} that detects topic shifts, novelty, and critical clinical events to trigger summaries based on context, thereby reducing irrelevant interruptions relative to turn-based baselines.
+\item \textbf{We develop a modular middleware architecture} that transforms streaming multi-agent reasoning traces into structured, clinician-aligned summaries, optimizing information density and reducing clinician-facing update frequency under real-time constraints.
+\item \textbf{We introduce Semantic State Transparency:} an event-driven buffering mechanism that triggers clinician-facing updates based on diagnostic/state shifts rather than fixed token or time intervals, reducing interruption and redundancy while preserving clinically salient state changes.
 \item \textbf{We demonstrate process-level transparency} through structured summaries aligned with SBAR/SOAP communication patterns, designed to preserve agent attribution and uncertainty while enforcing strict brevity constraints.
 \item \textbf{We formalize the impact of semantic buffering} on coverage, redundancy, faithfulness, and computational cost through a systematic ablation study on 40 diagnostic cases.
 \end{itemize}
-
-
-The remainder of this paper is organized as follows. Section II positions EXAIM within the XAI-CDSS and streaming summarization literature and synthesizes design gaps. Section III details the DSR-guided artifact, its three modules, and provides a demonstrative case walkthrough. Section~\ref{sec:experiments} describes the trace replay dataset, calibration procedure, and ablation experiments, reporting quantitative results. Section V interprets findings via design implications and deployment considerations. Section VI concludes and outlines future work.
 
 \section{Literature Review}
 
 \subsection{Multi-Agent LLM CDSS and the Trace Consumption Problem}
 Recent multi-agent approaches frame clinical reasoning as collaboration among specialized roles \cite{peng2025tree}, including consultation metaphors inspired by multidisciplinary teams \cite{chenx2025diagnostic}. A practical implication of these designs is increased output volume: a multi-agent consultation framework can “allow for significantly more output tokens” than single-agent settings \cite{chenx2025diagnostic}. Separately, explainable multi-agent clinical reasoning systems emphasize that black-box medical decision-making can undermine trust and impede effective care processes \cite{hong2024argmed}. What this literature establishes is that multi-agent reasoning is a plausible technical route to richer clinical deliberation, and that explainability is central for acceptance in clinical decision workflows. What it does not resolve is how to mediate long, interleaved, evolving traces into stable, time-efficient updates for downstream consumption. EXAIM is positioned specifically at this interface: it treats the trace as a streaming artifact that must be shaped for human attention and workflow constraints.
 
-\subsection{Explainability in CDSS: Methods Are Common; Delivery Constraints Remain Under-Specified}
+\subsection{Explainability in CDSS}
 A broad CDSS XAI meta-analysis catalogs commonly used interpretability methods in the CDSS literature, including feature-attribution families such as SHAP and LIME among other technique classes \cite{abbas2025xai}. The same synthesis emphasizes that explanation effectiveness depends not only on method choice but on user-centered delivery factors: explanation timing influences trust, and granularity can affect trust and cognitive load \cite{abbas2025xai}. In practice, CDSS deployment is repeatedly constrained by workflow integration issues and interruption burdens, including alert fatigue \cite{sutton2020cdss}. Human-subject evidence outside clinical settings further motivates bounded explanations: increasing explanation complexity can degrade users’ ability to simulate and apply a model’s logic \cite{lage2019interpretability}. EXAIM translates these constraints into system requirements: explanations must be (i) delivered incrementally at meaningful points, (ii) brief enough to be usable under time pressure, and (iii) stable enough to avoid unnecessary cognitive churn.
 
-\subsection{Online and Real-Time Summarization: Update Policies, Rewrite Costs, and Stability}
-Online summarization differs from offline summarization in fundamental ways \cite{schneider2024meeting}, because the system must decide both when to write and how to revise what has been written. Importantly, revision is not “free”: rewriting or deleting already-presented information can be cognitively straining for readers \cite{schneider2024meeting}. In real-time medical conversation summarization, Le-Duc et al. produce local summaries at fixed intervals (``after each N utterances'') \cite{leduc2025speech} and explicitly note that continuously updated summaries can confuse readers because content changes constantly \cite{leduc2025speech}. These findings directly motivate EXAIM’s design choice to (a) avoid constant micro-updates, (b) detect semantically meaningful boundaries rather than relying only on fixed windows, and (c) emit updates that minimize destabilizing rewrites.
+\subsection{Online and Real-Time Summarization}
+Online summarization differs from offline summarization in fundamental ways \cite{schneider2024meeting}, because the system must decide both when to write and how to revise what has been written. Importantly, revision is not “free”: rewriting or deleting already-presented information can be cognitively straining for readers \cite{schneider2024meeting}. Existing real-time summarizers rely on structural triggers, such as fixed time windows or utterance counts \cite{leduc2025speech}. While this bounds latency, it ignores semantic content: a fixed-interval summarizer will interrupt a clinician even if the agents are merely exchanging pleasantries, yet may delay a critical update if it falls mid-interval. EXAIM departs from this by strictly coupling updates to semantic novelty, ensuring interruptions occur only when the diagnostic state shifts.
 
 \subsection{Structured Clinical Documentation as an Output Contract}
 A major adjacent line of work targets structured medical documentation from conversations. Krishna et al. explicitly aim to generate full SOAP notes with many subsections from clinical conversations paired with SOAP notes authored under documentation standards \cite{krishna2021soap}. This reinforces the utility of SOAP-style structure as an organizing schema for clinician-facing summaries. More recent annotation frameworks move beyond static transcript-summary pairs. Zhang et al. observe that the conventional transcript-summary pair format yields end-to-end models that are ``effectively blackboxes with limited interpretability'' and propose Incremental Note Generation, where annotators incrementally draft notes and later rewrite them, producing editing histories \cite{zhang2024annotate}. This supports EXAIM’s focus on incremental updates and motivates explicit notions of ``draft state'' and ``revision policy'' in the downstream interface.
 
 Finally, usability principles for safety-critical alerting emphasize the value of constrained presentation: alerts should be "concise, understandable, and consistently structured" \cite{marcilly2018alerts}. EXAIM operationalizes this as hard schema validation plus strict budget constraints at the middleware output.
 
+While these approaches address isolated aspects of clinical summarization, to our knowledge, prior systems do not jointly perform semantic event triggering over interleaved multi-agent traces and emit clinician-aligned schema summaries. EXAIM integrates disparate literature streams from XAI, clinical summarization, and streaming systems by introducing a dedicated middleware layer that regulates information flow, detects meaningful reasoning events, and generates clinician-aligned summaries in real time.
+
 \section{Artifact Description}
 
-We develop EXAIM as a solution-oriented IT artifact designed to optimize information density and reduce alert frequency in multi-agent CDSS \cite{hevner2004design,hor2025design}. This section describes the artifact's architecture, key components, and operational logic. We first present the overall framework, then detail the three primary modules (TokenGate, BufferAgent, SummarizerAgent), and demonstrate system operation through a case walkthrough.
+Design Science aims to create and evaluate IT artifacts intended to solve identified organizational problems \cite{hevner2004design}. Consistent with the principles of DSR, we develop EXAIM as a solution-oriented IT artifact designed to optimize information density and reduce alert frequency in multi-agent CDSS. Following the process model outlined by Peffers et al. \cite{peffers2007dsr}, this section provides a systematic description of the artifact's architecture, key components, and operational logic. We first present the overall framework, then detail the three primary modules (TokenGate, BufferAgent, SummarizerAgent), and finally demonstrate the system's operation through a case walkthrough.
 
 \subsection{Overall Framework}
 \label{sec:overall-framework}
@@ -129,9 +128,18 @@ TokenGate implements a stateful accumulation buffer that flushes under one of fo
 
 If TokenGate solves the syntactic segmentation problem, BufferAgent solves the semantic filtering problem. Not every coherent chunk warrants triggering a summary: content may restate prior conclusions or explore already-addressed hypotheses. Unfiltered presentation would violate the first design objective (minimize update frequency).
 
-BufferAgent acts as the system's cognitive filter, analyzing each chunk from TokenGate to determine whether it merits triggering a summary. The decision process operates in two stages, deliberately separating semantic interpretation (performed by an LLM) from control logic (executed by deterministic code). This separation ensures that while the system leverages language model capabilities for content understanding, the final trigger decision remains auditable and explainable.
+The BufferAgent functions as a semantic gatekeeper. It evaluates incoming token chunks against a sliding window of recent summaries to predict four boolean states
 
-When a chunk $C$ arrives, BufferAgent invokes an LLM classifier to extract four semantic predicates: \textbf{Complete}, \textbf{Relevant}, \textbf{Novel}, and \textbf{State} (continuation, topic shift, or critical alert). These feed a deterministic trigger decision:
+\begin{enumerate}
+\item $\mathit{complete}$: Chunk exhibits phrase-level structural closure (finished clause, action statement, or sentence boundary)
+\item $\mathit{relevant}$: Content contributes interruption-worthy clinical value (diagnostic shifts, abnormal findings, or action changes)
+\item $\mathit{novel}$: Content introduces substantive information not already captured in recent summaries
+\item $\mathit{state} \in \{\text{CONTINUING}, \text{SHIFT}, \text{CRITICAL}\}$: Topic continuity classification
+\end{enumerate}
+
+Crucially, novelty is assessed against prior \textit{summaries} rather than raw trace content, preventing redundancy at the output level where it impacts clinician cognitive load.
+
+These feed a deterministic trigger decision:
 \[
 T = \begin{cases}
 \text{True} & \text{if } \mathit{State} = \text{CRITICAL} \\
@@ -141,6 +149,10 @@ T = \begin{cases}
 \end{cases}
 \]
 This encodes a hypothesis that clinicians need immediate critical alerts, comprehensive novel conclusions, and topic transitions---but not incremental deliberation or redundant restatements.
+
+When $T = \text{False}$, the chunk is retained in BufferAgent's internal accumulator rather than discarded. Subsequent chunks are appended to this buffer, and when a future chunk satisfies the trigger condition, all accumulated segments are flushed together to SummarizerAgent. This ensures that suppressed content is not lost but consolidated into the next triggered update, preserving information continuity while maintaining sparse interruption patterns.
+
+This hybrid Neuro-Symbolic approach ensures that stochastic LLM reasoning is bounded by deterministic workflow rules.
 
 \subsection{SummarizerAgent: Schema-Constrained Synthesis}
 
@@ -278,8 +290,7 @@ As visualized in the BufferAgent status card (Fig.~\ref{fig:logic-card}), the mi
 \section{Experiments and Results}
 \label{sec:experiments}
 
-We verify the effectiveness of the EXAIM artifact through a controlled ablation study using deterministic replays of multi-agent reasoning traces. This approach allows us to stress-test the middleware's flow-control capabilities independent of variations in upstream agent behavior.
-
+We verify the effectiveness of the EXAIM artifact through a controlled ablation study using deterministic replays of multi-agent reasoning traces. This deterministic replay protocol ensures identical input conditions across ablations, allowing us to rigorously quantify the trade-off between update frequency and semantic coverage. Consequently, this evaluation functions as an architectural stress test, utilizing rare-disease diagnostic traces—which generate significantly higher reasoning volume and interleaved noise than routine cases—to establish the system's performance boundaries under extreme operational conditions.
 \subsection{Data / Trace Replay Setup}
 \label{sec:data}
 
@@ -296,7 +307,7 @@ We report all text volume and budget-normalized metrics using Character-Normaliz
 \subsection{Ablation and Baselines}
 \label{sec:ablation}
 
-We isolate the contribution of each architectural primitive through a controlled ablation study. V1 establishes a turn-boundary baseline, summarizing only when agents complete their generations---a natural structural trigger reflecting conventional dialogue system paradigms. V2 disables BufferAgent filtering entirely, passing all TokenGate flushes directly to summarization to isolate the impact of semantic gating on update frequency and redundancy. V3 replaces TokenGate's syntax-aware segmentation with calibrated fixed-interval chunking, testing whether adaptive linguistic boundaries improve faithfulness over uniform partitioning. V4 disables only the novelty filter while preserving BufferAgent's completeness and relevance checks, isolating whether contextual redundancy detection is necessary for managing alert burden. Table~\ref{tab:ablation-variants} defines the five experimental configurations (V0--V4).
+We isolate the contribution of each architectural primitive through a controlled ablation study. V1 establishes a turn-boundary baseline, summarizing only when agents complete their generations---a natural structural trigger reflecting conventional dialogue system paradigms. V2 disables BufferAgent filtering entirely, passing all TokenGate flushes directly to summarization to isolate the impact of semantic gating on update frequency and redundancy. V3 replaces TokenGate's syntax-aware segmentation with calibrated fixed-interval chunking, testing whether adaptive linguistic boundaries improve faithfulness over uniform partitioning. V4 disables only the novelty filter while preserving BufferAgent's completeness and relevance checks, isolating whether contextual redundancy detection is necessary for managing update frequency. Table~\ref{tab:ablation-variants} defines the five experimental configurations (V0--V4).
 
 \begin{table}[htbp]
 \caption{Ablation Variant Configurations}
@@ -372,8 +383,6 @@ Our faithfulness metrics (M6a, M6b) operate at the level of explicit concept rea
 Schema-constrained summarization necessarily introduces transformations that reduce recall under strict NER-based concept matching: abbreviation of clinical phrases (e.g., ``acute renal failure'' $\rightarrow$ ``AKI''), normalization of hedged statements and compression omitting modifiers to meet character limits \cite{yim2023acibench}, and schema remapping reorganizing facts into SBAR/SOAP slots through incremental UPDATE and REMOVE operations \cite{zhang2024annotate}.
 
 UMLS-based NER assumes explicit lexical realization and near-literal mention of entities \cite{vanveen2023summarization,yim2023acibench}, misaligning with summaries that preserve semantic content through paraphrase. String-matching approaches demonstrate low correlation with physician preferences when content is normalized or compressed \cite{yim2023acibench,vanveen2023summarization}, causing schema-constrained summarizers to under-score even when accurately representing clinical content \cite{fraile2025llm}.
-
-Notably, faithfulness is a standard evaluation criterion in human-in-the-loop dialogue systems \cite{chen2022hitl}; however, concept-level proxies such as M6a and M6b measure explicit entity overlap and therefore can understate semantic fidelity when paraphrase, normalization, or schema-driven compression occurs.
 
 Despite these limitations, concept-level metrics remain informative for relative comparisons across ablation variants under identical extraction assumptions. Future work should incorporate clinician-judged factual consistency, entailment verification, and task-based evaluation to complement automated assessment.
 
@@ -472,7 +481,7 @@ To evaluate information density---the core utility trade-off between coverage an
 To support headline claims with rigorous statistical evidence, we computed paired differences (V0 minus comparator) across the 40 replay cases, bootstrapping to estimate 95\% confidence intervals (Table~\ref{tab:paired-bootstrap}).
 
 \begin{table}[htbp]
-\caption{Paired Bootstrap Comparisons (V0 vs. Baselines)}
+\caption{Paired Bootstrap Comparisons}
 \begin{center}
 \resizebox{\columnwidth}{!}{%
 \renewcommand{\arraystretch}{1.3}
@@ -520,21 +529,16 @@ To move from artifact to operation, we instantiate EXAIM using a four-tier archi
     \item \textbf{Middleware Layer}: Deploying EXAIM as a low-latency interaction gateway. This layer handles the "contract" capability—ensuring that no matter how erratic the Model Layer behaves, the User Layer receives predictable JSON.
     \item \textbf{User Layer}: A React/Web-based clinician dashboard that subscribes to the EXAIM JSON stream, rendering cards that update in place.
 \end{enumerate}
-\subsection{Limitations}
+\subsection{Limitations and Boundary Conditions}
 
-\textbf{External validity}: Evaluation relies exclusively on 40 deterministic replay cases from a single upstream dataset (MAC framework). Generalizability to other multi-agent architectures, clinical domains, or real-time clinician workflows remains unvalidated. No human-subjects evaluation was conducted; claims about reduced clinician burden are metric-inferred, not user-verified.
+This study prioritizes architectural control over ecological validity by evaluating EXAIM on frozen, deterministic trace replays (40 MAC cases), which isolates middleware flow-control effects from human interaction dynamics. Generalization is currently limited to the MAC/GPT-4o-mini upstream topology; performance under other agent frameworks or model families remains untested. As a result, we do not measure longitudinal workflow phenomena (e.g., alert-fatigue adaptation, trust trajectories), and any burden-related benefits are proxy inferences from interruption and budgeted-coverage metrics rather than observed clinical outcomes. A second limitation is a safety risk introduced by the LLM-based semantic gating: misclassification can hide clinically meaningful disagreement between agents (e.g., conflict mislabeled as redundancy).  We do not quantify suppression errors or implement boundary-aware fail-safes in the current artifact.
+\section{Conclusion and Future Work}
 
-\textbf{Safety and failure modes}: The study does not evaluate failure modes, unsafe summarization errors, or mechanisms for clinician override. Deployment claims regarding HIPAA compliance and FHIR integration are architectural projections, not operational validations.
+This work presented EXAIM, a middleware architecture that resolves the lack of semantic event triggering in multi-agent diagnostic traces by introducing a three-stage pipeline: TokenGate (syntax-aware stream regulation), BufferAgent (semantic event detection), and SummarizerAgent (schema-constrained synthesis). Prior systems either emit raw interleaved streams that overwhelm clinicians or apply structural triggers (turn boundaries, fixed intervals) that conflate syntactic and semantic boundaries. EXAIM demonstrates that semantic buffering---filtering for novelty, relevance, and topic shifts---enables a new stable state between these extremes.
 
-\textbf{Contribution boundary}: The artifact combines engineering infrastructure with empirical evaluation. The ablation isolates internal design primitives but does not compare against external summarization baselines or human-authored summaries.
+Controlled ablation on 40 MAC diagnostic replays validates this architectural hypothesis. Semantic buffering reduces interruption frequency by 75\% (11.65 vs. 46.4 updates per case) while preserving competitive information coverage at clinician-realistic reading budgets (0.129 vs. 0.134 coverage at $\leq$1000 CTU). V0 achieves roughly 2$\times$ semantic yield per interruption compared to unfiltered baselines (Coverage/Update: 0.0139 vs. 0.0067), demonstrating that middleware-driven filtering shifts cognitive burden from clinicians to automated infrastructure. Schema compliance exceeds 96\%, and median latency remains below 1.22s, confirming real-time feasibility. These results establish the core design principle: controlling when to explain is as vital as how to explain in multi-agent CDSS.
 
-\section{Conclusion}
-
-We introduced EXAIM, a middleware artifact that transforms streaming multi-agent reasoning into schema-constrained summaries through three validated primitives: TokenGate (syntax-aware segmentation), BufferAgent (semantic event detection), and SummarizerAgent (schema-constrained synthesis). Controlled ablation on 40 MAC diagnostic replays demonstrates that semantic buffering substantially reduces interruption frequency while preserving competitive coverage at clinician-realistic reading budgets, and that syntax-aware buffering improves faithfulness over structural triggers.
-
-These findings validate EXAIM's core design principle: controlling when to explain is as vital as how to explain in multi-agent CDSS. Future work requires human-in-the-loop validation with practicing clinicians, entailment-based faithfulness verification, and evaluation across diverse clinical domains and multi-agent architectures.
-
-EXAIM provides a reproducible architectural pattern for managing the transparency-efficiency trade-off in streaming AI under human cognitive constraints.
+Future work will advance the artifact along three maturity axes. First, we will move from offline replay to shadow-mode evaluation alongside live workflows to measure workflow endpoints (e.g., time-to-decision) without influencing clinician decisions. Second, we will harden safety against inherent problem imposed by the LLM-based semantic gating by adding trace-grounding verification and explicit conflict surfacing so inter-agent disagreement cannot be silently suppressed. Third, establishing regulatory compliance by generating structured audit trails that document summary provenance, grounding verification status, and unresolved conflicts, meeting transparency and accountability requirements to support deployment-grade accountability. Collectively, these extensions will transform EXAIM from a validated proof-of-concept into a deployable clinical artifact that manages the transparency-efficiency trade-off under human cognitive constraints.
 
 \section*{Acknowledgment}
 
