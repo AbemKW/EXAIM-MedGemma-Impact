@@ -338,9 +338,9 @@ To ensure fair evaluation, we executed a rigorous parameter selection process be
 We prioritized six metrics that directly quantify utility and reliability proxies:
 
 \begin{itemize}
-    \item \textbf{Window-Groundedness (M6a):} A window-grounded variant of faithfulness that measures the fraction of summary concepts grounded within a local sliding window of trace content centered on the summary's trigger:
+    \item \textbf{Window-Groundedness (M7):} A window-grounded variant of faithfulness that measures the fraction of summary concepts grounded within a local sliding window of trace content centered on the summary's trigger:
     \begin{equation}
-    M6a = \frac{1}{N}\sum_{i=1}^{N} \frac{|\text{summary\_CUIs}_i \cap \text{trace\_CUIs}_{\text{window}(i)}|}{|\text{summary\_CUIs}_i|}
+    M7 = \frac{1}{N}\sum_{i=1}^{N} \frac{|\text{summary\_CUIs}_i \cap \text{trace\_CUIs}_{\text{window}(i)}|}{|\text{summary\_CUIs}_i|}
     \end{equation}
     where $N$ is the number of evaluated summaries, $\text{summary\_CUIs}_i$ is the set of CUIs extracted from summary $i$, and $\text{trace\_CUIs}_{\text{window}(i)}$ denotes the set of CUIs extracted from the sliding window of trace content surrounding the trigger that produced summary $i$. M6a reflects local grounding and is less sensitive to distant context than M6b.
 
@@ -358,16 +358,16 @@ We prioritized six metrics that directly quantify utility and reliability proxie
     \begin{equation}
     M4 = \frac{|\bigcup_{i=1}^{n} \text{summary\_CUIs}_i \cap \text{trace\_CUIs}|}{|\text{trace\_CUIs}|}
     \end{equation}
-    This metric is \emph{not normalized by update count}, and therefore inherently favors high-frequency systems. M7 (Budget Efficiency) provides the normalized coverage view.
+    This metric is \emph{not normalized by update count}, and therefore inherently favors high-frequency systems. M5 (Budget-Constrained Coverage) provides the normalized coverage view.
     \item \textbf{System Latency (M8):} The end-to-end processing time (buffer analysis + summarization generation).
     \item \textbf{Schema Compliance (M10):} The rate of successful adherence to the JSON clinical output schema.
 \end{itemize}
-Supplementary metrics (Update Count, Token Volume, LLM Cost) provide context for trade-off analysis.
+Supplementary metrics (Update Count, Token Volume, LLM Usage (CTU)) provide context for trade-off analysis.
 
 \subsubsection{Interpretation of Concept-Level Metrics}
 \label{sec:faithfulness_limitations}
 
-Our faithfulness metrics (M6a, M6b) operate at the level of explicit concept realization rather than semantic equivalence or entailment. This introduces a fundamental mismatch: overlap-based metrics like ROUGE fail to correlate with clinical quality when models use paraphrasing rather than literal repetition \cite{fraile2025llm,bailly2025divide}.
+Our faithfulness metrics (M7, M6) operate at the level of explicit concept realization rather than semantic equivalence or entailment. This introduces a fundamental mismatch: overlap-based metrics like ROUGE fail to correlate with clinical quality when models use paraphrasing rather than literal repetition \cite{fraile2025llm,bailly2025divide}.
 
 Schema-constrained summarization necessarily introduces transformations that reduce recall under strict NER-based concept matching: abbreviation of clinical phrases (e.g., ``acute renal failure'' $\rightarrow$ ``AKI''), normalization of hedged statements and compression omitting modifiers to meet character limits \cite{yim2023acibench}, and schema remapping reorganizing facts into SBAR/SOAP slots through incremental UPDATE and REMOVE operations \cite{zhang2024annotate}.
 
@@ -385,7 +385,7 @@ We report five key findings from the controlled ablation across 40 MAC replay ca
 
 Information density further illustrates V0's efficiency: V0 achieves Coverage/Update = 0.0139 vs. V2 = 0.0067 (paired $\Delta = +0.0072$ [CI: +0.0065, +0.0079]), indicating V0 delivers roughly 2$\times$ semantic yield per clinician-facing interruption. V2's 4$\times$ update burden (46.4 vs. 11.65) without proportional coverage gain exemplifies the "firehose transparency" failure mode.
 
-\textbf{Finding 2 (RQ1c, RQ1d): Syntax-aware buffering improves faithfulness compared to structural triggers.} V0 achieves M6b (strict faithfulness) = 0.421 [0.389, 0.453] vs. V1 (turn-end) = 0.333 [0.309, 0.356], a 26\% improvement. This suggests TokenGate's linguistic segmentation produces more groundable content for summarization than turn-boundary triggers. Window-groundedness (M6a) remains high across variants (V0 = 0.825), indicating summaries stay locally grounded within trigger windows despite NER under-scoring schema-constrained paraphrases (see Section~\ref{sec:faithfulness_limitations}).
+\textbf{Finding 2 (RQ1c, RQ1d): Syntax-aware buffering improves faithfulness compared to structural triggers.} V0 achieves M6 (strict faithfulness) = 0.421 [0.389, 0.453] vs. V1 (turn-end) = 0.333 [0.309, 0.356], a 26\% improvement. This suggests TokenGate's linguistic segmentation produces more groundable content for summarization than turn-boundary triggers. Window-groundedness (M7) remains high across variants (V0 = 0.825), indicating summaries stay locally grounded within trigger windows despite NER under-scoring schema-constrained paraphrases (see Section~\ref{sec:faithfulness_limitations}).
 
 \textbf{Finding 3 (RQ1b): Novelty filtering is necessary to manage interruption burden.} V4 (no novelty) generates 16.45 updates vs. V0's 11.65 (41\% increase), with marginal coverage gain (M4: V4 = 0.175 vs. V0 = 0.162, 8\% relative). Redundancy metrics (M3) confirm V0 (0.366) and V4 (0.346) achieve similar consecutive-summary overlap, but V0's lower update count indicates novelty filtering suppresses low-information triggers without harming redundancy control.
 
@@ -404,11 +404,11 @@ Information density further illustrates V0's efficiency: V0 achieves Coverage/Up
 \textbf{Metric} & \textbf{V0} & \textbf{V1} & \textbf{V2} & \textbf{V3} & \textbf{V4} \\
 \midrule  % Professional middle line
 
-Faithfulness \textit{(M6b)} & 0.421 & 0.333 & 0.409 & 0.382 & 0.424 \\
+Faithfulness \textit{(M6)} & 0.421 & 0.333 & 0.409 & 0.382 & 0.424 \\
 & [0.389, 0.453] & [0.309, 0.356] & [0.382, 0.437] & [0.353, 0.413] & [0.395, 0.454] \\
 \addlinespace[8pt]
 
-Window-Groundedness \textit{(M6a)} & 0.825 & 0.787 & 0.879 & 0.823 & 0.845 \\
+Window-Groundedness \textit{(M7)} & 0.825 & 0.787 & 0.879 & 0.823 & 0.845 \\
 & [0.807, 0.842] & [0.763, 0.810] & [0.869, 0.890] & [0.799, 0.846] & [0.829, 0.862] \\
 \addlinespace[8pt]
 
@@ -443,7 +443,6 @@ Tables~\ref{tab:metrics} and~\ref{tab:operational-density} provide complete metr
 Update Count (M1) & 11.65 & 8.5 & 46.4 & 9.5 & 16.45 \\
 Output Volume (M2, CTU) & 1391 & 1148 & 4313 & 1156 & 1763 \\
 LLM Usage (M9, CTU) & 62178 & 11618 & 37151 & 81694 & 58605 \\
-Concept-Match Miss Rate (M5) & 0.619 & 0.604 & 0.615 & 0.617 & 0.623 \\
 \midrule
 Coverage/Update & 0.0139 & 0.0169 & 0.0067 & 0.0141 & 0.0107 \\
 \bottomrule
@@ -452,19 +451,18 @@ Coverage/Update & 0.0139 & 0.0169 & 0.0067 & 0.0141 & 0.0107 \\
 \label{tab:operational-density}
 \end{center}
 \footnotesize
-Note: M5 invariance across variants reflects NER limitations, not summarization quality. Information-density metrics measure semantic yield per interruption and per reading unit.
 \normalsize
 \end{table}
 
 
-To evaluate information density---the core utility trade-off between coverage and burden---we compute efficiency metrics normalized by update count and output volume (Table~\ref{tab:operational-density}). Additionally, Figure~\ref{fig:budget-coverage} shows M7 coverage across multiple CTU budgets, revealing V0's competitive performance at clinician-realistic reading budgets ($\leq$1000 CTU).
+To evaluate information density---the core utility trade-off between coverage and burden---we compute efficiency metrics normalized by update count and output volume (Table~\ref{tab:operational-density}). Additionally, Figure~\ref{fig:budget-coverage} shows M5 coverage across multiple CTU budgets, revealing V0's competitive performance at clinician-realistic reading budgets ($\leq$1000 CTU).
 
 % Information density rows merged into Table~\ref{tab:operational-density}.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\columnwidth]{saturation/saturation.pdf}
-\caption{Budget‑Constrained Coverage (M7). V0 (EXAIM) saturates early; V2 diverges at high budgets.}
+\caption{Budget‑Constrained Coverage (M5). V0 (EXAIM) saturates early; V2 diverges at high budgets.}
 \label{fig:budget-coverage}
 \end{figure}
 

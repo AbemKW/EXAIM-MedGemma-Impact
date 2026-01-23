@@ -29,7 +29,7 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="pt"
      inkscape:zoom="0.99842118"
-     inkscape:cx="445.70368"
+     inkscape:cx="445.70369"
      inkscape:cy="355.06058"
      inkscape:window-width="2048"
      inkscape:window-height="1081"
@@ -422,11 +422,11 @@
      y="134.39386"
      id="text19">0.200</text>
   <text
-     style="font-weight:bold;font-size:22px;font-family:'Times New Roman', Times, serif;text-anchor:middle;-inkscape-font-specification:'Times New Roman, Times, serif, Bold';font-style:normal;font-stretch:normal;font-variant:normal;font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal"
+     style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:22px;font-family:'Times New Roman', Times, serif;-inkscape-font-specification:'Times New Roman, Times, serif, Bold';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-anchor:middle"
      x="-332.82867"
      y="20.743765"
      transform="rotate(-90)"
-     id="text20">Coverage (M7b)</text>
+     id="text20">Coverage (M5)</text>
   <path
      d="M 111.81068,539.63439 293.48606,445.06869 475.16144,327.98206 656.83682,287.29034"
      clip-path="url(#p817ad05953)"

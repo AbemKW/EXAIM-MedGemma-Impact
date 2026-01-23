@@ -406,14 +406,14 @@ To isolate the contribution of individual architectural components, we conduct a
 
 \subsubsection{Evaluation Metrics}
 
-We assessed EXAIM using a hierarchy of ten metrics (M1--M10), distinguishing between primary performance indicators and supplementary contextual measures. All token volume metrics (M2, M7, M9) report CTU (Character-Normalized Token Units), computed as $\lceil \text{len(text)} / 4 \rceil$. This vendor-agnostic, deterministic unit provides a token-equivalent estimate that enables consistent measurement across different LLM providers and tokenization schemes.
+We assessed EXAIM using a hierarchy of ten metrics (M1--M10), distinguishing between primary performance indicators and supplementary contextual measures. All token volume metrics (M2, M5, M9) report CTU (Character-Normalized Token Units), computed as $\lceil \text{len(text)} / 4 \rceil$. This vendor-agnostic, deterministic unit provides a token-equivalent estimate that enables consistent measurement across different LLM providers and tokenization schemes.
 
 \paragraph{Primary Metrics}
 
 We prioritized five metrics that directly quantify utility and reliability proxies:
 
 \begin{itemize}
-    \item \textbf{Strict Faithfulness (M6b):} The semantic alignment between the summary and the ground-truth reasoning trace. Higher scores indicate stronger contract-grounded alignment under a strict concept-realization proxy and are intended to penalize unsupported insertions. Faithfulness is a standard evaluation criterion in human-in-the-loop dialogue systems \cite{chen2022hitl}.
+    \item \textbf{Strict Faithfulness (M6):} The semantic alignment between the summary and the ground-truth reasoning trace. Higher scores indicate stronger contract-grounded alignment under a strict concept-realization proxy and are intended to penalize unsupported insertions. Faithfulness is a standard evaluation criterion in human-in-the-loop dialogue systems \cite{chen2022hitl}.
     \item \textbf{Redundancy Reduction (M3):} Measured via Jaccard similarity between consecutive summary updates:
     \begin{equation}
     J(S_i, S_{i+1}) = \frac{|C_i \cap C_{i+1}|}{|C_i \cup C_{i+1}|}
@@ -426,11 +426,11 @@ We prioritized five metrics that directly quantify utility and reliability proxi
 
 \paragraph{Supplementary Metrics}
 
-To provide a holistic view of system behavior, we report five additional metrics in Table~\ref{tab:supplementary-metrics}. These include \textbf{Update Frequency (M1)} and \textbf{Token Volume (M2)}, which provide context for the coverage scores; \textbf{Unsupported Concept Fraction (M5)}, the fraction of concepts extracted from summaries that are not found in the trace under strict UMLS linking; \textbf{Contextual Faithfulness (M6a)}; and \textbf{Budget Efficiency (M7)}, which offers granular insights into token economics. M5 is highly sensitive to extraction/linking failures and surface-form changes (abbreviation, normalization, compression) rather than measuring actual hallucination. Its near-constant values across variants (~0.60) reflect systematic extraction artifacts rather than variant-specific differences.
+To provide a holistic view of system behavior, we report five additional metrics in Table~\ref{tab:supplementary-metrics}. These include \textbf{Update Frequency (M1)} and \textbf{Token Volume (M2)}, which provide context for the coverage scores; \textbf{Window-Groundedness (M7)}; and \textbf{Budget-Constrained Coverage (M5)}, which offers granular insights into token economics.
 
 \subsubsection{Limitations of Concept-Level Faithfulness Metrics in Compressed Clinical Summaries}
 
-Our faithfulness metrics (M6a, M6b) operate at the level of explicit concept realization rather than semantic equivalence or entailment. This design choice introduces a fundamental structural mismatch between what summarization accomplishes and what strict concept-overlap metrics measure.
+Our faithfulness metrics (M7, M6) operate at the level of explicit concept realization rather than semantic equivalence or entailment. This design choice introduces a fundamental structural mismatch between what summarization accomplishes and what strict concept-overlap metrics measure.
 
 Schema-constrained summarization necessarily introduces several transformations that systematically reduce recall under strict NER-based concept matching: (1) \textbf{Abbreviation}, where full clinical phrases (e.g., ``acute renal failure'') are compressed to canonical forms (e.g., ``AKI''); (2) \textbf{Normalization}, where hedged or qualified statements (e.g., ``no evidence of infection'') are restated as direct assertions (e.g., ``infection unlikely''); (3) \textbf{Compression}, where modifiers, qualifiers, and redundant descriptors are omitted to meet character limits; and (4) \textbf{Schema remapping}, where clinical facts are reorganized into SBAR/SOAP slots, potentially altering surface forms.
 
@@ -450,7 +450,7 @@ We target a streaming transparency regime that maximizes coverage and contract-g
 \toprule
 \textbf{Metric} & \textbf{V0} & \textbf{V1} & \textbf{V2} & \textbf{V3} & \textbf{V4} \\
 \midrule
-Faithfulness (M6b) & 0.421 & 0.333 & 0.409 & 0.382 & 0.424 \\
+Faithfulness (M6) & 0.421 & 0.333 & 0.409 & 0.382 & 0.424 \\
 Redundancy (M3) & 0.366 & 0.456 & 0.348 & 0.413 & 0.346 \\
 Trace Coverage (M4) & 0.162 & 0.144 & 0.312 & 0.134 & 0.175 \\
 Latency (M8, s) & & & & & \\
@@ -475,9 +475,8 @@ Schema Compliance (M10) & 0.968 & 0.968 & 0.975 & 0.958 & 0.950 \\
 \midrule
 Update Count (M1) & 11.7 & 8.5 & 46.4 & 9.5 & 16.5 \\
 Output Volume (M2, CTU) & 1391 & 1148 & 4313 & 1156 & 1763 \\
-Unsupported Fraction (M5) & 0.619 & 0.604 & 0.615 & 0.617 & 0.623 \\
-Window-Groundedness (M6a) & 0.825 & 0.787 & 0.879 & 0.823 & 0.845 \\
-Coverage @ 2000 CTU (M7) & 0.160 & 0.144 & 0.207 & 0.132 & 0.166 \\
+Window-Groundedness (M7) & 0.825 & 0.787 & 0.879 & 0.823 & 0.845 \\
+Coverage @ 2000 CTU (M5) & 0.160 & 0.144 & 0.207 & 0.132 & 0.166 \\
 LLM Usage (M9, CTU) & 62178 & 11618 & 37151 & 81694 & 58605 \\
 \bottomrule
 \end{tabular}%
