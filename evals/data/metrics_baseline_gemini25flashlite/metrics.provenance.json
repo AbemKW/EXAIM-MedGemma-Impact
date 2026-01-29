@@ -1,0 +1,43 @@
+{
+  "code_version": "4b46aba89e4a2a8b0c3b78e0b421235791a92a00",
+  "computed_at": "2026-01-06T00:27:43.104836+00:00",
+  "configs": {
+    "extractor_config_hash": "sha256:e2e91d0b6ef60a6e97c68568502b0396e83c565fd1ef877c4b9016db378faf0d",
+    "metrics_config_hash": "sha256:ffc5077e9b8569b7e6967c0d31a1ec0961ecf75408d96ffa070bbb44529d7c3e",
+    "variant_configs": {
+      "V0": {
+        "tokengate_config_hash": "sha256:67d6303e2d249654e8b08c0e82635bc840c23e200ae76cb6c0546fe564596253",
+        "variant_config_hash": "sha256:f81016660a14530190b472d53f3972b7072ae9fdafcdbd59a6da8fb415359767"
+      },
+      "V1": {
+        "tokengate_config_hash": "sha256:5acf3ff77b4420677b5923071f303facaba7a9273a346284a667a275df325146",
+        "variant_config_hash": "sha256:8bc54ba06f903e24a0be4db5039265f7240fac900d384d18c9524df47483859d"
+      },
+      "V2": {
+        "tokengate_config_hash": "sha256:67d6303e2d249654e8b08c0e82635bc840c23e200ae76cb6c0546fe564596253",
+        "variant_config_hash": "sha256:0651696c6f1f4196213f273956f6c25d4187ff894064002eeb45e6e615858db5"
+      },
+      "V3": {
+        "tokengate_config_hash": "sha256:5acf3ff77b4420677b5923071f303facaba7a9273a346284a667a275df325146",
+        "variant_config_hash": "sha256:75a83d3d7935ae3e8d76f374ae6c2524bca6c71da62067e9956edda1ecc4ef34"
+      },
+      "V4": {
+        "tokengate_config_hash": "sha256:67d6303e2d249654e8b08c0e82635bc840c23e200ae76cb6c0546fe564596253",
+        "variant_config_hash": "sha256:38d2f7d2396d55b4ef7d5cba9077d7b141e657a400f2c19c30ebb55d15e31158"
+      }
+    }
+  },
+  "dataset": {
+    "case_list_hash": "sha256:d22060bfce58b04cf0b3a24d09166a9bdeb5bb4be168022e15e87fba346ee087",
+    "computed_hash": "sha256:c173b1f838a346f2aab8c44e10e3807140c4f28cf105f315ba55fbbf681b12b8",
+    "config_hash": "sha256:c0835d0b63db015be789810e84962e2456d703c95874c3caccf848ec74cb2bc4",
+    "dataset_id": "exaid_traces_1d5b227a_0ad5f2b4_d22060bf",
+    "manifest_hash": "sha256:c173b1f838a346f2aab8c44e10e3807140c4f28cf105f315ba55fbbf681b12b8",
+    "manifest_hash_valid": true,
+    "manifest_path": "data/manifests/exaid_traces_1d5b227a_0ad5f2b4_d22060bf.manifest.jsonl",
+    "mas_run_id": "mas_1d5b227a_gpt4omini_0ad5f2b4_d22060bf",
+    "stub_mode": false
+  },
+  "schema_name": "exaid.metrics.provenance",
+  "schema_version": "1.0.0"
+}
