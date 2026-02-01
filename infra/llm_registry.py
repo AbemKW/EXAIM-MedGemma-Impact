@@ -13,6 +13,12 @@ load_dotenv(find_dotenv())
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.callbacks.manager import CallbackManagerForLLMRun
+from typing import Any, List, Mapping, Optional
+import warnings
 
 
 class LLMRole(str, Enum):
@@ -20,6 +26,96 @@ class LLMRole(str, Enum):
     MAS = "mas"
     SUMMARIZER = "summarizer"
     BUFFER_AGENT = "buffer_agent"
+
+
+class HuggingFacePipelineLLM(BaseChatModel):
+    """LangChain-compatible wrapper for Hugging Face pipelines."""
+    
+    pipeline: Any = None
+    model_name: str = ""
+    temperature: float = 0.0
+    
+    class Config:
+        arbitrary_types_allowed = True
+    
+    def __init__(self, pipeline, model_name: str = "", temperature: float = 0.0, **kwargs):
+        super().__init__(**kwargs)
+        self.pipeline = pipeline
+        self.model_name = model_name
+        self.temperature = temperature
+    
+    @property
+    def _llm_type(self) -> str:
+        return "huggingface_pipeline"
+    
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Generate response using Hugging Face pipeline."""
+        # Convert LangChain messages to HF pipeline format
+        hf_messages = []
+        for msg in messages:
+            if isinstance(msg, SystemMessage):
+                role = "system"
+            elif isinstance(msg, HumanMessage):
+                role = "user"
+            elif isinstance(msg, AIMessage):
+                role = "assistant"
+            else:
+                role = "user"
+            
+            # Handle both text and image content
+            if isinstance(msg.content, str):
+                hf_messages.append({"role": role, "content": msg.content})
+            elif isinstance(msg.content, list):
+                # Multi-modal content
+                hf_messages.append({"role": role, "content": msg.content})
+            else:
+                hf_messages.append({"role": role, "content": str(msg.content)})
+        
+        # Call the pipeline
+        try:
+            # For text-generation pipelines
+            if hasattr(self.pipeline, 'task') and 'image' in self.pipeline.task:
+                # Image-text-to-text pipeline
+                result = self.pipeline(text=hf_messages)
+            else:
+                # Standard text pipeline
+                result = self.pipeline(hf_messages)
+            
+            # Extract text from result
+            if isinstance(result, list) and len(result) > 0:
+                if isinstance(result[0], dict):
+                    text = result[0].get('generated_text', str(result[0]))
+                    # If generated_text is a list of messages, get the last one
+                    if isinstance(text, list) and len(text) > 0:
+                        if isinstance(text[-1], dict) and 'content' in text[-1]:
+                            text = text[-1]['content']
+                        else:
+                            text = str(text[-1])
+                else:
+                    text = str(result[0])
+            else:
+                text = str(result)
+            
+            message = AIMessage(content=text)
+            generation = ChatGeneration(message=message)
+            return ChatResult(generations=[generation])
+        except Exception as e:
+            warnings.warn(f"HuggingFace pipeline error: {e}")
+            # Return empty response on error
+            message = AIMessage(content=f"Error: {str(e)}")
+            generation = ChatGeneration(message=message)
+            return ChatResult(generations=[generation])
+    
+    @property
+    def _identifying_params(self) -> Mapping[str, Any]:
+        """Get identifying parameters."""
+        return {"model_name": self.model_name, "temperature": self.temperature}
 
 
 # Lazy loading: Don't load configs or instantiate registry at import time
@@ -66,6 +162,10 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
         For Ollama (self-hosted Ollama HTTP API):
             - OLLAMA_BASE_URL: Base URL for Ollama endpoint (e.g. https://...)
             - OLLAMA_MODEL: Default model name (optional)
+            
+        For HuggingFace (local transformers pipeline):
+            - HUGGINGFACE_MODEL: Model name (default: google/medgemma-1.5-4b-it)
+            - HUGGINGFACE_TASK: Pipeline task (default: text-generation, auto-set to image-text-to-text for medgemma)
     """
     provider = provider.lower()
     
@@ -119,10 +219,46 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
         if temperature is not None:
             kwargs["temperature"] = temperature
         return ChatOpenAI(**kwargs)
+    elif provider == "huggingface":
+        # Use Hugging Face transformers pipeline
+        try:
+            from transformers import pipeline as hf_pipeline
+        except ImportError:
+            raise ImportError(
+                "transformers package is required for huggingface provider. "
+                "Install with: pip install transformers torch"
+            )
+        
+        # Model selection: prefer explicit model argument, then env var, default to medgemma
+        model_name = model or os.getenv("HUGGINGFACE_MODEL", "google/medgemma-1.5-4b-it")
+        
+        # Determine task type based on model capabilities
+        # For medgemma models, use image-text-to-text if available
+        task = os.getenv("HUGGINGFACE_TASK", "text-generation")
+        if "medgemma" in model_name.lower():
+            task = "image-text-to-text"
+        
+        # Create pipeline with device_map for automatic GPU support
+        pipe_kwargs = {
+            "model": model_name,
+            "device_map": "auto",
+        }
+        
+        # Add temperature if specified (for generation config)
+        if temperature is not None:
+            pipe_kwargs["model_kwargs"] = {"temperature": temperature}
+        
+        pipe = hf_pipeline(task, **pipe_kwargs)
+        
+        return HuggingFacePipelineLLM(
+            pipeline=pipe,
+            model_name=model_name,
+            temperature=temperature if temperature is not None else 0.0
+        )
     else:
         raise ValueError(
             f"Unknown LLM provider: {provider}. "
-            f"Supported providers: google, groq, openai, ollama"
+            f"Supported providers: google, groq, openai, ollama, huggingface"
         )
 
 
