@@ -8,7 +8,8 @@ import yaml
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Union
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
+load_dotenv(find_dotenv())
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
@@ -62,6 +63,9 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
             - OPENAI_API_KEY: API key
             - OPENAI_BASE_URL: Base URL for API (optional, for compatible endpoints)
             - OPENAI_MODEL: Default model name (optional)
+        For Ollama (self-hosted Ollama HTTP API):
+            - OLLAMA_BASE_URL: Base URL for Ollama endpoint (e.g. https://...)
+            - OLLAMA_MODEL: Default model name (optional)
     """
     provider = provider.lower()
     
@@ -97,10 +101,28 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
         if temperature is not None:
             kwargs["temperature"] = temperature
         return ChatOpenAI(**kwargs)
+    elif provider == "ollama":
+        # Use ChatOpenAI as an OpenAI-compatible client for Ollama-compatible endpoints
+        # Note: Ollama's HTTP API can be exposed via an OpenAI-compatible gateway.
+        kwargs = {
+            "api_key": os.getenv("OLLAMA_API_KEY", "NONE"),
+            "streaming": streaming
+        }
+        # Allow explicit base URL for Ollama instances
+        if base_url := os.getenv("OLLAMA_BASE_URL"):
+            kwargs["base_url"] = base_url
+        # Model selection: prefer explicit model argument, then env var
+        if model:
+            kwargs["model"] = model
+        elif ollama_model := os.getenv("OLLAMA_MODEL"):
+            kwargs["model"] = ollama_model
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        return ChatOpenAI(**kwargs)
     else:
         raise ValueError(
             f"Unknown LLM provider: {provider}. "
-            f"Supported providers: google, groq, openai"
+            f"Supported providers: google, groq, openai, ollama"
         )
 
 
@@ -114,7 +136,8 @@ class LLMRegistry:
     
     def _load_configs(self):
         """Load configurations from YAML and environment variables."""
-        load_dotenv()  # Load env vars when registry is first created
+        # Search for a .env file in parent directories (works when working_dir=/app/evals)
+        load_dotenv(find_dotenv())  # Load env vars when registry is first created
         default_configs = _load_default_configs()
         for role, default_config in default_configs.items():
             # Start with YAML defaults
