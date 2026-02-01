@@ -1,13 +1,12 @@
 # LLM Model Configuration for EXAIM
-# This file documents which models are used for each component role.
 # Environment variables can override these defaults.
 
 # MAS (Multi-Agent System)
 # Used by: CDSS demo agents (cardiology, internal_medicine, laboratory, orchestrator, radiology)
 # Purpose: Generate reasoning traces from specialized agents
 mas:
-  provider: google  # Default: groq (fast, cost-effective)
-  model:  gemini-2.5-flash-lite  # Default model
+  provider: google
+  model:  gemini-2.5-flash-lite
   streaming: true
   # Env overrides: MAS_LLM_PROVIDER, MAS_LLM_MODEL
 
@@ -15,7 +14,7 @@ mas:
 # Used by: SummarizerAgent
 # Purpose: Generate structured clinical summaries from agent traces
 summarizer:
-  provider: openai  # Use local/hosted Ollama instance
+  provider: google
   model: google/medgemma-27b-it
   streaming: true
   # Env overrides: SUMMARIZER_LLM_PROVIDER, SUMMARIZER_LLM_MODEL
@@ -24,8 +23,8 @@ summarizer:
 # Used by: BufferAgent
 # Purpose: Decide when to trigger summarization based on trace completeness and novelty
 buffer_agent:
-  provider: openai  # Default: google (strong reasoning)
-  model: google/medgemma-27b-it  # Default model
+  provider: google
+  model: google/medgemma-27b-it
   streaming: true
   # Env overrides: BUFFER_AGENT_LLM_PROVIDER, BUFFER_AGENT_LLM_MODEL
 
