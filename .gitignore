@@ -150,3 +150,6 @@ evals/tests/fixtures/stub_*.jsonl.gz
 
 # Large calibration file exceeding GitHub limits
 evals/data/calibration/calib_sha256c_6bea5ea6_a800a8de/calibration_per_case.jsonl
+
+# Local Vertex service account credentials (do NOT commit)
+gen-lang-client-*.json

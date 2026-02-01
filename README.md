@@ -1,7 +1,7 @@
 
-# EXAIM
+# EXAIM – MedGemma Impact Challenge Submission
 
-EXAIM (Explainable AI Middleware) is an experimental Python project for capturing short, live traces from multiple agents, buffering those traces, and producing concise summaries using an LLM. It is designed as a minimal prototype for medical multi-agent reasoning workflows, where specialized agents (e.g., InfectiousDiseaseAgent, HematologyAgent, OncologyAgent) collaborate on clinical cases, and their reasoning traces are captured and condensed into structured summaries optimized for physician understanding.
+EXAIM (Explainable AI Middleware) is an experimental system that captures timed multi-agent reasoning traces, buffers them, and produces concise structured summaries via role-based LLMs. This repository contains the EXAIM code, reproducible evaluation tooling, and pre-computed baseline artifacts used for the MedGemma Impact Challenge submission. The evaluation harness is Docker-first to ensure deterministic, pinned environments for judges and reproducibility.
 
 ## Submodules
 
@@ -34,220 +34,105 @@ The `evals/` directory contains pre-generated timed traces for reproducible eval
 
 **System name:** EXAIM (paper). Legacy evaluation artifacts retain the `exaid.*` namespace (schemas/manifests/IDs) to preserve reproducibility of completed experiments.
 
-See `evals/README.md` for full evaluation documentation.
+See `evals/README.md` for evaluation quickstarts (Docker-first) and exact evaluation commands.
 
-## Quick Start
+## Quickstart (Docker – recommended)
 
-1. **Create and activate a virtual environment (recommended):**
+This repository ships a dedicated evaluation image and a Docker Compose file tuned for reproducible evaluation runs. Use Docker Compose as the primary evaluation path to ensure pinned dependencies and a deterministic environment.
 
-   ```bash
-   python -m venv .venv
-   # On Windows:
-   .\.venv\Scripts\Activate.ps1
-   # On Unix/Mac:
-   source .venv/bin/activate
-   ```
+---
+# EXAIM — MedGemma Impact Challenge Submission
 
-2. **Install dependencies:**
+EXAIM ingests timed, multi-agent reasoning traces and produces concise, schema-constrained summaries. This repository contains the EXAIM implementation, a reproducible evaluation harness, and committed evaluation artifacts used for the MedGemma Impact Challenge.
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+Claims boundary
+- Research prototype only; no claims about diagnostic correctness, clinical safety, or outcomes.
+- Evaluation reports system proxies: output volume, coverage, faithfulness proxies, and latency.
 
-3. **Configure environment variables**:
-   
-   Create a `.env` file in the project root with your LLM provider settings:
-   ```bash
-   # Role-based provider selection (mas, summarizer, buffer_agent)
-   MAS_LLM_PROVIDER=groq
-   SUMMARIZER_LLM_PROVIDER=google
-   BUFFER_AGENT_LLM_PROVIDER=google
-   
-   # Google Gemini configuration
-   GOOGLE_API_KEY=your-google-api-key
-   GOOGLE_MODEL_NAME=gemini-2.5-flash-lite
-   # Override models per role (optional):
-   SUMMARIZER_LLM_MODEL=gemini-2.5-pro
-   BUFFER_AGENT_LLM_MODEL=gemini-2.5-pro
-   
-   # Groq configuration (for multi-agent reasoning)
-   GROQ_API_KEY=your-groq-api-key
-   GROQ_MODEL=llama-3.3-70b-versatile
-   # Override model for MAS role (optional):
-   MAS_LLM_MODEL=llama-3.3-70b-versatile
-   
-   # OpenAI configuration (optional, if using OpenAI provider)
-   OPENAI_API_KEY=your-openai-api-key
-   OPENAI_BASE_URL=https://api.openai.com/v1
-   OPENAI_MODEL=gpt-4
-   ```
-   
-   EXAIM supports multiple LLM providers through role-based environment variable configuration. See DOCUMENTATION.md for more details.
+What’s provided (no API keys required)
+- Baseline runs (shipped): `evals/data/runs_baseline_gemini25flashlite/{V0..V4, run_summaries}`
+- Baseline metrics (shipped): `evals/data/metrics_baseline_gemini25flashlite/{aggregate.metrics.json, per_case.metrics.jsonl, metrics.provenance.json, figures/}`
+- Committed MedGemma outputs and metrics:
+  - `evals/data/runs_medgemma15_4b_it`
+  - `evals/data/runs_medgemma27b_text_it`
+  - `evals/data/metrics_medgemma15_4b_it`
+  - `evals/data/metrics_medgemma27b_text_it`
 
-4. **Run the CDSS demo:**
+Note: baseline artifacts are provided as read-only artifacts; judges are NOT expected to regenerate baseline model outputs.
 
-   ```bash
-   python demos/cdss_example/demo_cdss.py
-   ```
+Quickstart
 
-5. **Use the EXAIM class in your code:**
+Option A — Docker (recommended)
+- Build the evaluation image (one-time):
 
-   ```python
-   import asyncio
-   from exaim_core import EXAIM
-
-   async def main():
-       exaim = EXAIM()
-       # Add traces for any agent (agent_id, text)
-       summary = await exaim.received_trace("agent_1", "Some trace text")
-       if summary:
-           print("Updated summary:", summary)
-           # Access summary fields
-           print(f"Status/Action: {summary.status_action}")
-           print(f"Key Findings: {summary.key_findings}")
-           print(f"Differential/Rationale: {summary.differential_rationale}")
-           print(f"Uncertainty/Confidence: {summary.uncertainty_confidence}")
-           print(f"Recommendation/Next Step: {summary.recommendation_next_step}")
-           print(f"Agent Contributions: {summary.agent_contributions}")
-   
-   asyncio.run(main())
-   ```
-
-
-## High-level Design
-
-The system is organized around a few small modules:
-
-- `exaim_core/exaim.py` — EXAIM orchestrator class
-  - Purpose: Collects traces from agents, buffers them, and produces summaries using an LLM. Maintains a list of all summaries.
-  - Note: `flush_agent(...)` parks any remaining tokens for later summarization rather than forcing a summary.
-  - Key methods:
-    - `received_trace(agent_id, text)` — Call this to add a trace for an agent. If a summary is triggered, it returns the new `AgentSummary` object.
-    - `on_new_token(agent_id, token)` — Process a single streaming token from an agent using TokenGate for intelligent chunking.
-    - `get_all_summaries()` — Returns all summaries as a list of `AgentSummary` objects.
-    - `get_summaries_by_agent(agent_id)` — Returns summaries involving a specific agent.
-    - `get_agent_trace_count(agent_id)` — Returns the number of traces received from an agent.
-
-- `exaim_core/summarizer_agent/summarizer_agent.py` — Summarization wrapper
-  - Purpose: Contains the `SummarizerAgent` class, which wraps calls to the LLM (via `infra/llm_registry.py`) and produces structured `AgentSummary` objects from input text.
-  - Features:
-    - Uses structured output with Pydantic models for consistent summaries
-    - Enforces evidence-based character limits aligned with clinical documentation research
-    - Optimized for medical/clinical reasoning with SBAR/SOAP-aligned prompts
-    - Returns `AgentSummary` objects with fields: `status_action`, `key_findings`, `differential_rationale`, `uncertainty_confidence`, `recommendation_next_step`, `agent_contributions`
-
-- `exaim_core/buffer_agent/buffer_agent.py` — Intelligent trace buffer
-  - Purpose: Implements `BufferAgent`, a buffer that accumulates traces per agent. Uses an LLM-based prompt to decide when to trigger summarization (event-driven, not just a static threshold).
-  - Features:
-    - LLM-powered trigger logic that evaluates trace content
-    - Decides summarization based on completed thoughts, topic changes, or accumulated context
-    - Tags traces with agent IDs for multi-agent tracking
-    - Tracks trace counts per agent
-
-- `exaim_core/token_gate/token_gate.py` — Token streaming pre-buffer
-  - Purpose: A lightweight, syntax-aware pre-buffer that regulates token flow into BufferAgent for streaming scenarios.
-  - Features:
-    - Configurable word thresholds (min/max words, whitespace-delimited)
-    - Boundary cue detection (punctuation, newlines)
-    - Silence timer and max wait timeout
-    - Per-agent text buffering
-
-- `infra/llm_registry.py` — LLM client configuration
-  - Purpose: Holds LLM client instances used for summarization and trigger decisions. Uses environment variables for provider selection with role-based configuration.
-  - Supports multiple providers: Google Gemini, Groq, OpenAI, and OpenAI-compatible endpoints.
-  - Provider selection via role-based environment variables: `MAS_LLM_PROVIDER`, `SUMMARIZER_LLM_PROVIDER`, `BUFFER_AGENT_LLM_PROVIDER`
-  - Provides different LLM instances optimized for different use cases (speed vs. reasoning quality)
-
-- `demos/cdss_example/` — Clinical Decision Support System demo
-  - Purpose: Complete demonstration of EXAIM integrated with a multi-agent clinical decision support system using LangGraph.
-  - Components:
-    - `cdss.py` — CDSS orchestrator class
-    - `demo_cdss.py` — Example clinical cases demonstrating the system
-    - `agents/` — Specialized medical agents (OrchestratorAgent, CardiologyAgent, LaboratoryAgent)
-    - `graph/` — LangGraph workflow definition
-    - `schema/` — Clinical case and graph state data models
-
-- `requirements.txt` — Python dependencies
-  - Purpose: Lists the project's external Python dependencies (LangChain, LangGraph, Pydantic, python-dotenv, etc.).
-
-## Features
-
-- **LLM-powered event-driven summarization:** The buffer uses an LLM to intelligently decide when to trigger summarization based on trace content, not just a static threshold. Summarization triggers when thoughts complete, topics change, or sufficient context accumulates.
-- **Multi-agent support:** Traces are tagged by agent ID and summarized in context, allowing multiple specialized agents to contribute to a single reasoning workflow.
-- **Streaming token support:** `TokenGate` provides intelligent chunking of streaming tokens with configurable word thresholds (whitespace-delimited), boundary detection, and timeout mechanisms.
-- **Structured summaries:** Summaries are generated as structured `AgentSummary` objects with fields optimized for medical reasoning and aligned with SBAR/SOAP documentation standards:
-  - `status_action`: Concise description of system/agent activity (max 150 chars)
-  - `key_findings`: Minimal clinical facts driving the reasoning step (max 180 chars)
-  - `differential_rationale`: Leading diagnostic hypotheses and rationale (max 210 chars)
-  - `uncertainty_confidence`: Model/system uncertainty representation (max 120 chars)
-  - `recommendation_next_step`: Specific diagnostic/therapeutic/follow-up step (max 180 chars)
-  - `agent_contributions`: List of agents and their contributions (max 150 chars)
-- **Character limit enforcement:** Automatic truncation ensures summaries remain concise and physician-friendly.
-- **Medical/clinical focus:** Prompts and summaries are optimized for physician understanding of multi-agent clinical reasoning.
-- **Simple async API:** Add traces and get summaries with a single async method call.
-- **CDSS demo:** Complete clinical decision support system demonstration using LangGraph for workflow orchestration.
-- **Environment variable configuration:** LLM settings can be configured via environment variables for easy deployment.
-
-## Development Notes and Suggestions
-
-- The project is a prototype. Expect to iterate on the summarization prompt and LLM configuration.
-- Configure LLM settings via environment variables (`.env` file). EXAIM supports Google Gemini, Groq, and OpenAI providers.
-- Switch between providers by changing environment variables—no code changes needed.
-- The system uses async/await patterns throughout, so ensure you're running within an async context when calling methods.
-- For streaming scenarios, use `on_new_token()` which processes tokens one at a time and leverages `TokenGate` for intelligent chunking.
-- The CDSS demo showcases integration with LangGraph for complex multi-agent workflows.
-
-## Project Structure
-
-```
-ExAIM/
-├── exaim_core/             # Core EXAIM package
-│   ├── exaim.py            # Main orchestrator class
-│   ├── buffer_agent/       # Intelligent trace buffer
-│   │   └── buffer_agent.py
-│   ├── summarizer_agent/   # Summarization logic
-│   │   └── summarizer_agent.py
-│   ├── token_gate/         # Token streaming pre-buffer
-│   │   └── token_gate.py
-│   ├── schema/             # Data models
-│   │   └── agent_summary.py
-│   └── utils/              # Utility functions
-│       └── prompts.py
-├── infra/                  # Infrastructure
-│   ├── llm_registry.py     # LLM client configuration
-│   └── model_configs.yaml  # LLM model configurations
-├── demos/                  # Demo applications
-│   └── cdss_example/       # Clinical Decision Support System demo
-│       ├── cdss.py         # CDSS orchestrator
-│       ├── demo_cdss.py    # Example clinical cases
-│       ├── agents/         # Specialized medical agents
-│       │   ├── orchestrator_agent.py
-│       │   ├── cardiology_agent.py
-│       │   └── laboratory_agent.py
-│       ├── graph/          # LangGraph workflow
-│       │   ├── cdss_graph.py
-│       │   ├── nodes.py
-│       │   └── edges.py
-│       └── schema/         # Clinical data models
-│           ├── clinical_case.py
-│           └── graph_state.py
-├── requirements.txt        # Python dependencies
-├── README.md               # This file
-└── DOCUMENTATION.md        # Comprehensive documentation
+```powershell
+docker compose -f docker-compose.evals.yml build
 ```
 
-## Files Summary
+- Recompute baseline metrics (container workdir is `evals/`; use `data/...` paths):
 
-- `exaim_core/exaim.py`: Orchestrator class that collects traces, buffers them, and records summaries. Provides methods for trace processing, streaming token handling, and summary retrieval.
-- `exaim_core/summarizer_agent/summarizer_agent.py`: Summarization logic with structured output. Defines `SummarizerAgent` class that generates `AgentSummary` objects.
-- `exaim_core/buffer_agent/buffer_agent.py`: `BufferAgent` implementation with LLM-based trigger logic for event-driven summarization.
-- `exaim_core/token_gate/token_gate.py`: Token streaming pre-buffer that regulates token flow with configurable thresholds and timers.
-- `exaim_core/schema/agent_summary.py`: Pydantic model defining the structured `AgentSummary` format.
-- `infra/llm_registry.py`: LLM client configuration with role-based setup using LangChain (supports environment variables for configuration).
-- `demos/cdss_example/cdss.py`: CDSS orchestrator that integrates EXAIM with LangGraph for clinical decision support workflows.
-- `demos/cdss_example/demo_cdss.py`: Example usage demonstrating complete clinical case workflows with multiple specialized agents.
-- `requirements.txt`: Project dependencies (LangChain, LangGraph, Pydantic, python-dotenv, etc.).
+```powershell
+docker compose -f docker-compose.evals.yml run --rm evals python -m evals.cli.compute_metrics --runs data/runs_baseline_gemini25flashlite --output data/metrics_baseline_recomputed
+```
 
-## License
+- Run MedGemma evaluations (generate runs -> compute metrics). Write to NEW output dirs to avoid overwriting committed artifacts:
 
-MIT
+```powershell
+# MedGemma 1.5-4b-it
+docker compose -f docker-compose.evals.yml run --rm evals python -m evals.cli.run_variants --output data/runs_medgemma15_4b_it_recomputed --eval-run-id medgemma15_4b_test
+docker compose -f docker-compose.evals.yml run --rm evals python -m evals.cli.compute_metrics --runs data/runs_medgemma15_4b_it_recomputed --output data/metrics_medgemma15_4b_it_recomputed
+
+# MedGemma 27b-text-it
+docker compose -f docker-compose.evals.yml run --rm evals python -m evals.cli.run_variants --output data/runs_medgemma27b_text_it_recomputed --eval-run-id medgemma27b_text_it_test
+docker compose -f docker-compose.evals.yml run --rm evals python -m evals.cli.compute_metrics --runs data/runs_medgemma27b_text_it_recomputed --output data/metrics_medgemma27b_text_it_recomputed
+```
+
+Option B — Local Python (optional)
+- Install deps and use the safe PowerShell wrappers (they prevent accidental overwrites):
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# Generate runs (safe wrapper)
+.\evals\scripts\run_variants_safe.ps1 -OutputDir evals\data\runs_medgemma15_4b_it_recomputed -EvalRunId medgemma15_4b_test
+
+# Compute metrics (safe wrapper)
+.\evals\scripts\compute_metrics_safe.ps1 -RunsDir evals\data\runs_medgemma15_4b_it_recomputed -OutputDir evals\data\metrics_medgemma15_4b_it_recomputed
+```
+
+Paths and safety
+- Inside the Docker container the working directory is `evals/`; use `data/...` when running inside the container.
+- Locally, use `evals\data\...` (PowerShell) or `evals/data/...` (bash).
+- Do NOT write to `evals/data/runs` or `evals/data/metrics`; the safe wrappers block those paths.
+
+How to compare results
+- Compare aggregate metrics JSON files:
+  - Baseline: `evals/data/metrics_baseline_gemini25flashlite/aggregate.metrics.json`
+  - MedGemma recomputed: `evals/data/metrics_medgemma15_4b_it_recomputed/aggregate.metrics.json` (or the committed `evals/data/metrics_medgemma15_4b_it/aggregate.metrics.json`)
+- For per-case checks compare the `per_case.metrics.jsonl` files in the same folders.
+
+Model setup (MedGemma)
+- EXAIM supports role-based model overrides for internal agents (BufferAgent, SummarizerAgent).
+- See `evals/README.md` for exact environment-variable usage and server details.
+- To discover available override keys, search the repo for `BUFFER_AGENT_LLM_`, `SUMMARIZER_LLM_`, or `OPENAI_BASE_URL`.
+
+Submodules
+- The MAC trace generator is included as a pinned submodule at `third_party/mac`. Initialize with:
+
+```bash
+git submodule update --init --recursive
+```
+
+Repo structure (high-level)
+- `exaim_core/` — core implementation (BufferAgent, SummarizerAgent, TokenGate)
+- `evals/` — evaluation harness, CLI, configs, and committed artifacts
+- `infra/` — model registry and configuration
+- `third_party/mac/` — MAC trace generator submodule
+- `demos/` — demo integrations (not required for evaluation)
+- `tools/` — small helpers to inspect metrics and provenance
+
+---
+
+If you want an even shorter one-page TL;DR, tell me which sections to collapse.

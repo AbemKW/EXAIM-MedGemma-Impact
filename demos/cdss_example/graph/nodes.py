@@ -149,7 +149,8 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
         f"- What specialist expertise would help clarify the diagnosis or treatment?\n"
         f"- Have the key specialists for this case contributed?\n"
         f"- Is there sufficient information for a final recommendation?\n\n"
-        f"Respond with ONLY ONE WORD: the specialist name or 'synthesis'"
+        f"Respond with ONLY ONE WORD and NOTHING ELSE: one of: laboratory | cardiology | internal_medicine | radiology | synthesis.\n"
+        f"Do not add punctuation, explanation, or quotes."
     )
     
     # Send agent_started UI event before streaming
@@ -162,8 +163,10 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
     async for token in agent.stream(decision_input):
         collected_decision.append(token)
     
-    # Extract and validate decision
-    next_specialist = "".join(collected_decision).strip().lower()
+    # Extract and validate decision (log raw response for debugging)
+    raw_decision_text = "".join(collected_decision)
+    logger.debug("Raw specialist decision from LLM: %r", raw_decision_text)
+    next_specialist = raw_decision_text.strip().lower()
     valid_options = available_specialists + ['synthesis']
     if next_specialist not in valid_options:
         # Fallback: The LLM response may contain the specialist name embedded in text 

@@ -20,8 +20,10 @@ class OrchestratorAgent(DemoBaseAgent):
     in nodes.py orchestrator_node, which uses this agent's stream() method for LLM interaction.
     """
     
-    def __init__(self, agent_id: str = "Orchestrator Agent"):
-        super().__init__(agent_id, exaim=None)
+    def __init__(self, agent_id: str = "Orchestrator Agent", exaim=None):
+        # Pass the exaim instance to the DemoBaseAgent so EXAIM integration
+        # (token streaming / UI notifications) is enabled when provided.
+        super().__init__(agent_id, exaim=exaim)
         self.llm = get_llm(LLMRole.MAS)
         
         # System prompt for orchestrator (used in all tasks)
@@ -67,8 +69,17 @@ class OrchestratorAgent(DemoBaseAgent):
         try:
             # LIVE token streaming loop
             async for chunk in chain.astream({}):
+                # Debug raw chunk to help identify safety/moderation labels
+                logger.debug("LLM stream chunk: %r", chunk)
+
                 token = self._extract_token(chunk)
                 if not token:
+                    continue
+
+                # Skip known safety/moderation labels that some providers emit
+                tok_clean = token.strip().lower()
+                if tok_clean in ("safe", "unsafe", "blocked", "safety"):
+                    logger.warning("Skipping safety/moderation token from LLM stream: %r", token)
                     continue
 
                 # Yield token to MAS graph
