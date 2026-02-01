@@ -1,20 +1,25 @@
-from typing import TypedDict, Optional, List
+from typing import TypedDict, Optional, List, Dict
 
 
 class CDSSGraphState(TypedDict):
-    """Simplified state schema for orchestrator-driven CDSS workflow
+    """MAC-inspired state schema for orchestrator-driven CDSS workflow
     
-    The orchestrator maintains running_summary (compressed context) and routes to specialists.
-    Specialists receive: case + running_summary + recent_delta + recent_agent + task_instruction.
+    The orchestrator (supervisor) maintains running_summary (compressed context) and routes to specialists.
+    Full message history is tracked for comprehensive context, while specialists receive compressed summary.
     
-    NOTE: Unlike previous versions, EXAIM is no longer passed through state. Agents receive EXAIM via constructor injection instead.
+    NOTE: EXAIM is passed via constructor injection, not state.
     """
     
     case_text: str
     """The clinical case input text"""
     
+    messages: List[Dict[str, str]]
+    """Full conversation history: [{role: str, name: str, content: str}, ...]
+    Initialized with case presentation, then appends all agent outputs.
+    Orchestrator sees full history (like MAC), specialists receive compressed summary."""
+    
     running_summary: str
-    """Orchestrator-maintained compressed summary of all findings so far"""
+    """Orchestrator-maintained compressed summary of all findings so far (bounded context for specialists)"""
     
     recent_delta: str
     """Raw output from the most recent specialist (uncompressed)"""
@@ -35,7 +40,7 @@ class CDSSGraphState(TypedDict):
     """Track number of turns to prevent infinite loops"""
     
     max_iterations: int
-    """Maximum turns before forcing synthesis (default: 20)"""
+    """Maximum turns before forcing synthesis (MAC pattern: 13)"""
     
     final_synthesis: Optional[str]
     """Final synthesis from orchestrator combining all findings"""

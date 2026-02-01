@@ -36,9 +36,16 @@ class CDSS:
         else:
             case_text = str(case)
         
-        # Initialize simplified graph state (EXAIM injected at agent level, not in state)
+        # Initialize MAC-inspired graph state with message history
         initial_state: CDSSGraphState = {
             "case_text": case_text,
+            "messages": [
+                {
+                    "role": "user",
+                    "name": "system",
+                    "content": case_text
+                }
+            ],
             "running_summary": "",
             "recent_delta": "",
             "recent_agent": "none",
@@ -46,7 +53,7 @@ class CDSS:
             "task_instruction": "",
             "specialists_called": [],
             "iteration_count": 0,
-            "max_iterations": 20,
+            "max_iterations": 13,  # MAC pattern: reduced from 20 to 13
             "final_synthesis": None
         }
         
