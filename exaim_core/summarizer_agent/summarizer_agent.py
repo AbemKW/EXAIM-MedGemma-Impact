@@ -7,15 +7,22 @@ import logging
 from infra import get_llm, LLMRole
 from exaim_core.utils.prompts import get_summarizer_system_prompt, get_summarizer_user_prompt
 from exaim_core.schema.agent_segment import AgentSegment
+from exaim_core.utils.json_utils import extract_json_from_text
 
 class SummarizerAgent:
     def __init__(self):
         self.base_llm = get_llm(LLMRole.SUMMARIZER)
-        self.llm = self.base_llm.with_structured_output(
-                schema=AgentSummary,
-                method="json_schema",
-                strict=True
-        )
+        try:
+            self.llm = self.base_llm.with_structured_output(
+                    schema=AgentSummary,
+                    method="json_schema",
+                    strict=True
+            )
+            self.use_json_fallback = False
+        except (AttributeError, NotImplementedError):
+            # Model doesn't support structured output, use JSON parsing fallback
+            self.llm = self.base_llm
+            self.use_json_fallback = True
 
         self.summarize_prompt = ChatPromptTemplate.from_messages([    
             ("system", get_summarizer_system_prompt()),
@@ -32,6 +39,37 @@ class SummarizerAgent:
             'agent_contributions': 150
         }
     
+
+
+    def _parse_llm_output(self, response) -> AgentSummary:
+        """Parse LLM output into AgentSummary, handling both structured and text outputs."""
+        if self.use_json_fallback:
+            # Extract text content with better error handling
+            try:
+                if hasattr(response, 'content'):
+                    content = response.content
+                elif isinstance(response, str):
+                    content = response
+                else:
+                    content = str(response)
+                
+                # Try to extract JSON
+                json_data = extract_json_from_text(content)
+                if json_data:
+                    try:
+                        return AgentSummary(**json_data)
+                    except ValidationError as e:
+                        raise ValueError(f"JSON validation failed: {e}\nExtracted JSON: {json_data}")
+                else:
+                    raise ValueError(f"Could not extract valid JSON from response: {content[:500]}")
+            except Exception as e:
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error parsing LLM output: {type(e).__name__}: {str(e)}")
+                raise ValueError(f"Error parsing LLM output: {type(e).__name__}: {str(e)}")
+        else:
+            # Already structured output
+            return response
+
     def _extract_max_length_violations(self, validation_error: ValidationError) -> Dict[str, int]:
         """Extract fields that violated max_length constraints from ValidationError.
         
@@ -316,12 +354,13 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         
         # Attempt 1: Initial structured output
         try:
-            summary = await summarize_chain.ainvoke({
+            response = await summarize_chain.ainvoke({
                 "summary_history": ",\n".join(summary_history),
                 "latest_summary": latest_summary,
                 "new_buffer": new_buffer,
                 "history_k": history_k
             })
+            summary = self._parse_llm_output(response)
             return summary
         except Exception as e:
             # Extract ValidationError from LangChain exception wrapper
@@ -359,7 +398,8 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
                         
                         # Retry with rewrite prompt
                         rewrite_chain = rewrite_prompt | self.llm
-                        summary = await rewrite_chain.ainvoke({})
+                        response = await rewrite_chain.ainvoke({})
+                        summary = self._parse_llm_output(response)
                         return summary
                     
                     except Exception as retry_error:

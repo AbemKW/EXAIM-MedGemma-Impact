@@ -40,7 +40,7 @@ def build_cdss_graph(exaim: EXAIM):
     """
     
     # Instantiate all agents once with EXAIM reference
-    orchestrator = OrchestratorAgent()
+    orchestrator = OrchestratorAgent(exaim=exaim)
     laboratory = LaboratoryAgent(exaim=exaim)
     cardiology = CardiologyAgent(exaim=exaim)
     internal_medicine = InternalMedicineAgent(exaim=exaim)
