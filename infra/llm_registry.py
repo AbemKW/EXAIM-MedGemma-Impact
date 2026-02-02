@@ -19,6 +19,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from typing import Any, List, Mapping, Optional
 import warnings
+import sys
 
 
 class LLMRole(str, Enum):
@@ -56,6 +57,9 @@ class HuggingFacePipelineLLM(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Generate response using Hugging Face pipeline."""
+        import sys
+        import traceback
+        
         # Convert LangChain messages to HF pipeline format
         hf_messages = []
         for msg in messages:
@@ -79,41 +83,86 @@ class HuggingFacePipelineLLM(BaseChatModel):
         
         # Call the pipeline
         try:
-            # Prepare generation kwargs with temperature
-            gen_kwargs = {}
+            # Prepare generation kwargs
+            gen_kwargs = {
+                "return_full_text": False,  # Only return generated text
+            }
+            
+            # Add temperature and sampling if specified
             if self.temperature is not None and self.temperature > 0:
                 gen_kwargs["temperature"] = self.temperature
-                gen_kwargs["do_sample"] = True  # Required for temperature to work
+                gen_kwargs["do_sample"] = True
             
-            # For text-generation pipelines
-            if hasattr(self.pipeline, 'task') and 'image' in self.pipeline.task:
-                # Image-text-to-text pipeline
+            # Determine how to call the pipeline based on task type
+            task = getattr(self.pipeline, 'task', 'text-generation')
+            
+            if task == 'image-text-to-text':
+                # Image-text-to-text pipeline - use text parameter
                 result = self.pipeline(text=hf_messages, **gen_kwargs)
             else:
-                # Standard text pipeline
+                # Standard text-generation pipeline - pass messages directly
                 result = self.pipeline(hf_messages, **gen_kwargs)
             
-            # Extract text from result
+            if task == 'image-text-to-text':
+                # Image-text-to-text pipeline - use text parameter
+                result = self.pipeline(text=hf_messages, **gen_kwargs)
+            else:
+                # Standard text-generation pipeline - pass messages directly
+                # The pipeline expects either a string or list of chat messages
+                result = self.pipeline(hf_messages, **gen_kwargs)
+            
+            # DEBUG: Print raw result
+            import sys
+            print(f"DEBUG HF Pipeline Task: {task}", file=sys.stderr)
+            print(f"DEBUG HF Pipeline Result Type: {type(result)}", file=sys.stderr)
             if isinstance(result, list) and len(result) > 0:
-                if isinstance(result[0], dict):
-                    text = result[0].get('generated_text', str(result[0]))
-                    # If generated_text is a list of messages, get the last one
-                    if isinstance(text, list) and len(text) > 0:
-                        if isinstance(text[-1], dict) and 'content' in text[-1]:
-                            text = text[-1]['content']
+                print(f"DEBUG HF Result[0] Type: {type(result[0])}", file=sys.stderr)
+                print(f"DEBUG HF Result[0] Keys: {result[0].keys() if isinstance(result[0], dict) else 'N/A'}", file=sys.stderr)
+            
+            # Extract text from result
+            # For chat/conversational models, result is typically:
+            # [{'generated_text': [{'role': 'user', 'content': '...'}, {'role': 'assistant', 'content': '...'}]}]
+            # or [{'generated_text': 'some text'}]
+            if isinstance(result, list) and len(result) > 0:
+                item = result[0]
+                
+                if isinstance(item, dict):
+                    generated = item.get('generated_text', item)
+                    
+                    # If generated_text is a list of messages (chat format)
+                    if isinstance(generated, list) and len(generated) > 0:
+                        # Find the last assistant message
+                        for msg in reversed(generated):
+                            if isinstance(msg, dict) and msg.get('role') == 'assistant':
+                                text = msg.get('content', str(msg))
+                                break
                         else:
-                            text = str(text[-1])
+                            # No assistant message found, use last message
+                            if isinstance(generated[-1], dict):
+                                text = generated[-1].get('content', str(generated[-1]))
+                            else:
+                                text = str(generated[-1])
+                    elif isinstance(generated, str):
+                        text = generated
+                    else:
+                        text = str(generated)
+                elif isinstance(item, str):
+                    text = item
                 else:
-                    text = str(result[0])
+                    text = str(item)
             else:
                 text = str(result)
+            
+            print(f"DEBUG HF Extracted Text (first 200 chars): {text[:200]}", file=sys.stderr)
             
             message = AIMessage(content=text)
             generation = ChatGeneration(message=message)
             return ChatResult(generations=[generation])
         except Exception as e:
+            print(f"ERROR in HuggingFacePipelineLLM._generate:", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
             warnings.warn(f"HuggingFace pipeline error: {e}")
-            # Return empty response on error
+            # Return error message
             message = AIMessage(content=f"Error: {str(e)}")
             generation = ChatGeneration(message=message)
             return ChatResult(generations=[generation])
@@ -238,11 +287,13 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
         # Model selection: prefer explicit model argument, then env var, default to medgemma
         model_name = model or os.getenv("HUGGINGFACE_MODEL", "google/medgemma-1.5-4b-it")
         
-        # Determine task type based on model capabilities
-        # For medgemma models, use image-text-to-text if available
+        # Determine task type - for text-only use, we should use text-generation
+        # image-text-to-text requires image inputs
         task = os.getenv("HUGGINGFACE_TASK", "text-generation")
-        if "medgemma" in model_name.lower():
-            task = "image-text-to-text"
+        if "medgemma" in model_name.lower() and task == "image-text-to-text":
+            # MedGemma supports multimodal, but for text-only tasks use text-generation
+            print(f"WARNING: Using text-generation task for {model_name} (image-text-to-text requires images)")
+            task = "text-generation"
         
         # Create pipeline with device_map for automatic GPU support
         pipe_kwargs = {
@@ -250,9 +301,13 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
             "device_map": "auto",
         }
         
-        # Note: temperature is NOT passed to model initialization
-        # It will be used during generation by HuggingFacePipelineLLM
-        pipe = hf_pipeline(task, **pipe_kwargs)
+        try:
+            print(f"Loading HuggingFace pipeline: task={task}, model={model_name}")
+            pipe = hf_pipeline(task, **pipe_kwargs)
+            print(f"Successfully loaded HuggingFace pipeline")
+        except Exception as e:
+            print(f"ERROR loading HuggingFace pipeline: {e}")
+            raise
         
         return HuggingFacePipelineLLM(
             pipeline=pipe,

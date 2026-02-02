@@ -11,11 +11,17 @@ from exaim_core.schema.agent_segment import AgentSegment
 class SummarizerAgent:
     def __init__(self):
         self.base_llm = get_llm(LLMRole.SUMMARIZER)
-        self.llm = self.base_llm.with_structured_output(
-                schema=AgentSummary,
-                method="json_schema",
-                strict=True
-        )
+        try:
+            self.llm = self.base_llm.with_structured_output(
+                    schema=AgentSummary,
+                    method="json_schema",
+                    strict=True
+            )
+            self.use_json_fallback = False
+        except (AttributeError, NotImplementedError):
+            # Model doesn't support structured output, use JSON parsing fallback
+            self.llm = self.base_llm
+            self.use_json_fallback = True
 
         self.summarize_prompt = ChatPromptTemplate.from_messages([    
             ("system", get_summarizer_system_prompt()),
@@ -32,6 +38,89 @@ class SummarizerAgent:
             'agent_contributions': 150
         }
     
+    def _extract_json_from_text(self, text: str) -> dict | None:
+        """Extract JSON object from text output.
+        
+        Tries multiple strategies:
+        1. Find JSON between ```json markers
+        2. Find first complete JSON object in text
+        3. Extract from markdown code blocks
+        """
+        import re
+        # Strategy 1: Look for ```json ... ``` blocks
+        json_match = re.search(r'```(?:json)?\s*\n?(\{.*?\})\s*\n?```', text, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+        
+        # Strategy 2: Find first complete JSON object
+        start_idx = text.find('{')
+        if start_idx != -1:
+            brace_count = 0
+            in_string = False
+            escape_next = False
+            
+            for i in range(start_idx, len(text)):
+                char = text[i]
+                
+                if escape_next:
+                    escape_next = False
+                    continue
+                
+                if char == '\\':
+                    escape_next = True
+                    continue
+                
+                if char == '"' and not escape_next:
+                    in_string = not in_string
+                    continue
+                
+                if not in_string:
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_str = text[start_idx:i+1]
+                            try:
+                                return json.loads(json_str)
+                            except json.JSONDecodeError:
+                                pass
+        
+        return None
+
+    def _parse_llm_output(self, response) -> AgentSummary:
+        """Parse LLM output into AgentSummary, handling both structured and text outputs."""
+        if self.use_json_fallback:
+            # Extract text content with better error handling
+            try:
+                if hasattr(response, 'content'):
+                    content = response.content
+                elif isinstance(response, str):
+                    content = response
+                else:
+                    content = str(response)
+                
+                # Try to extract JSON
+                json_data = self._extract_json_from_text(content)
+                if json_data:
+                    try:
+                        return AgentSummary(**json_data)
+                    except ValidationError as e:
+                        raise ValueError(f"JSON validation failed: {e}\nExtracted JSON: {json_data}")
+                else:
+                    raise ValueError(f"Could not extract valid JSON from response: {content[:500]}")
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error parsing LLM output: {type(e).__name__}: {str(e)}")
+                raise ValueError(f"Error parsing LLM output: {type(e).__name__}: {str(e)}")
+        else:
+            # Already structured output
+            return response
+
     def _extract_max_length_violations(self, validation_error: ValidationError) -> Dict[str, int]:
         """Extract fields that violated max_length constraints from ValidationError.
         
@@ -316,12 +405,13 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
         
         # Attempt 1: Initial structured output
         try:
-            summary = await summarize_chain.ainvoke({
+            response = await summarize_chain.ainvoke({
                 "summary_history": ",\n".join(summary_history),
                 "latest_summary": latest_summary,
                 "new_buffer": new_buffer,
                 "history_k": history_k
             })
+            summary = self._parse_llm_output(response)
             return summary
         except Exception as e:
             # Extract ValidationError from LangChain exception wrapper
@@ -359,7 +449,8 @@ VERIFY BEFORE SUBMITTING: Count characters in each shortened field to ensure com
                         
                         # Retry with rewrite prompt
                         rewrite_chain = rewrite_prompt | self.llm
-                        summary = await rewrite_chain.ainvoke({})
+                        response = await rewrite_chain.ainvoke({})
+                        summary = self._parse_llm_output(response)
                         return summary
                     
                     except Exception as retry_error:

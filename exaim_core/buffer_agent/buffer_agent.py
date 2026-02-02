@@ -1,7 +1,9 @@
 from langchain_core.prompts import ChatPromptTemplate
 from infra import get_llm, LLMRole
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import Union
+import json
+import re
 from exaim_core.schema.agent_segment import AgentSegment
 from exaim_core.schema.buffer_analysis import BufferAnalysis, BufferAnalysisNoNovelty
 from exaim_core.utils.prompts import (
@@ -64,21 +66,124 @@ class BufferAgent:
         self.tail_segments: list[AgentSegment] = []  # Deferred segments from non-trigger flushes
         # Use a smarter model if available, or the same base model
         self.base_llm = get_llm(LLMRole.BUFFER_AGENT)
+        self.disable_novelty = disable_novelty
         # Conditionally initialize LLM and prompt based on novelty check
         if disable_novelty:
-            self.llm = self.base_llm.with_structured_output(BufferAnalysisNoNovelty)
+            try:
+                self.llm = self.base_llm.with_structured_output(BufferAnalysisNoNovelty)
+                self.use_json_fallback = False
+            except (AttributeError, NotImplementedError):
+                # Model doesn't support structured output, use JSON parsing fallback
+                self.llm = self.base_llm
+                self.use_json_fallback = True
             self.flag_prompt = ChatPromptTemplate.from_messages([
                 ("system", get_buffer_agent_system_prompt_no_novelty()),
                 ("user", get_buffer_agent_user_prompt())
             ])
+            self.schema_class = BufferAnalysisNoNovelty
         else:
-            self.llm = self.base_llm.with_structured_output(BufferAnalysis)
+            try:
+                self.llm = self.base_llm.with_structured_output(BufferAnalysis)
+                self.use_json_fallback = False
+            except (AttributeError, NotImplementedError):
+                # Model doesn't support structured output, use JSON parsing fallback
+                self.llm = self.base_llm
+                self.use_json_fallback = True
             self.flag_prompt = ChatPromptTemplate.from_messages([
                 ("system", get_buffer_agent_system_prompt()),
                 ("user", get_buffer_agent_user_prompt())
             ])
+            self.schema_class = BufferAnalysis
         self.traces: dict[str, TraceData] = {}
         self.last_analysis: dict[str, Union[BufferAnalysis, BufferAnalysisNoNovelty, None]] = {}
+
+    def _extract_json_from_text(self, text: str) -> dict | None:
+        """Extract JSON object from text output.
+        
+        Tries multiple strategies:
+        1. Find JSON between ```json markers
+        2. Find first complete JSON object in text
+        3. Extract from markdown code blocks
+        """
+        # Strategy 1: Look for ```json ... ``` blocks
+        json_match = re.search(r'```(?:json)?\s*\n?(\{.*?\})\s*\n?```', text, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+        
+        # Strategy 2: Find first complete JSON object
+        start_idx = text.find('{')
+        if start_idx != -1:
+            brace_count = 0
+            in_string = False
+            escape_next = False
+            
+            for i in range(start_idx, len(text)):
+                char = text[i]
+                
+                if escape_next:
+                    escape_next = False
+                    continue
+                
+                if char == '\\':
+                    escape_next = True
+                    continue
+                
+                if char == '"' and not escape_next:
+                    in_string = not in_string
+                    continue
+                
+                if not in_string:
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_str = text[start_idx:i+1]
+                            try:
+                                return json.loads(json_str)
+                            except json.JSONDecodeError:
+                                pass
+        
+        return None
+
+    def _parse_llm_output(self, response) -> Union[BufferAnalysis, BufferAnalysisNoNovelty]:
+        """Parse LLM output into schema, handling both structured and text outputs."""
+        if self.use_json_fallback:
+            # Extract text content with better error handling
+            try:
+                if hasattr(response, 'content'):
+                    content = response.content
+                elif isinstance(response, str):
+                    content = response
+                else:
+                    content = str(response)
+                
+                # DEBUG output
+                CYAN = "\033[1;36m"
+                RESET = "\033[0m"
+                print(f"{CYAN}DEBUG: Raw LLM response type: {type(response)}{RESET}")
+                print(f"{CYAN}DEBUG: Content (first 500 chars): {content[:500]}{RESET}")
+                
+                # Try to extract JSON
+                json_data = self._extract_json_from_text(content)
+                if json_data:
+                    try:
+                        return self.schema_class(**json_data)
+                    except ValidationError as e:
+                        raise ValueError(f"JSON validation failed: {e}\nExtracted JSON: {json_data}")
+                else:
+                    raise ValueError(f"Could not extract valid JSON from response: {content[:500]}")
+            except Exception as e:
+                RED = "\033[1;31m"
+                RESET = "\033[0m"
+                print(f"{RED}DEBUG: Exception in _parse_llm_output: {type(e).__name__}: {str(e)}{RESET}")
+                raise ValueError(f"Error parsing LLM output: {type(e).__name__}: {str(e)}")
+        else:
+            # Already structured output
+            return response
 
     @staticmethod
     def format_segments_for_prompt(segments: list[AgentSegment]) -> str:
@@ -148,13 +253,14 @@ class BufferAgent:
         chain = self.flag_prompt | self.llm
         
         try:
-            analysis: Union[BufferAnalysis, BufferAnalysisNoNovelty] = await chain.ainvoke({
+            response = await chain.ainvoke({
                 "summaries": previous_summaries,
                 "previous_trace": buffer_context,
                 "new_trace": new_trace_block,
                 "flush_reason": flush_reason or "none",
                 "history_k": history_k
             })
+            analysis: Union[BufferAnalysis, BufferAnalysisNoNovelty] = self._parse_llm_output(response)
             self.last_analysis[agent_id] = analysis
             
             # Compute trigger deterministically in code (not from model)

@@ -165,7 +165,17 @@ def get_summarizer_system_prompt() -> str:
 
             <output_format parser_strict="true">
             You MUST produce output that conforms exactly to the structured schema requested by the system (tool/typed output).
-            Do not output markdown. Do not output additional keys. Do not include commentary outside the structured fields.
+            If the system supports structured output, use it directly.
+            If not, output ONLY a valid JSON object with the required fields. Example:
+            {{
+              "status_action": "...",
+              "key_findings": "...",
+              "differential_rationale": "...",
+              "uncertainty_confidence": "...",
+              "recommendation_next_step": "...",
+              "agent_contributions": "..."
+            }}
+            Do not wrap JSON in markdown code blocks. Do not output additional keys. Do not include commentary outside the structured fields.
             </output_format>"""
 
 
@@ -326,7 +336,16 @@ def get_buffer_agent_system_prompt() -> str:
 
          <output_contract>
          You MUST produce output that conforms exactly to the structured schema requested by the system (tool/typed output).
-         Do not output markdown. Do not output additional keys. Do not include commentary outside the structured fields.
+         If the system supports structured output, use it directly.
+         If not, output ONLY a valid JSON object with the required fields. For BufferAnalysis:
+         {{
+           "rationale": "...",
+           "stream_state": "SAME_TOPIC_CONTINUING" | "TOPIC_SHIFT" | "CRITICAL_ALERT",
+           "is_relevant": true/false,
+           "is_novel": true/false,
+           "is_complete": true/false
+         }}
+         Do not wrap JSON in markdown code blocks. Do not output additional keys. Do not include commentary outside the structured fields.
 
          Rules:
          - For the 'rationale' field: brief (<=240 chars), reference completeness/relevance/novelty/stream_state.
@@ -471,7 +490,15 @@ def get_buffer_agent_system_prompt_no_novelty() -> str:
 
          <output_contract>
          You MUST produce output that conforms exactly to the structured schema requested by the system (tool/typed output).
-         Do not output markdown. Do not output additional keys. Do not include commentary outside the structured fields.
+         If the system supports structured output, use it directly.
+         If not, output ONLY a valid JSON object with the required fields. For BufferAnalysisNoNovelty:
+         {{
+           "rationale": "...",
+           "stream_state": "SAME_TOPIC_CONTINUING" | "TOPIC_SHIFT" | "CRITICAL_ALERT",
+           "is_relevant": true/false,
+           "is_complete": true/false
+         }}
+         Do not wrap JSON in markdown code blocks. Do not output additional keys. Do not include commentary outside the structured fields.
 
          Rules:
          - For the 'rationale' field: brief (<=240 chars), reference completeness/relevance/stream_state.
