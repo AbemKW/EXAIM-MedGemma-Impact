@@ -2,7 +2,6 @@ import gradio as gr
 import asyncio
 import threading
 import time
-from typing import Generator
 import sys
 from pathlib import Path
 
