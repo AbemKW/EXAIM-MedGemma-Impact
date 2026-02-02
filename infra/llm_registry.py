@@ -79,13 +79,19 @@ class HuggingFacePipelineLLM(BaseChatModel):
         
         # Call the pipeline
         try:
+            # Prepare generation kwargs with temperature
+            gen_kwargs = {}
+            if self.temperature is not None and self.temperature > 0:
+                gen_kwargs["temperature"] = self.temperature
+                gen_kwargs["do_sample"] = True  # Required for temperature to work
+            
             # For text-generation pipelines
             if hasattr(self.pipeline, 'task') and 'image' in self.pipeline.task:
                 # Image-text-to-text pipeline
-                result = self.pipeline(text=hf_messages)
+                result = self.pipeline(text=hf_messages, **gen_kwargs)
             else:
                 # Standard text pipeline
-                result = self.pipeline(hf_messages)
+                result = self.pipeline(hf_messages, **gen_kwargs)
             
             # Extract text from result
             if isinstance(result, list) and len(result) > 0:
@@ -244,10 +250,8 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
             "device_map": "auto",
         }
         
-        # Add temperature if specified (for generation config)
-        if temperature is not None:
-            pipe_kwargs["model_kwargs"] = {"temperature": temperature}
-        
+        # Note: temperature is NOT passed to model initialization
+        # It will be used during generation by HuggingFacePipelineLLM
         pipe = hf_pipeline(task, **pipe_kwargs)
         
         return HuggingFacePipelineLLM(
