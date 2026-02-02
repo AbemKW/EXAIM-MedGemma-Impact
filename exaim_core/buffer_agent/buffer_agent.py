@@ -3,7 +3,7 @@ from infra import get_llm, LLMRole
 from pydantic import BaseModel, ValidationError
 from typing import Union
 import json
-import re
+import logging
 from exaim_core.schema.agent_segment import AgentSegment
 from exaim_core.schema.buffer_analysis import BufferAnalysis, BufferAnalysisNoNovelty
 from exaim_core.utils.prompts import (
@@ -11,6 +11,9 @@ from exaim_core.utils.prompts import (
     get_buffer_agent_system_prompt_no_novelty,
     get_buffer_agent_user_prompt
 )
+from exaim_core.utils.json_utils import extract_json_from_text
+
+logger = logging.getLogger(__name__)
 
 
 class TraceData(BaseModel):
@@ -97,57 +100,7 @@ class BufferAgent:
         self.traces: dict[str, TraceData] = {}
         self.last_analysis: dict[str, Union[BufferAnalysis, BufferAnalysisNoNovelty, None]] = {}
 
-    def _extract_json_from_text(self, text: str) -> dict | None:
-        """Extract JSON object from text output.
-        
-        Tries multiple strategies:
-        1. Find JSON between ```json markers
-        2. Find first complete JSON object in text
-        3. Extract from markdown code blocks
-        """
-        # Strategy 1: Look for ```json ... ``` blocks
-        json_match = re.search(r'```(?:json)?\s*\n?(\{.*?\})\s*\n?```', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-        
-        # Strategy 2: Find first complete JSON object
-        start_idx = text.find('{')
-        if start_idx != -1:
-            brace_count = 0
-            in_string = False
-            escape_next = False
-            
-            for i in range(start_idx, len(text)):
-                char = text[i]
-                
-                if escape_next:
-                    escape_next = False
-                    continue
-                
-                if char == '\\':
-                    escape_next = True
-                    continue
-                
-                if char == '"' and not escape_next:
-                    in_string = not in_string
-                    continue
-                
-                if not in_string:
-                    if char == '{':
-                        brace_count += 1
-                    elif char == '}':
-                        brace_count -= 1
-                        if brace_count == 0:
-                            json_str = text[start_idx:i+1]
-                            try:
-                                return json.loads(json_str)
-                            except json.JSONDecodeError:
-                                pass
-        
-        return None
+
 
     def _parse_llm_output(self, response) -> Union[BufferAnalysis, BufferAnalysisNoNovelty]:
         """Parse LLM output into schema, handling both structured and text outputs."""
@@ -161,14 +114,12 @@ class BufferAgent:
                 else:
                     content = str(response)
                 
-                # DEBUG output
-                CYAN = "\033[1;36m"
-                RESET = "\033[0m"
-                print(f"{CYAN}DEBUG: Raw LLM response type: {type(response)}{RESET}")
-                print(f"{CYAN}DEBUG: Content (first 500 chars): {content[:500]}{RESET}")
+                # Log debug information
+                logger.debug(f"Raw LLM response type: {type(response)}")
+                logger.debug(f"Content (first 500 chars): {content[:500]}")
                 
                 # Try to extract JSON
-                json_data = self._extract_json_from_text(content)
+                json_data = extract_json_from_text(content)
                 if json_data:
                     try:
                         return self.schema_class(**json_data)
@@ -177,9 +128,7 @@ class BufferAgent:
                 else:
                     raise ValueError(f"Could not extract valid JSON from response: {content[:500]}")
             except Exception as e:
-                RED = "\033[1;31m"
-                RESET = "\033[0m"
-                print(f"{RED}DEBUG: Exception in _parse_llm_output: {type(e).__name__}: {str(e)}{RESET}")
+                logger.debug(f"Exception in _parse_llm_output: {type(e).__name__}: {str(e)}")
                 raise ValueError(f"Error parsing LLM output: {type(e).__name__}: {str(e)}")
         else:
             # Already structured output

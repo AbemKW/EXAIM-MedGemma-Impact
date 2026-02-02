@@ -4,7 +4,11 @@ Centralized LLM management with role-based configuration.
 Supports YAML configuration with environment variable overrides.
 """
 import os
+import sys
 import yaml
+import logging
+import traceback
+import warnings
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Union
@@ -18,9 +22,8 @@ from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, System
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from typing import Any, List, Mapping, Optional
-import warnings
-import sys
 
+logger = logging.getLogger(__name__)
 
 class LLMRole(str, Enum):
     """Enumeration of LLM roles for type-safe role specification."""
@@ -57,8 +60,6 @@ class HuggingFacePipelineLLM(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Generate response using Hugging Face pipeline."""
-        import sys
-        import traceback
         
         # Convert LangChain messages to HF pipeline format
         hf_messages = []
@@ -101,23 +102,15 @@ class HuggingFacePipelineLLM(BaseChatModel):
                 result = self.pipeline(text=hf_messages, **gen_kwargs)
             else:
                 # Standard text-generation pipeline - pass messages directly
-                result = self.pipeline(hf_messages, **gen_kwargs)
-            
-            if task == 'image-text-to-text':
-                # Image-text-to-text pipeline - use text parameter
-                result = self.pipeline(text=hf_messages, **gen_kwargs)
-            else:
-                # Standard text-generation pipeline - pass messages directly
                 # The pipeline expects either a string or list of chat messages
                 result = self.pipeline(hf_messages, **gen_kwargs)
             
-            # DEBUG: Print raw result
-            import sys
-            print(f"DEBUG HF Pipeline Task: {task}", file=sys.stderr)
-            print(f"DEBUG HF Pipeline Result Type: {type(result)}", file=sys.stderr)
+            # Log debug information
+            logger.debug(f"HF Pipeline Task: {task}")
+            logger.debug(f"HF Pipeline Result Type: {type(result)}")
             if isinstance(result, list) and len(result) > 0:
-                print(f"DEBUG HF Result[0] Type: {type(result[0])}", file=sys.stderr)
-                print(f"DEBUG HF Result[0] Keys: {result[0].keys() if isinstance(result[0], dict) else 'N/A'}", file=sys.stderr)
+                logger.debug(f"HF Result[0] Type: {type(result[0])}")
+                logger.debug(f"HF Result[0] Keys: {result[0].keys() if isinstance(result[0], dict) else 'N/A'}")
             
             # Extract text from result
             # For chat/conversational models, result is typically:
@@ -153,14 +146,14 @@ class HuggingFacePipelineLLM(BaseChatModel):
             else:
                 text = str(result)
             
-            print(f"DEBUG HF Extracted Text (first 200 chars): {text[:200]}", file=sys.stderr)
+            logger.debug(f"HF Extracted Text (first 200 chars): {text[:200]}")
             
             message = AIMessage(content=text)
             generation = ChatGeneration(message=message)
             return ChatResult(generations=[generation])
         except Exception as e:
-            print(f"ERROR in HuggingFacePipelineLLM._generate:", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
+            logger.error(f"Error in HuggingFacePipelineLLM._generate: {e}")
+            logger.exception("Full traceback:")
             warnings.warn(f"HuggingFace pipeline error: {e}")
             # Return error message
             message = AIMessage(content=f"Error: {str(e)}")
@@ -292,7 +285,7 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
         task = os.getenv("HUGGINGFACE_TASK", "text-generation")
         if "medgemma" in model_name.lower() and task == "image-text-to-text":
             # MedGemma supports multimodal, but for text-only tasks use text-generation
-            print(f"WARNING: Using text-generation task for {model_name} (image-text-to-text requires images)")
+            logger.warning(f"Using text-generation task for {model_name} (image-text-to-text requires images)")
             task = "text-generation"
         
         # Create pipeline with device_map for automatic GPU support
@@ -302,11 +295,11 @@ def _create_llm_instance(provider: str, model: Optional[str] = None, streaming: 
         }
         
         try:
-            print(f"Loading HuggingFace pipeline: task={task}, model={model_name}")
+            logger.info(f"Loading HuggingFace pipeline: task={task}, model={model_name}")
             pipe = hf_pipeline(task, **pipe_kwargs)
-            print(f"Successfully loaded HuggingFace pipeline")
+            logger.info("Successfully loaded HuggingFace pipeline")
         except Exception as e:
-            print(f"ERROR loading HuggingFace pipeline: {e}")
+            logger.error(f"Error loading HuggingFace pipeline: {e}")
             raise
         
         return HuggingFacePipelineLLM(
