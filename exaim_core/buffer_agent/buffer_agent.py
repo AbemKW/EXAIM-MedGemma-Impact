@@ -2,7 +2,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from infra import get_llm, LLMRole
 from pydantic import BaseModel, ValidationError
 from typing import Union
-import json
 import logging
 from exaim_core.schema.agent_segment import AgentSegment
 from exaim_core.schema.buffer_analysis import BufferAnalysis, BufferAnalysisNoNovelty

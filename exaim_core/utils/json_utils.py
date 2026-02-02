@@ -45,7 +45,7 @@ def extract_json_from_text(text: str) -> Optional[dict]:
                 escape_next = True
                 continue
             
-            if char == '"' and not escape_next:
+            if char == '"':
                 in_string = not in_string
                 continue
             

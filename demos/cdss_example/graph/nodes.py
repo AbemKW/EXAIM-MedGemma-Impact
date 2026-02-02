@@ -191,8 +191,8 @@ async def orchestrator_node(state: CDSSGraphState, agent: OrchestratorAgent) -> 
     raw_decision_text = "".join(collected_decision)
     logger.info(f"Raw specialist decision from LLM: '{raw_decision_text}'")
     
-    # Check for TERMINATE keyword (case-insensitive)
-    if "TERMINATE" in raw_decision_text.upper():
+    # Check for TERMINATE keyword (case-insensitive, exact match after stripping)
+    if raw_decision_text.strip().upper() == "TERMINATE":
         next_specialist = "synthesis"
         logger.info("TERMINATE detected in supervisor decision. Routing to synthesis.")
     else:
